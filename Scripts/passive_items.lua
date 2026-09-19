@@ -1,0 +1,145 @@
+-- Passive id -> implant item id, for LootablePassives.
+--
+-- Covers all 115 real passives in the game, derived empirically from a dump of
+-- DT_PassiveSkill_Main (118 rows, minus 3 extraction markers). This table is
+-- hand-maintained and is the source of truth for which passives are
+-- extractable: is_extractable() refuses any passive with no entry here.
+--
+-- POLICY: extraction must always yield a one-time module that lands in the
+-- regular Inventory. It must never yield a reusable recipe, which belongs in
+-- Key Items and is meant to be bought with bounty tokens.
+--
+-- Vanilla already draws that distinction, in the item id itself:
+--   PalPassiveSkillChange_<passive>             plain  -> the reusable RECIPE.
+--                                               Lands in Key Items. Confirmed
+--                                               in game: Implant: Vanguard
+--                                               (TrainerATK_UP_1) sits there.
+--   PalPassiveSkillChange_Consumable_<passive>  -> a one-time module, regular
+--                                               Inventory. 21 entries use these.
+--   LP_Implant_<passive>                        this mod's own modules, also
+--                                               regular Inventory. Confirmed in
+--                                               game: Implant: Hydromaniac.
+--
+-- These all display as "Disposable Implant: X" now, which is vanilla's own
+-- naming for a single-use implant. Plain "Implant: X" is vanilla's RECIPE
+-- naming and must never be reused here -- the two are told apart in the
+-- operation list by exactly that text, plus icon colour and a stack count.
+
+local items = {
+    ["Alien"] = "LP_Implant_Alien",
+    ["AutoHPRegeneRate_Passive"] = "LP_Implant_AutoHPRegeneRate_Passive",
+    ["CoolTimeReduction_Down_1"] = "LP_Implant_CoolTimeReduction_Down_1",
+    ["CoolTimeReduction_Up_1"] = "LP_Implant_CoolTimeReduction_Up_1",
+    ["CoolTimeReduction_Up_2"] = "LP_Implant_CoolTimeReduction_Up_2",
+    ["CraftSpeed_down1"] = "LP_Implant_CraftSpeed_down1",
+    ["CraftSpeed_down2"] = "LP_Implant_CraftSpeed_down2",
+    ["CraftSpeed_up1"] = "LP_Implant_CraftSpeed_up1",
+    ["CraftSpeed_up2"] = "LP_Implant_CraftSpeed_up2",
+    ["CraftSpeed_up3"] = "PalPassiveSkillChange_Consumable_CraftSpeed_up3",
+    ["Deffence_down1"] = "LP_Implant_Deffence_down1",
+    ["Deffence_down2"] = "LP_Implant_Deffence_down2",
+    ["Deffence_up1"] = "LP_Implant_Deffence_up1",
+    ["Deffence_up2"] = "LP_Implant_Deffence_up2",
+    ["Deffence_up2_2"] = "LP_Implant_Deffence_up2_2",
+    ["Deffence_up3"] = "PalPassiveSkillChange_Consumable_Deffence_up3",
+    ["ElementBoost_Aqua_1_PAL"] = "LP_Implant_ElementBoost_Aqua_1_PAL",
+    ["ElementBoost_Aqua_2_PAL"] = "LP_Implant_ElementBoost_Aqua_2_PAL",
+    ["ElementBoost_Dark_1_PAL"] = "LP_Implant_ElementBoost_Dark_1_PAL",
+    ["ElementBoost_Dark_2_PAL"] = "LP_Implant_ElementBoost_Dark_2_PAL",
+    ["ElementBoost_Dragon_1_PAL"] = "LP_Implant_ElementBoost_Dragon_1_PAL",
+    ["ElementBoost_Dragon_2_PAL"] = "LP_Implant_ElementBoost_Dragon_2_PAL",
+    ["ElementBoost_Earth_1_PAL"] = "LP_Implant_ElementBoost_Earth_1_PAL",
+    ["ElementBoost_Earth_2_PAL"] = "LP_Implant_ElementBoost_Earth_2_PAL",
+    ["ElementBoost_Fire_1_PAL"] = "LP_Implant_ElementBoost_Fire_1_PAL",
+    ["ElementBoost_Fire_2_PAL"] = "LP_Implant_ElementBoost_Fire_2_PAL",
+    ["ElementBoost_Ice_1_PAL"] = "LP_Implant_ElementBoost_Ice_1_PAL",
+    ["ElementBoost_Ice_2_PAL"] = "LP_Implant_ElementBoost_Ice_2_PAL",
+    ["ElementBoost_Leaf_1_PAL"] = "LP_Implant_ElementBoost_Leaf_1_PAL",
+    ["ElementBoost_Leaf_2_PAL"] = "LP_Implant_ElementBoost_Leaf_2_PAL",
+    ["ElementBoost_Normal_1_PAL"] = "LP_Implant_ElementBoost_Normal_1_PAL",
+    ["ElementBoost_Normal_2_PAL"] = "LP_Implant_ElementBoost_Normal_2_PAL",
+    ["ElementBoost_Thunder_1_PAL"] = "LP_Implant_ElementBoost_Thunder_1_PAL",
+    ["ElementBoost_Thunder_2_PAL"] = "LP_Implant_ElementBoost_Thunder_2_PAL",
+    ["ElementResist_Aqua_1_PAL"] = "LP_Implant_ElementResist_Aqua_1_PAL",
+    ["ElementResist_Dark_1_PAL"] = "LP_Implant_ElementResist_Dark_1_PAL",
+    ["ElementResist_Dragon_1_PAL"] = "LP_Implant_ElementResist_Dragon_1_PAL",
+    ["ElementResist_Earth_1_PAL"] = "LP_Implant_ElementResist_Earth_1_PAL",
+    ["ElementResist_Fire_1_PAL"] = "LP_Implant_ElementResist_Fire_1_PAL",
+    ["ElementResist_Ice_1_PAL"] = "LP_Implant_ElementResist_Ice_1_PAL",
+    ["ElementResist_Leaf_1_PAL"] = "LP_Implant_ElementResist_Leaf_1_PAL",
+    ["ElementResist_Normal_1_PAL"] = "LP_Implant_ElementResist_Normal_1_PAL",
+    ["ElementResist_Thunder_1_PAL"] = "LP_Implant_ElementResist_Thunder_1_PAL",
+    ["EternalFlame"] = "LP_Implant_EternalFlame",
+    ["Invader"] = "LP_Implant_Invader",
+    ["Legend"] = "LP_Implant_Legend",
+    ["MiniNushi"] = "LP_Implant_MiniNushi",
+    ["MoveSpeed_up_1"] = "LP_Implant_MoveSpeed_up_1",
+    ["MoveSpeed_up_2"] = "LP_Implant_MoveSpeed_up_2",
+    ["MoveSpeed_up_3"] = "PalPassiveSkillChange_Consumable_MoveSpeed_up_3",
+    ["MutationPal_Babysitter"] = "PalPassiveSkillChange_Consumable_MutationPal_Babysitter",
+    ["MutationPal_ExplosionResist"] = "PalPassiveSkillChange_Consumable_MutationPal_ExplosionResist",
+    ["MutationPal_Immortal"] = "PalPassiveSkillChange_Consumable_MutationPal_Immortal",
+    ["MutationPal_Mutant"] = "PalPassiveSkillChange_Consumable_MutationPal_Mutant",
+    ["NightOwl"] = "LP_Implant_NightOwl",
+    ["Nocturnal"] = "LP_Implant_Nocturnal",
+    ["NonKilling"] = "LP_Implant_NonKilling",
+    ["Noukin"] = "LP_Implant_Noukin",
+    ["Nushi"] = "LP_Implant_Nushi",
+    ["PAL_ALLAttack_down1"] = "LP_Implant_PAL_ALLAttack_down1",
+    ["PAL_ALLAttack_down2"] = "LP_Implant_PAL_ALLAttack_down2",
+    ["PAL_ALLAttack_up1"] = "LP_Implant_PAL_ALLAttack_up1",
+    ["PAL_ALLAttack_up2"] = "LP_Implant_PAL_ALLAttack_up2",
+    ["PAL_ALLAttack_up3"] = "PalPassiveSkillChange_Consumable_PAL_ALLAttack_up3",
+    ["PAL_CorporateSlave"] = "LP_Implant_PAL_CorporateSlave",
+    ["PAL_FullStomach_Down_1"] = "LP_Implant_PAL_FullStomach_Down_1",
+    ["PAL_FullStomach_Down_2"] = "LP_Implant_PAL_FullStomach_Down_2",
+    ["PAL_FullStomach_Down_3"] = "PalPassiveSkillChange_Consumable_PAL_FullStomach_Down_3",
+    ["PAL_FullStomach_Up_1"] = "LP_Implant_PAL_FullStomach_Up_1",
+    ["PAL_FullStomach_Up_2"] = "LP_Implant_PAL_FullStomach_Up_2",
+    ["PAL_Sanity_Down_1"] = "LP_Implant_PAL_Sanity_Down_1",
+    ["PAL_Sanity_Down_2"] = "LP_Implant_PAL_Sanity_Down_2",
+    ["PAL_Sanity_Down_3"] = "PalPassiveSkillChange_Consumable_PAL_Sanity_Down_3",
+    ["PAL_Sanity_Up_1"] = "LP_Implant_PAL_Sanity_Up_1",
+    ["PAL_Sanity_Up_2"] = "LP_Implant_PAL_Sanity_Up_2",
+    ["PAL_conceited"] = "LP_Implant_PAL_conceited",
+    ["PAL_masochist"] = "LP_Implant_PAL_masochist",
+    ["PAL_oraora"] = "LP_Implant_PAL_oraora",
+    ["PAL_rude"] = "LP_Implant_PAL_rude",
+    ["PAL_sadist"] = "LP_Implant_PAL_sadist",
+    ["PlayerSP_DecreaseRate_Passive"] = "LP_Implant_PlayerSP_DecreaseRate_Passive",
+    ["Rare"] = "LP_Implant_Rare",
+    ["ReloadSpeedUp_Passive"] = "LP_Implant_ReloadSpeedUp_Passive",
+    ["RideJumpCount_Increase1"] = "LP_Implant_RideJumpCount_Increase1",
+    ["RideJumpCount_Increase2"] = "PalPassiveSkillChange_Consumable_RideJumpCount_Increase2",
+    ["SalePrice_Down_1"] = "LP_Implant_SalePrice_Down_1",
+    ["SalePrice_Up_1"] = "LP_Implant_SalePrice_Up_1",
+    ["SalePrice_Up_2"] = "LP_Implant_SalePrice_Up_2",
+    ["Salvation"] = "LP_Implant_Salvation",
+    ["SelfDeathAddItemDrop_up_2"] = "LP_Implant_SelfDeathAddItemDrop_up_2",
+    ["SelfDeathAddItemDrop_up_3"] = "LP_Implant_SelfDeathAddItemDrop_up_3",
+    ["Stamina_Down_1"] = "LP_Implant_Stamina_Down_1",
+    ["Stamina_Up_1"] = "LP_Implant_Stamina_Up_1",
+    ["Stamina_Up_2"] = "LP_Implant_Stamina_Up_2",
+    ["Stamina_Up_3"] = "PalPassiveSkillChange_Consumable_Stamina_Up_3",
+    ["SwimSpeed_up_1"] = "LP_Implant_SwimSpeed_up_1",
+    ["SwimSpeed_up_2"] = "LP_Implant_SwimSpeed_up_2",
+    ["SwimSpeed_up_3"] = "PalPassiveSkillChange_Consumable_SwimSpeed_up_3",
+    ["Test_PalEgg_HatchingSpeed_Up"] = "LP_Implant_Test_PalEgg_HatchingSpeed_Up",
+    ["TrainerATK_UP_1"] = "LP_Implant_TrainerATK_UP_1",
+    ["TrainerDEF_UP_1"] = "LP_Implant_TrainerDEF_UP_1",
+    ["TrainerLogging_up1"] = "LP_Implant_TrainerLogging_up1",
+    ["TrainerMining_up1"] = "LP_Implant_TrainerMining_up1",
+    ["TrainerWorkSpeed_UP_1"] = "LP_Implant_TrainerWorkSpeed_UP_1",
+    ["Vampire"] = "PalPassiveSkillChange_Consumable_Vampire",
+    ["Witch"] = "LP_Implant_Witch",
+    ["WorkSuitabilityAddRank_MonsterFarm_1"] = "LP_Implant_WorkSuitabilityAddRank_MonsterFarm_1",
+    ["WorkSuitabilityAddRank_MonsterFarm_2"] = "LP_Implant_WorkSuitabilityAddRank_MonsterFarm_2",
+    ["WorldTree_ATK"] = "PalPassiveSkillChange_Consumable_WorldTree_ATK",
+    ["WorldTree_ATK_DEF"] = "PalPassiveSkillChange_Consumable_WorldTree_ATK_DEF",
+    ["WorldTree_CraftSpeed"] = "PalPassiveSkillChange_Consumable_WorldTree_CraftSpeed",
+    ["WorldTree_DEF"] = "PalPassiveSkillChange_Consumable_WorldTree_DEF",
+    ["WorldTree_FullStomach"] = "PalPassiveSkillChange_Consumable_WorldTree_FullStomach",
+    ["WorldTree_MoveSpeed"] = "PalPassiveSkillChange_Consumable_WorldTree_MoveSpeed",
+    ["WorldTree_Sanity"] = "PalPassiveSkillChange_Consumable_WorldTree_Sanity",
+}
+return items

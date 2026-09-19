@@ -1,0 +1,309 @@
+﻿{
+  "DT_OperatingTablePassiveSkillDataTable": {
+    "Alien": {
+      "PassiveSkill": "Alien",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Alien"
+    },
+    "CoolTimeReduction_Down_1": {
+      "PassiveSkill": "CoolTimeReduction_Down_1",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_CoolTimeReduction_Down_1"
+    },
+    "CraftSpeed_down1": {
+      "PassiveSkill": "CraftSpeed_down1",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_CraftSpeed_down1"
+    },
+    "CraftSpeed_down2": {
+      "PassiveSkill": "CraftSpeed_down2",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_CraftSpeed_down2"
+    },
+    "Deffence_down1": {
+      "PassiveSkill": "Deffence_down1",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Deffence_down1"
+    },
+    "Deffence_down2": {
+      "PassiveSkill": "Deffence_down2",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Deffence_down2"
+    },
+    "Deffence_up2_2": {
+      "PassiveSkill": "Deffence_up2_2",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Deffence_up2_2"
+    },
+    "ElementBoost_Aqua_1_PAL": {
+      "PassiveSkill": "ElementBoost_Aqua_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Aqua_1_PAL"
+    },
+    "ElementBoost_Aqua_2_PAL": {
+      "PassiveSkill": "ElementBoost_Aqua_2_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Aqua_2_PAL"
+    },
+    "ElementBoost_Dark_1_PAL": {
+      "PassiveSkill": "ElementBoost_Dark_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Dark_1_PAL"
+    },
+    "ElementBoost_Dark_2_PAL": {
+      "PassiveSkill": "ElementBoost_Dark_2_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Dark_2_PAL"
+    },
+    "ElementBoost_Dragon_1_PAL": {
+      "PassiveSkill": "ElementBoost_Dragon_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Dragon_1_PAL"
+    },
+    "ElementBoost_Dragon_2_PAL": {
+      "PassiveSkill": "ElementBoost_Dragon_2_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Dragon_2_PAL"
+    },
+    "ElementBoost_Earth_1_PAL": {
+      "PassiveSkill": "ElementBoost_Earth_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Earth_1_PAL"
+    },
+    "ElementBoost_Earth_2_PAL": {
+      "PassiveSkill": "ElementBoost_Earth_2_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Earth_2_PAL"
+    },
+    "ElementBoost_Fire_1_PAL": {
+      "PassiveSkill": "ElementBoost_Fire_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Fire_1_PAL"
+    },
+    "ElementBoost_Fire_2_PAL": {
+      "PassiveSkill": "ElementBoost_Fire_2_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Fire_2_PAL"
+    },
+    "ElementBoost_Ice_1_PAL": {
+      "PassiveSkill": "ElementBoost_Ice_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Ice_1_PAL"
+    },
+    "ElementBoost_Ice_2_PAL": {
+      "PassiveSkill": "ElementBoost_Ice_2_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Ice_2_PAL"
+    },
+    "ElementBoost_Leaf_1_PAL": {
+      "PassiveSkill": "ElementBoost_Leaf_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Leaf_1_PAL"
+    },
+    "ElementBoost_Leaf_2_PAL": {
+      "PassiveSkill": "ElementBoost_Leaf_2_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Leaf_2_PAL"
+    },
+    "ElementBoost_Normal_1_PAL": {
+      "PassiveSkill": "ElementBoost_Normal_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Normal_1_PAL"
+    },
+    "ElementBoost_Normal_2_PAL": {
+      "PassiveSkill": "ElementBoost_Normal_2_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Normal_2_PAL"
+    },
+    "ElementBoost_Thunder_1_PAL": {
+      "PassiveSkill": "ElementBoost_Thunder_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Thunder_1_PAL"
+    },
+    "ElementBoost_Thunder_2_PAL": {
+      "PassiveSkill": "ElementBoost_Thunder_2_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementBoost_Thunder_2_PAL"
+    },
+    "ElementResist_Aqua_1_PAL": {
+      "PassiveSkill": "ElementResist_Aqua_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementResist_Aqua_1_PAL"
+    },
+    "ElementResist_Dark_1_PAL": {
+      "PassiveSkill": "ElementResist_Dark_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementResist_Dark_1_PAL"
+    },
+    "ElementResist_Dragon_1_PAL": {
+      "PassiveSkill": "ElementResist_Dragon_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementResist_Dragon_1_PAL"
+    },
+    "ElementResist_Earth_1_PAL": {
+      "PassiveSkill": "ElementResist_Earth_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementResist_Earth_1_PAL"
+    },
+    "ElementResist_Fire_1_PAL": {
+      "PassiveSkill": "ElementResist_Fire_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementResist_Fire_1_PAL"
+    },
+    "ElementResist_Ice_1_PAL": {
+      "PassiveSkill": "ElementResist_Ice_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementResist_Ice_1_PAL"
+    },
+    "ElementResist_Leaf_1_PAL": {
+      "PassiveSkill": "ElementResist_Leaf_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementResist_Leaf_1_PAL"
+    },
+    "ElementResist_Normal_1_PAL": {
+      "PassiveSkill": "ElementResist_Normal_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementResist_Normal_1_PAL"
+    },
+    "ElementResist_Thunder_1_PAL": {
+      "PassiveSkill": "ElementResist_Thunder_1_PAL",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_ElementResist_Thunder_1_PAL"
+    },
+    "EternalFlame": {
+      "PassiveSkill": "EternalFlame",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_EternalFlame"
+    },
+    "Invader": {
+      "PassiveSkill": "Invader",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Invader"
+    },
+    "Legend": {
+      "PassiveSkill": "Legend",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Legend"
+    },
+    "MiniNushi": {
+      "PassiveSkill": "MiniNushi",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_MiniNushi"
+    },
+    "NightOwl": {
+      "PassiveSkill": "NightOwl",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_NightOwl"
+    },
+    "Nushi": {
+      "PassiveSkill": "Nushi",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Nushi"
+    },
+    "PAL_ALLAttack_down1": {
+      "PassiveSkill": "PAL_ALLAttack_down1",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_ALLAttack_down1"
+    },
+    "PAL_ALLAttack_down2": {
+      "PassiveSkill": "PAL_ALLAttack_down2",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_ALLAttack_down2"
+    },
+    "PAL_conceited": {
+      "PassiveSkill": "PAL_conceited",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_conceited"
+    },
+    "PAL_FullStomach_Up_1": {
+      "PassiveSkill": "PAL_FullStomach_Up_1",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_FullStomach_Up_1"
+    },
+    "PAL_FullStomach_Up_2": {
+      "PassiveSkill": "PAL_FullStomach_Up_2",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_FullStomach_Up_2"
+    },
+    "PAL_masochist": {
+      "PassiveSkill": "PAL_masochist",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_masochist"
+    },
+    "PAL_oraora": {
+      "PassiveSkill": "PAL_oraora",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_oraora"
+    },
+    "PAL_rude": {
+      "PassiveSkill": "PAL_rude",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_rude"
+    },
+    "PAL_sadist": {
+      "PassiveSkill": "PAL_sadist",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_sadist"
+    },
+    "PAL_Sanity_Up_1": {
+      "PassiveSkill": "PAL_Sanity_Up_1",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_Sanity_Up_1"
+    },
+    "PAL_Sanity_Up_2": {
+      "PassiveSkill": "PAL_Sanity_Up_2",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_PAL_Sanity_Up_2"
+    },
+    "Rare": {
+      "PassiveSkill": "Rare",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Rare"
+    },
+    "RideJumpCount_Increase1": {
+      "PassiveSkill": "RideJumpCount_Increase1",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_RideJumpCount_Increase1"
+    },
+    "SalePrice_Down_1": {
+      "PassiveSkill": "SalePrice_Down_1",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_SalePrice_Down_1"
+    },
+    "Salvation": {
+      "PassiveSkill": "Salvation",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Salvation"
+    },
+    "SelfDeathAddItemDrop_up_2": {
+      "PassiveSkill": "SelfDeathAddItemDrop_up_2",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_SelfDeathAddItemDrop_up_2"
+    },
+    "SelfDeathAddItemDrop_up_3": {
+      "PassiveSkill": "SelfDeathAddItemDrop_up_3",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_SelfDeathAddItemDrop_up_3"
+    },
+    "Stamina_Down_1": {
+      "PassiveSkill": "Stamina_Down_1",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Stamina_Down_1"
+    },
+    "Witch": {
+      "PassiveSkill": "Witch",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_Witch"
+    },
+    "WorkSuitabilityAddRank_MonsterFarm_1": {
+      "PassiveSkill": "WorkSuitabilityAddRank_MonsterFarm_1",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_WorkSuitabilityAddRank_MonsterFarm_1"
+    },
+    "WorkSuitabilityAddRank_MonsterFarm_2": {
+      "PassiveSkill": "WorkSuitabilityAddRank_MonsterFarm_2",
+      "Price": 1000,
+      "RequireItemId": "LP_Implant_WorkSuitabilityAddRank_MonsterFarm_2"
+    }
+  }
+}

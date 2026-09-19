@@ -1,0 +1,34 @@
+# Runtime artifacts the mod writes at play time. Game output, not source.
+#
+# The recovery journal lives OUTSIDE the mod folder, at the UE4SS root, so the
+# official loader cannot sweep it when it reinstalls the mod on a version
+# change. Listed here in case anyone runs the game from a checkout.
+LootablePassives_journal.tsv
+
+# Ensure we keep the thumbnail image
+!thumbnail.png
+
+# tools/luacheck.js needs luaparse. Installed on demand, never vendored:
+#   npm install --no-save luaparse
+node_modules/
+package-lock.json
+
+# Local Claude Code config: absolute machine paths, not part of the mod.
+.claude/
+
+# Editor / OS noise
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*~
+*.bak
+*.bak-*
+
+# Steam publish bookkeeping. Written by PalworldModUploader and holds the
+# PublishedFileId; it should not be committed before a first publish exists.
+.workshop.json
+
+# Python bytecode from tools/
+__pycache__/
+*.pyc

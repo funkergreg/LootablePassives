@@ -1,0 +1,16 @@
+# Normalise line endings so a Windows checkout does not churn the whole tree.
+* text=auto eol=lf
+
+# Lua and JSON are read by UE4SS and PalSchema, both of which accept LF.
+*.lua   text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+
+# PowerShell tooling is Windows-only; keep CRLF so it reads naturally there.
+*.ps1   text eol=crlf
+
+# Tab-separated data: never let anything reformat these.
+*.tsv   text eol=lf
+
+*.png   binary
+*.jpg   binary

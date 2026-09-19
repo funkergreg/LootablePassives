@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/sumneko/vscode-lua/master/setting/schema.json",
+  "runtime.version": "Lua 5.4",
+  "workspace.library": [],
+  "workspace.checkThirdParty": false,
+  "diagnostics.globals": [
+    "RegisterHook",
+    "RegisterLoadMapPostHook",
+    "UnregisterHook",
+    "NotifyOnNewObject",
+    "ExecuteInGameThread",
+    "ExecuteWithDelay",
+    "ExecuteAsync",
+    "LoopAsync",
+    "FindAllOf",
+    "FindFirstOf",
+    "StaticFindObject",
+    "StaticConstructObject",
+    "CreateInvalidObject",
+    "FName",
+    "UEHelpers",
+    "UnrealVersion",
+    "RegisterConsoleCommandHandler",
+    "RegisterKeyBind"
+  ]
+}
