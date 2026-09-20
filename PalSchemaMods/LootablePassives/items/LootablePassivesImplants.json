@@ -9,7 +9,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95001,
+    "SortID": 95068,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_AutoHPRegeneRate_Passive": {
@@ -22,7 +22,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96001,
+    "SortID": 95021,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_CoolTimeReduction_Down_1": {
@@ -35,7 +35,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95003,
+    "SortID": 95086,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_CoolTimeReduction_Up_1": {
@@ -48,7 +48,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96002,
+    "SortID": 95034,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_CoolTimeReduction_Up_2": {
@@ -61,7 +61,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96003,
+    "SortID": 95063,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_CraftSpeed_down1": {
@@ -74,7 +74,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95005,
+    "SortID": 95082,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_CraftSpeed_down2": {
@@ -87,7 +87,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95006,
+    "SortID": 95093,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_CraftSpeed_up1": {
@@ -100,7 +100,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96004,
+    "SortID": 95073,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_CraftSpeed_up2": {
@@ -113,7 +113,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96005,
+    "SortID": 95012,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Deffence_down1": {
@@ -126,7 +126,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95009,
+    "SortID": 95085,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Deffence_down2": {
@@ -139,7 +139,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95010,
+    "SortID": 95081,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Deffence_up1": {
@@ -152,7 +152,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96006,
+    "SortID": 95059,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Deffence_up2": {
@@ -165,7 +165,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96007,
+    "SortID": 95013,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Deffence_up2_2": {
@@ -178,7 +178,7 @@
     "Rarity": 2,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95012,
+    "SortID": 95042,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Aqua_1_PAL": {
@@ -191,7 +191,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95014,
+    "SortID": 95062,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Aqua_2_PAL": {
@@ -204,7 +204,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95015,
+    "SortID": 95026,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Dark_1_PAL": {
@@ -217,7 +217,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95016,
+    "SortID": 95077,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Dark_2_PAL": {
@@ -230,7 +230,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95017,
+    "SortID": 95027,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Dragon_1_PAL": {
@@ -243,7 +243,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95018,
+    "SortID": 95046,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Dragon_2_PAL": {
@@ -256,7 +256,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95019,
+    "SortID": 95016,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Earth_1_PAL": {
@@ -269,7 +269,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95020,
+    "SortID": 95070,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Earth_2_PAL": {
@@ -282,7 +282,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95021,
+    "SortID": 95017,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Fire_1_PAL": {
@@ -295,7 +295,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95022,
+    "SortID": 95071,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Fire_2_PAL": {
@@ -308,7 +308,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95023,
+    "SortID": 95020,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Ice_1_PAL": {
@@ -321,7 +321,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95024,
+    "SortID": 95051,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Ice_2_PAL": {
@@ -334,7 +334,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95025,
+    "SortID": 95022,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Leaf_1_PAL": {
@@ -347,7 +347,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95026,
+    "SortID": 95058,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Leaf_2_PAL": {
@@ -360,7 +360,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95027,
+    "SortID": 95036,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Normal_1_PAL": {
@@ -373,7 +373,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95028,
+    "SortID": 95075,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Normal_2_PAL": {
@@ -386,7 +386,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95029,
+    "SortID": 95014,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Thunder_1_PAL": {
@@ -399,7 +399,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95030,
+    "SortID": 95049,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementBoost_Thunder_2_PAL": {
@@ -412,7 +412,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95031,
+    "SortID": 95025,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementResist_Aqua_1_PAL": {
@@ -425,7 +425,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95032,
+    "SortID": 95078,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementResist_Dark_1_PAL": {
@@ -438,7 +438,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95033,
+    "SortID": 95050,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementResist_Dragon_1_PAL": {
@@ -451,7 +451,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95034,
+    "SortID": 95054,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementResist_Earth_1_PAL": {
@@ -464,7 +464,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95035,
+    "SortID": 95055,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementResist_Fire_1_PAL": {
@@ -477,7 +477,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95036,
+    "SortID": 95076,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementResist_Ice_1_PAL": {
@@ -490,7 +490,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95037,
+    "SortID": 95060,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementResist_Leaf_1_PAL": {
@@ -503,7 +503,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95038,
+    "SortID": 95047,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementResist_Normal_1_PAL": {
@@ -516,7 +516,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95039,
+    "SortID": 95044,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ElementResist_Thunder_1_PAL": {
@@ -529,7 +529,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95040,
+    "SortID": 95065,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_EternalFlame": {
@@ -542,7 +542,7 @@
     "Rarity": 4,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95041,
+    "SortID": 95001,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Invader": {
@@ -555,7 +555,7 @@
     "Rarity": 4,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95042,
+    "SortID": 95002,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_MiniNushi": {
@@ -568,7 +568,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95043,
+    "SortID": 95040,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_MoveSpeed_up_1": {
@@ -581,7 +581,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96008,
+    "SortID": 95067,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_MoveSpeed_up_2": {
@@ -594,7 +594,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96009,
+    "SortID": 95033,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_NightOwl": {
@@ -607,7 +607,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95050,
+    "SortID": 95089,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Nocturnal": {
@@ -620,7 +620,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96010,
+    "SortID": 95064,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_NonKilling": {
@@ -633,7 +633,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96011,
+    "SortID": 95088,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Noukin": {
@@ -646,7 +646,7 @@
     "Rarity": 2,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96012,
+    "SortID": 95043,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Nushi": {
@@ -659,7 +659,7 @@
     "Rarity": 4,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95052,
+    "SortID": 95007,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_ALLAttack_down1": {
@@ -672,7 +672,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95053,
+    "SortID": 95083,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_ALLAttack_down2": {
@@ -685,7 +685,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95054,
+    "SortID": 95090,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_ALLAttack_up1": {
@@ -698,7 +698,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96013,
+    "SortID": 95048,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_ALLAttack_up2": {
@@ -711,7 +711,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96014,
+    "SortID": 95019,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_CorporateSlave": {
@@ -724,7 +724,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96015,
+    "SortID": 95079,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_FullStomach_Down_1": {
@@ -737,7 +737,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96016,
+    "SortID": 95053,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_FullStomach_Down_2": {
@@ -750,7 +750,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96017,
+    "SortID": 95015,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_FullStomach_Up_1": {
@@ -763,7 +763,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95057,
+    "SortID": 95087,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_FullStomach_Up_2": {
@@ -776,7 +776,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95058,
+    "SortID": 95080,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_Sanity_Down_1": {
@@ -789,7 +789,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96018,
+    "SortID": 95069,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_Sanity_Down_2": {
@@ -802,7 +802,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96019,
+    "SortID": 95041,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_Sanity_Up_1": {
@@ -815,7 +815,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95060,
+    "SortID": 95094,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_Sanity_Up_2": {
@@ -828,7 +828,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95061,
+    "SortID": 95084,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_conceited": {
@@ -841,7 +841,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95062,
+    "SortID": 95052,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_masochist": {
@@ -854,7 +854,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95063,
+    "SortID": 95066,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_oraora": {
@@ -867,7 +867,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95064,
+    "SortID": 95045,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_rude": {
@@ -880,7 +880,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95065,
+    "SortID": 95061,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PAL_sadist": {
@@ -893,7 +893,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95066,
+    "SortID": 95072,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_PlayerSP_DecreaseRate_Passive": {
@@ -906,7 +906,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96020,
+    "SortID": 95039,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_ReloadSpeedUp_Passive": {
@@ -919,7 +919,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96021,
+    "SortID": 95032,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_RideJumpCount_Increase1": {
@@ -932,7 +932,7 @@
     "Rarity": 4,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95069,
+    "SortID": 95005,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_SalePrice_Down_1": {
@@ -945,7 +945,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95071,
+    "SortID": 95091,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_SalePrice_Up_1": {
@@ -958,7 +958,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96022,
+    "SortID": 95030,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_SalePrice_Up_2": {
@@ -971,7 +971,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96023,
+    "SortID": 95056,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Salvation": {
@@ -984,7 +984,7 @@
     "Rarity": 4,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95073,
+    "SortID": 95009,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_SelfDeathAddItemDrop_up_2": {
@@ -997,7 +997,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95074,
+    "SortID": 95035,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_SelfDeathAddItemDrop_up_3": {
@@ -1010,7 +1010,7 @@
     "Rarity": 4,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95075,
+    "SortID": 95003,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Stamina_Down_1": {
@@ -1023,7 +1023,7 @@
     "Rarity": 0,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95076,
+    "SortID": 95092,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Stamina_Up_1": {
@@ -1036,7 +1036,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96024,
+    "SortID": 95023,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Stamina_Up_2": {
@@ -1049,7 +1049,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96025,
+    "SortID": 95057,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_SwimSpeed_up_1": {
@@ -1062,7 +1062,7 @@
     "Rarity": 1,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96026,
+    "SortID": 95074,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_SwimSpeed_up_2": {
@@ -1075,7 +1075,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96027,
+    "SortID": 95011,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Test_PalEgg_HatchingSpeed_Up": {
@@ -1088,7 +1088,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96028,
+    "SortID": 95031,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_TrainerATK_UP_1": {
@@ -1101,7 +1101,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96029,
+    "SortID": 95038,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_TrainerDEF_UP_1": {
@@ -1114,7 +1114,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96030,
+    "SortID": 95037,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_TrainerLogging_up1": {
@@ -1127,7 +1127,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96031,
+    "SortID": 95024,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_TrainerMining_up1": {
@@ -1140,7 +1140,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96032,
+    "SortID": 95028,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_TrainerWorkSpeed_UP_1": {
@@ -1153,7 +1153,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 96033,
+    "SortID": 95029,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Witch": {
@@ -1166,7 +1166,7 @@
     "Rarity": 4,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95085,
+    "SortID": 95010,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_WorkSuitabilityAddRank_MonsterFarm_1": {
@@ -1179,7 +1179,7 @@
     "Rarity": 3,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95086,
+    "SortID": 95018,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_WorkSuitabilityAddRank_MonsterFarm_2": {
@@ -1192,7 +1192,7 @@
     "Rarity": 4,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95087,
+    "SortID": 95008,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Rare": {
@@ -1205,7 +1205,7 @@
     "Rarity": 4,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95107,
+    "SortID": 95006,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   },
   "LP_Implant_Legend": {
@@ -1218,7 +1218,7 @@
     "Rarity": 4,
     "Price": 10,
     "MaxStackCount": 9999,
-    "SortID": 95108,
+    "SortID": 95004,
     "OverrideDescMsgID": "ITEM_DESC_PalPassiveSkillChange"
   }
 }

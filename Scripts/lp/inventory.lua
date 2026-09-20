@@ -13,6 +13,7 @@ local log = util.log
 local unwrap = util.unwrap
 local count_id = passives.count_id
 local get_skill_ids = passives.get_skill_ids
+local guid_key = util.guid_key
 
 -- EPalItemOperationResult::Success
 local ITEM_RESULT_SUCCESS = 0
@@ -90,22 +91,38 @@ local function find_inventory(request_player_id)
     return nil
 end
 
--- Who may receive a granted module, best candidate first.
+-- Who may receive a granted module, in fallback order.
 --
 -- find_inventory(nil) resolves a player only when EXACTLY ONE exists, which is
 -- a single-player rule. A base-camp machine has no requesting player, so this
 -- returns an ordered list instead of a lookup.
 --
--- THE ORDER IS A SAFETY RULE, NOT A CONVENIENCE. The locally controlled player
--- comes first, because on a listen server that is the host -- the machine
--- running this mod, and therefore the only player guaranteed to have the item
--- definitions that make an LP_Implant render. A guest without the mod shown one
--- of our items sees an unresolved placeholder, which is jarring enough to pull
--- them out of the world, and consoles cannot install the mod at all.
+-- Each entry is { data = <inventory>, uid = <PlayerUId key or nil>,
+-- local_player = <bool> }. The uid is the part that matters most: it is what
+-- lets the ledger give a Pal's modules to the player who owned that Pal, rather
+-- than to whoever this list happens to rank first.
 --
--- We cannot ask a peer whether it has the mod: UE4SS Lua has no custom network
--- channel and nothing exposes a peer's loaded DataTables. Preferring the local
--- player is the closest thing to a guarantee available.
+-- THIS ORDER IS NOW THE FALLBACK, NOT THE RULE. lp/ledger.lua puts a row's
+-- recorded owner ahead of everything here and only then works down this list,
+-- so what is left for the ordering below is the case where the owner is not
+-- online at all.
+--
+-- It still prefers the locally controlled player there, and for the original
+-- reason: on a listen server that is the host, the machine running this mod, and
+-- therefore the only player guaranteed to have the item definitions that make an
+-- LP_Implant render. A guest without the mod sees an unresolved placeholder.
+--
+-- What changed is which of two wrong answers is preferred. Ranking the host
+-- first unconditionally meant a guest could feed the conveyor and the host would
+-- collect the modules -- silently, every time, with the guest's Pal gone. That
+-- is worse than a placeholder icon, and the placeholder case is already known to
+-- be survivable: the multiplayer test showed unresolvable items rendering as
+-- blank chest entries and crashing nothing.
+--
+-- We still cannot ask a peer whether it has the mod. UE4SS Lua has no custom
+-- network channel and nothing exposes a peer's loaded DataTables, so "deliver
+-- only to a player who has the mod" is not implementable as stated. Owner-first
+-- is the closest available approximation of the intent.
 --
 -- On a DEDICATED server there is no locally controlled player, so this falls
 -- through to nearest-first. That is correct there: every client of a modded
@@ -119,13 +136,16 @@ local function delivery_candidates(near_location)
     local found = {}
     for _, character in ipairs(characters or {}) do
         if is_valid(character) then
-            local data = nil
+            local data, uid = nil, nil
             pcall(function()
                 local controller = unwrap(character:GetPalPlayerController())
                 if is_valid(controller) then
                     local state = unwrap(controller.PlayerState)
                     if is_valid(state) then
                         data = unwrap(state:GetInventoryData())
+                        -- A property read on APalPlayerState (Pal.hpp: FGuid
+                        -- PlayerUId at 0x0598), not a call.
+                        uid = guid_key(state.PlayerUId)
                     end
                 end
             end)
@@ -142,21 +162,22 @@ local function delivery_candidates(near_location)
                         distance = dx * dx + dy * dy + dz * dz
                     end)
                 end
-                found[#found + 1] = { data = data, distance = distance, local_player = local_player }
+                found[#found + 1] = {
+                    data = data,
+                    uid = uid,
+                    distance = distance,
+                    local_player = local_player,
+                }
             end
         end
     end
     table.sort(found, function(a, b)
         if a.local_player ~= b.local_player then
-            return a.local_player -- the local player outranks distance entirely
+            return a.local_player -- the local player outranks distance
         end
         return a.distance < b.distance
     end)
-    local ordered = {}
-    for index, entry in ipairs(found) do
-        ordered[index] = entry.data
-    end
-    return ordered
+    return found
 end
 
 --------------------------------------------------------------------------------

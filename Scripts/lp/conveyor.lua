@@ -20,6 +20,8 @@
 --   FPalMapObjectConvertCharacterToItemProcessItem
 --       { FPalInstanceID IndividualId; float ConvertProgressRate; }
 --   FPalInstanceID { FGuid PlayerUId; FGuid InstanceId; FString DebugName; }
+--   FPalIndividualCharacterSaveParameter
+--       { FGuid OwnerPlayerUId; ... }                             <- read, 0x00C0
 --
 -- Every engine call below takes no arguments except Get(Index), and none has an
 -- out-parameter. Deliberate: a wrong-arity native call is an access violation
@@ -42,6 +44,17 @@
 -- per-call cost is one small array read; the expensive container walk is
 -- already guarded by tracked[key] == nil.
 --
+-- THE MODULES GO TO THE PAL'S OWNER. Not to the host, and not to whoever is
+-- standing nearest. OwnerPlayerUId is snapshotted with the passives, travels
+-- with the debt, and lp/ledger.lua puts that player first when it delivers.
+--
+-- It is the OWNER, which is not quite the same question as "who fed the
+-- machine". Nothing records that: unlike UPalMapObjectConvertItemModel, which
+-- carries a CurrentRecipeRequestPlayerId, the disassembly model has no
+-- requesting player at all. For a Pal taken out of your own box and queued, the
+-- two are the same person, and the owner is the only one of the two the engine
+-- keeps.
+--
 -- CONSUMED VS WITHDRAWN IS THE PROGRESS RATE, and nothing else. It runs past
 -- 1.0 exactly when a conversion completes -- measured at 1.000, 1.002, 1.003,
 -- 1.004, 1.014 -- while a Pal pulled out by hand sat at 0.217, 0.238, 0.293,
@@ -57,6 +70,7 @@ local ledger = require("lp.ledger")
 local hooks = require("lp.hooks")
 
 local array_count = util.array_count
+local guid_key = util.guid_key
 local is_valid = util.is_valid
 local log = util.log
 local unwrap = util.unwrap
@@ -76,25 +90,11 @@ local COMPLETE_RATE = 0.999
 -- Identity
 --------------------------------------------------------------------------------
 
--- A queued Pal is keyed by the four int32s of its InstanceId GUID. These are
--- PROPERTY reads on plain structs, not calls, so there is no arity to get wrong.
-local function guid_key(guid)
-    guid = unwrap(guid)
-    if guid == nil then
-        return nil
-    end
-    local key
-    pcall(function()
-        key = string.format("%d-%d-%d-%d",
-            unwrap(guid.A) or 0, unwrap(guid.B) or 0,
-            unwrap(guid.C) or 0, unwrap(guid.D) or 0)
-    end)
-    if key == "0-0-0-0" then
-        return nil -- the null GUID: an empty entry, not a Pal
-    end
-    return key
-end
-
+-- A queued Pal is keyed by the four int32s of its InstanceId GUID, and its
+-- owner by the same treatment of OwnerPlayerUId. These are PROPERTY reads on
+-- plain structs, not calls, so there is no arity to get wrong. guid_key itself
+-- lives in lp/util.lua, because the player-state end of the owner comparison
+-- needs it too.
 local function instance_key(instance_id)
     instance_id = unwrap(instance_id)
     if instance_id == nil then
@@ -103,6 +103,25 @@ local function instance_key(instance_id)
     local guid
     pcall(function() guid = instance_id.InstanceId end)
     return guid_key(guid)
+end
+
+-- Who owns this Pal, as a comparable UId key, or nil if the engine recorded
+-- none -- a wild Pal driven straight into the machine, for instance.
+--
+-- OwnerPlayerUId is on the individual's SAVE parameter, not on the parameter
+-- object itself, so this is two property reads down rather than one. Reads only:
+-- GetSaveParameter() returns the struct BY VALUE and is avoided for that reason.
+local function owner_key(parameter)
+    local save
+    if not pcall(function() save = unwrap(parameter.SaveParameter) end) then
+        return nil
+    end
+    if save == nil then
+        return nil
+    end
+    local uid
+    pcall(function() uid = save.OwnerPlayerUId end)
+    return guid_key(uid)
 end
 
 --------------------------------------------------------------------------------
@@ -129,7 +148,8 @@ local function read_process_rates(model)
     return rates
 end
 
--- instance key -> the extractable passives that Pal is carrying.
+-- instance key -> { passives = { id, ... }, owner = <UId key or nil> }.
+--
 --
 -- Read from the conveyor's OWN character container via the model, not from the
 -- generic slots observer: that observer fires for every container in the world
@@ -171,7 +191,10 @@ local function read_queued_passives(model)
                             extractable[#extractable + 1] = passive_id
                         end
                     end
-                    found[key] = extractable
+                    -- The owner is read HERE, in the same snapshot as the
+                    -- passives, and for the same reason: this is the last moment
+                    -- the Pal exists to be asked.
+                    found[key] = { passives = extractable, owner = owner_key(parameter) }
                 end
             end
         end
@@ -183,7 +206,8 @@ end
 -- Tracking
 --------------------------------------------------------------------------------
 
--- instance key -> { passives = { id, ... }, rate = number }
+-- instance key -> { passives = { id, ... }, owner = <UId key or nil>,
+--                   rate = number }
 --
 -- Keyed globally rather than per model on purpose: the key is the Pal's own
 -- InstanceId, unique across the world, so two conveyors running at once cannot
@@ -255,7 +279,7 @@ local function on_consumed(entry, actor)
     for _, passive_id in ipairs(entry.passives) do
         local item_id = PASSIVE_ITEMS[passive_id]
         if item_id ~= nil then
-            ledger.owe(item_id, 1)
+            ledger.owe(entry.owner, item_id, 1)
             names[#names + 1] = passive_id
         end
     end
@@ -265,9 +289,17 @@ local function on_consumed(entry, actor)
 
     -- One line, cause before effect. The spill notice used to print from
     -- inside flush, ahead of the summary it explains, which read backwards.
-    local delivered, owed, spilled = ledger.flush(actor_location(actor))
+    local delivered, owed, spilled, held = ledger.flush(actor_location(actor))
     local summary = string.format("Disassembly yielded %d module(s): %s.",
         #names, table.concat(names, ", "))
+    if held > 0 then
+        -- Worth a line every time. In single-player it should never happen at
+        -- all, so if it does, the owner match is broken rather than merely
+        -- unlucky, and this is the only place that would say so.
+        summary = summary .. string.format(
+            " %d held for the player who owned the Pal, who is not online; they are delivered "
+            .. "when that player next plays.", held)
+    end
     if spilled > 0 then
         summary = summary .. string.format(
             " %d would not fit and %s dropped on the ground.",
@@ -295,9 +327,13 @@ local function pass(model)
     for key, rate in pairs(rates) do
         if tracked[key] == nil then
             queued = queued or read_queued_passives(model)
-            local extractable = queued[key]
-            if extractable ~= nil then
-                tracked[key] = { passives = extractable, rate = rate }
+            local snapshot = queued[key]
+            if snapshot ~= nil then
+                tracked[key] = {
+                    passives = snapshot.passives,
+                    owner = snapshot.owner,
+                    rate = rate,
+                }
             end
         else
             tracked[key].rate = rate

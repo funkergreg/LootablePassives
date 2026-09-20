@@ -16,6 +16,7 @@ local passives = require("lp.passives")
 -- were in main.lua: this split is code motion, not a rewrite.
 local _call_is_visible = util._call_is_visible
 local is_valid = util.is_valid
+local log = util.log
 local name_to_string = util.name_to_string
 local unwrap = util.unwrap
 local IMPLANT_TARGET = ids.IMPLANT_TARGET
@@ -69,23 +70,38 @@ end
 -- distinctly non-obvious rule on the next line: a FAILED IsVisible call counts
 -- as visible. Getting that wrong in one copy and not the other is a silent
 -- divergence, so it is stated once.
+--
+-- TWO PASSES, and the order is the point. A page that positively reports itself
+-- visible wins over one whose IsVisible call merely failed. Both are accepted --
+-- the rule above still holds -- but FindAllOf order decided which one was
+-- returned before, so a single stale page early in the list took every gate pass
+-- for the rest of the session and the real panel was never gated at all. That is
+-- one of the ways this mod can appear to switch itself off mid-session.
 local function find_visible_tab_page(require_marker)
-    local succeeded, widgets = pcall(function()
-        return FindAllOf(SURGERY_TAB_CLASS)
-    end)
+    -- Argument-form pcall against the global: no closure per call, and this runs
+    -- at about 1.4 passes a second. See the note at the top of lp/util.lua.
+    local succeeded, widgets = pcall(FindAllOf, SURGERY_TAB_CLASS)
     if not succeeded or widgets == nil then
         return nil, nil
     end
-    for _, widget in ipairs(widgets) do
-        if is_valid(widget) then
-            local visible_ok, visible = pcall(_call_is_visible, widget)
-            if not visible_ok or visible then
-                if not require_marker then
-                    return widget, nil
+    for pass = 1, 2 do
+        for _, widget in ipairs(widgets) do
+            if is_valid(widget) then
+                local visible_ok, visible = pcall(_call_is_visible, widget)
+                local accept
+                if pass == 1 then
+                    accept = visible_ok and visible == true
+                else
+                    accept = not visible_ok
                 end
-                local pending = name_to_string(widget.CurrentPassiveId)
-                if pending ~= nil and EXTRACTION_MODES[pending] ~= nil then
-                    return widget, pending
+                if accept then
+                    if not require_marker then
+                        return widget, nil
+                    end
+                    local pending = name_to_string(widget.CurrentPassiveId)
+                    if pending ~= nil and EXTRACTION_MODES[pending] ~= nil then
+                        return widget, pending
+                    end
                 end
             end
         end
@@ -244,26 +260,95 @@ end
 -- Text_SkillName was stale, so the card data agreed with reality the whole time
 -- and only the paint was wrong. Never diagnose staleness from the bound value.
 
+-- Positive visibility, for the WRITE path.
+--
+-- find_visible_tab_page counts a FAILED IsVisible as visible, and that is the
+-- right bias for the gate: the worst a wrong answer does there is grey out a
+-- button on a panel nobody is looking at. This path WRITES to the widgets, so
+-- its bias has to be the other way round -- act only on a widget that
+-- positively reports itself visible. Two paths, two biases, deliberately.
+local function is_open(widget)
+    if not is_valid(widget) then
+        return false
+    end
+    local visible_ok, visible = pcall(_call_is_visible, widget)
+    return visible_ok and visible == true
+end
+
+local function open_instances(class_name)
+    local found = {}
+    local succeeded, widgets = pcall(FindAllOf, class_name)
+    if not succeeded or widgets == nil then
+        return found
+    end
+    for _, widget in ipairs(widgets) do
+        if is_open(widget) then
+            found[#found + 1] = widget
+        end
+    end
+    return found
+end
+
+-- Has the player actually got a Pal selected?
+--
+-- SetupPassiveChangeItem builds the operation list FROM the screen's selected
+-- Pal, so with no Pal there is nothing to build it from. Checked because the
+-- rebuild is destructive and its result is sticky: the screen widget is reused
+-- across openings, so a list rebuilt from nothing stays empty on the next open
+-- as well, and no amount of closing and reopening the panel gets it back.
+local function has_selected_pal(screen)
+    local handle
+    pcall(function() handle = unwrap(screen.CurrentHandle) end)
+    return is_valid(handle)
+end
+
+-- Said once per session, not once per refresh: the ladder in finish() fires two
+-- or three passes per transaction and every one of them would repeat it.
+local closed_skip_reported = false
+
 -- rebuild_list rebuilds the operation list from scratch. That is reserved for
 -- the LAST pass of the refresh ladder: it destroys and recreates all 118 entry
 -- widgets, so doing it while the player may still be moving the cursor over one
 -- of them is asking for a destroyed-widget access.
+--
+-- NOTHING IS WRITTEN TO A PANEL THAT IS NOT OPEN. This used to walk every
+-- instance FindAllOf returned, open or not, so the whole ladder ran against a
+-- closed panel whenever the player confirmed an operation and shut the screen
+-- inside the next 1.6 seconds -- routine at the end of a session, which is
+-- where the blank panel in docs/double-trouble.png turned up. Every write here
+-- is a reset-to-empty, and the widget is reused on the next open, so a reset
+-- applied while it was closed is one the player cannot undo from the UI. A
+-- closed panel needs no repair in any case: it is rebuilt when it opens.
+--
+-- Returns true when it actually touched something.
 local function refresh_surgery_ui(reset_panel, rebuild_list)
-    -- The operation chip is reset ONLY for our own marker operations. An
-    -- implant is a vanilla insert and vanilla owns that state; see finish().
-    local pages
-    if reset_panel then
-        local pages_ok
-        pages_ok, pages = pcall(function()
-            return FindAllOf(SURGERY_TAB_CLASS)
-        end)
-        if not pages_ok then
-            pages = nil
+    local pages = open_instances(SURGERY_TAB_CLASS)
+    local screens = open_instances(SURGERY_SCREEN_CLASS)
+
+    if #pages == 0 then
+        if not closed_skip_reported then
+            closed_skip_reported = true
+            log("The Surgery panel was already closed when a refresh came due, so nothing was "
+                .. "repainted. Expected if you close the screen right after an operation; the "
+                .. "panel is rebuilt from scratch when you next open it.")
         end
+        return false
     end
 
-    for _, page in ipairs(pages or {}) do
-        if is_valid(page) then
+    -- One screen owns exactly one tab page -- WBP_OperatingTable.hpp declares a
+    -- single WBP_OperatingTable_TabPage member -- so anything else here is a
+    -- state this mod has no model for, and is the state the blank panel is
+    -- suspected of. Rare enough to stay loud.
+    if #pages > 1 or #screens > 1 then
+        log(string.format(
+            "WARNING: found %d open Surgery panel(s) and %d open screen(s); one of each is "
+            .. "expected. Refreshing all of them.", #pages, #screens))
+    end
+
+    -- The operation chip is reset ONLY for our own marker operations. An
+    -- implant is a vanilla insert and vanilla owns that state; see finish().
+    if reset_panel then
+        for _, page in ipairs(pages) do
             -- Deselect, then return the operation chip to its empty state.
             --
             -- CachedPassiveSlotIndex = -1 is what the panel treats as "nothing
@@ -293,35 +378,28 @@ local function refresh_surgery_ui(reset_panel, rebuild_list)
         end
     end
 
-    local screens_ok, screens = pcall(function()
-        return FindAllOf(SURGERY_SCREEN_CLASS)
-    end)
-    if screens_ok and screens ~= nil then
-        for _, screen in ipairs(screens) do
-            if is_valid(screen) then
-                -- The screen caches the last consume item id and feeds it back
-                -- to the panel on refresh, so clearing it on the page alone is
-                -- not enough -- the quantity comes straight back.
-                if reset_panel then
-                    pcall(function() screen.CachedConsumeItemId = FName("None") end)
-                end
-                -- Rebuild the operation list.
-                --
-                -- Entries are created with a validity flag returned by
-                -- Setup(PassiveId, IsValid&), and a module route is only valid
-                -- while the player holds a module. The list is built once when
-                -- the panel opens, which is exactly why an entry for a module
-                -- you just spent your last copy of lingers until you close the
-                -- panel (screenshot 115). SetupPassiveChangeItem takes no
-                -- arguments (WBP_OperatingTable.hpp:47).
-                if rebuild_list then
-                    pcall(function() screen:SetupPassiveChangeItem() end)
-                end
-                pcall(function() screen:RefreshItemDisplay() end)
-            end
+    for _, screen in ipairs(screens) do
+        -- The screen caches the last consume item id and feeds it back to the
+        -- panel on refresh, so clearing it on the page alone is not enough --
+        -- the quantity comes straight back.
+        if reset_panel then
+            pcall(function() screen.CachedConsumeItemId = FName("None") end)
         end
+        -- Rebuild the operation list.
+        --
+        -- Entries are created with a validity flag returned by
+        -- Setup(PassiveId, IsValid&), and a module route is only valid while
+        -- the player holds a module. The list is built once when the panel
+        -- opens, which is exactly why an entry for a module you just spent your
+        -- last copy of lingers until you close the panel (screenshot 115).
+        -- SetupPassiveChangeItem takes no arguments (WBP_OperatingTable.hpp:47).
+        if rebuild_list and has_selected_pal(screen) then
+            pcall(function() screen:SetupPassiveChangeItem() end)
+        end
+        pcall(function() screen:RefreshItemDisplay() end)
     end
 
+    return true
 end
 
 -- Set when a transaction completes and the panel has not yet been refreshed for

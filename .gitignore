@@ -4,6 +4,9 @@
 # official loader cannot sweep it when it reinstalls the mod on a version
 # change. Listed here in case anyone runs the game from a checkout.
 LootablePassives_journal.tsv
+# Same for the conveyor pending-grant ledger, which tools/ledger_test.lua also
+# writes and removes beside Scripts/ when it runs from a checkout.
+LootablePassives_pending.tsv
 
 # Ignore screenshots used in dev
 docs/*.png

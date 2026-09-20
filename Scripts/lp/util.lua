@@ -97,6 +97,35 @@ local function name_to_string(value)
     return tostring(value)
 end
 
+-- A GUID as a comparable string: its four int32s, property reads only, so
+-- there is no arity to get wrong.
+--
+-- It lives here because two GUIDs that come from opposite ends of the engine
+-- have to be compared with each other -- OwnerPlayerUId on a Pal's save
+-- parameter, and PlayerUId on APalPlayerState -- and neither caller owns the
+-- comparison.
+--
+-- The null GUID returns nil. An unowned Pal and a player state that has not
+-- resolved yet both read as all zeroes, and "unknown" must never match
+-- "unknown": that would deliver one player's modules to whoever happened to be
+-- unresolved at the time.
+local function guid_key(guid)
+    guid = unwrap(guid)
+    if guid == nil then
+        return nil
+    end
+    local key
+    pcall(function()
+        key = string.format("%d-%d-%d-%d",
+            unwrap(guid.A) or 0, unwrap(guid.B) or 0,
+            unwrap(guid.C) or 0, unwrap(guid.D) or 0)
+    end)
+    if key == "0-0-0-0" then
+        return nil
+    end
+    return key
+end
+
 local function array_count(array)
     if array == nil then
         return 0
@@ -136,6 +165,7 @@ return {
     SCRIPT_DIRECTORY = SCRIPT_DIRECTORY,
     _call_is_visible = _call_is_visible,
     array_count = array_count,
+    guid_key = guid_key,
     is_valid = is_valid,
     log = log,
     name_to_string = name_to_string,
