@@ -18,6 +18,7 @@ Vanilla has a handful of passives available as single-use disposable implant mod
 - Extracted modules show in your inventory and in the Surgery list as a purple chip with a quantity
 and the line `Disposable Implant: X`, which keeps them visually distinct from vanilla's reusable
 recipes (a green chip, no quantity, `Implant: X`). Max stack is 9,999.
+- **Prices are fixed** and are not configurable (in current design)
 
 ### Pal Disassembly Conveyor
 
@@ -25,7 +26,9 @@ Queue a Pal at the conveyor and on disassembly, alongside its normal loot, you g
 
 Pals you insert and then take back out again are not charged and yield nothing, which is deliberate rather than incidental: the mod distinguishes a consumed Pal from a withdrawn one by how far the machine actually got, not by whether the Pal is still there.
 
-## What it does not change
+- Disposable implants extracted by the disassembler conveyor go to inventory, and if that is full arrive at your feet; these do not sipt out the back of the machine.  Vanilla's loot still ejects from the machine normally.
+
+### What the mod does not change
 
 Palworld already has three ways a passive gets onto a Pal. This mod expands the third and leaves
 the other two alone apart from price. Notably, extracting a passive that came from a bounty-token
@@ -36,6 +39,8 @@ recipe gives you a single-use module, never the permanent recipe — the token e
 | Default Surgery Table options | Provided by the workstation | no | 5,000 | price only |
 | Reusable recipes, bought with bounty tokens | Key Items | no | 5,000 | price only |
 | Disposable implant modules | Inventory | **yes** | 1,000 | **expanded to all 115 passives** |
+
+- **Overwriting a passive destroys it.** This is vanilla's behaviour and the mod does not change it — an overwritten passive yields no module.
 
 ## Requirements
 
@@ -59,17 +64,9 @@ about appear as blank entries in a shared base chest.
 expected to work — the mod only creates items on the authoritative peer — but neither has been run,
 and reports are welcome.
 
-### Edge Cases and Limitations
-
-- **Conveyor modules arrive at your feet, not out the back of the machine.** They are delivered to your inventory, and when your inventory is full they drop where you are standing. Vanilla's loot still ejects from the machine normally. Matching the machine's own output position was not achievable with the interfaces the game exposes to mods through UE4SS or PalSchema (may be possible with Unreal Engine modding).
-- **A full bag does not stop extraction.** Modules that cannot fit drop on the ground, at your feet, which means they are subject to the usual world-item despawn timer or others picking these up. A module that stacks onto one you already hold still fits.
-- **Modules owed when you quit are paid on your next load.** If the game closes mid-disassembly the debt is recorded to disk and delivered when you load back in, usually before you touch anything.  A hard crash at the wrong instant can still lose an in-flight module.
-- **Overwriting a passive destroys it.** This is vanilla's behaviour and the mod does not change it — an overwritten passive yields no module.
-- **Prices are fixed** at 1,000 gold for a disposable module and 5,000 for the two vanilla routes, and are not configurable (in current design).
-
 ## Install
 
-TODO: Rewrite once Steam workshop is paimary install method; 
+TODO: Rewrite once Steam workshop is paimary install method
 
 ## Credits
 

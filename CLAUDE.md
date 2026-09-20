@@ -168,7 +168,7 @@ Hard-won, each one from a crash or a wrong conclusion in this repo. Read before 
 
 ---
 
-### Data constraints that shaped the design
+## Data constraints that shaped the design
 
 These are properties of the game's tables, not choices this mod made. Breaking one produces a dead route with no error anywhere a player would see it.
 
@@ -200,6 +200,12 @@ The important discovery is that **a full bag is not a failure case**. `AddItem_S
 
 - **Success means created.** Treating a ground-spill as a failure is what caused a real duplication bug: the debt stayed owed, was retried, and paid out extra copies.
 - Degradation is per-item, not all-or-nothing. With zero free slots a module that stacks onto one already held still fits, while a new type spills. Observed interleaved in a 54-Pal run.
+
+### Edge Cases and Limitations
+
+- Matching the machine's own output position was not achievable with the interfaces the game exposes to mods through UE4SS or PalSchema (may be possible with Unreal Engine modding).
+- **A full bag does not stop extraction.** Modules that cannot fit drop on the ground, at your feet, which means they are subject to the usual world-item despawn timer or others picking these up. A module that stacks onto one you already hold still fits.
+- **Modules owed when you quit are paid on your next load.** If the game closes mid-disassembly the debt is recorded to disk and delivered when you load back in, usually before you touch anything.  A hard crash at the wrong instant can still lose an in-flight module.
 
 ### Multiplayer
 
