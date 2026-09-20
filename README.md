@@ -18,6 +18,7 @@ Vanilla has a handful of passives available as single-use disposable implant mod
 - Extracted modules show in your inventory and in the Surgery list as a purple chip with a quantity
 and the line `Disposable Implant: X`, which keeps them visually distinct from vanilla's reusable
 recipes (a green chip, no quantity, `Implant: X`). Max stack is 9,999.
+- Modules sort as one block, highest rarity first and then by name, so the prizes sit together at the top rather than scattered through your bag. The 21 modules vanilla already defined keep vanilla's own place in the sort.
 - **Prices are fixed** and are not configurable (in current design)
 
 ### Pal Disassembly Conveyor
@@ -27,6 +28,7 @@ Queue a Pal at the conveyor and on disassembly, alongside its normal loot, you g
 Pals you insert and then take back out again are not charged and yield nothing, which is deliberate rather than incidental: the mod distinguishes a consumed Pal from a withdrawn one by how far the machine actually got, not by whether the Pal is still there.
 
 - Disposable implants extracted by the disassembler conveyor go to inventory, and if that is full arrive at your feet; these do not sipt out the back of the machine.  Vanilla's loot still ejects from the machine normally.
+- **The modules go to the player who owns the Pal**, not to whoever is standing nearest and not to the host. If that player is not online they are held and delivered the next time they play, so a machine left running while you are away does not hand your modules to someone else.
 
 ### What the mod does not change
 
@@ -55,6 +57,10 @@ can reference the item ids they create.
 ## Multiplayer
 
 **Install it on every player for full functionality.** Without it, a player simply cannot use the modules and they appear as undefined objects in shared inventory; nothing causes catastrophic crashes.
+
+Modules from the Pal Disassembly Conveyor go to the player who owned the Pal. The mod cannot ask another player's game whether it has the mod installed — nothing in the modding interfaces exposes that — so if a player without the mod disassembles their own Pal, the modules are created for them and their game shows them as blank entries. That is the deliberate trade: the alternative was the host quietly collecting everyone's modules.
+
+The mod only ever creates items on the host or server, never on a joining player's machine.
 
 **Tested:** host has the mod, joining client does not. The game was stable for both players and
 extraction and disassembly worked normally for the host. Modules the client's game does not know

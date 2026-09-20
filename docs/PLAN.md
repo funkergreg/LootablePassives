@@ -6,14 +6,74 @@ Goals, listed below in the order they should be addressed:
 
 ## Improvements
 
-- **BUG:** On first interaction with Surgery Table things look fine and several transactions in a row will work.  Later, the pal surgery disappears (see screenshot: `docs\double-trouble.png`) -- seen in two separate sessions.  In last session, it was toward the very end where this occurred.  Successive table uses had NOT been tested in previous mod usage, so this is a NEW bug finding, likely related to some config/trigger that goes into an OFF position at some point, or the table otherwise gets into odd state and disables the implant side of the UI.
-- **BUG:** CONFIRM this: In multiplayer, the host receives the modules, by preferring the local player outright, not whoever fed the conveyor (TODO: CLARIFY DOES THIS MEAN MULTIPLAYER HOST OR PERSON RUNNING THE MOD?). Delivery falls back to the nearest player only among remote ones. This was initially intended as a means of ensuring a player with the mod got the disposable implant, and NOT a player without the mod, but if behavior could give the disposable implant item to a multiplayer host WITHOUT the mod, this is an unintended bad behavior/bug. FIX: ensure the implant goes to a player WITH the mod; prefer the person inserting into the machine (If the person inserting into the machine does NOT have this mod, it is OK if this mod does not trigger creation of the items).
-- **IMPROVEMENT:** Look at feasability of transforming PalSchema JSON item definitions (and related support) to lua as native mod formats.  Advantages:
-  - We can better swap out fixed values with variables, such as for pricing being controled by a configurable setting.
-  - As stated in the CLAUDE.md, the JSON item definitions have no verification phase and PalSchema can fail silently; making them lua opens up cleaner verification routes than hand-maintained JSON.
-- Possibly related to above, sort order for modules in inventory does not follow any discernable scheme.  Right now, sorting does not follow order like rarity (preferred) or alphabetical (by passive name, second preference, would be language-specific for English); might look at ratity then alphabetical sort order.
-- **`extract_additional` journal churn.** The `clear_journal()` per passive is redundant against the next iteration's `write_journal`, which opens `"w"`. But the final clear is NOT redundant: it is what stops recovery replaying a completed sweep, so the change is "skip between iterations, clear once at the end" — a restructure of crash-recovery ordering to save a handful of file deletes per extract-all. Wrong trade immediately before publishing.
-- **`find_visible_tab_page` caching.** This plan already measured the call rate at 1.4/second. low priority.
+### Fixed in the repo, not yet confirmed in game
+
+Nothing below has been through a game session yet. `luacheck` is green and `lua tools\ledger_test.lua` passes, which is the whole of what can be checked without the engine. Each entry says what to look for.
+
+#### BUG: the Surgery Table panel goes blank after several transactions
+
+Seen twice, late in a session, after several successful operations in a row: the Pal Operating Table opens with its title and description and nothing else. Screenshot `docs\double-trouble.png`.
+
+Cause, as far as the code shows: `refresh_surgery_ui` wrote to every `WBP_OperatingTable_TabPage_C` and `WBP_OperatingTable_C` instance `FindAllOf` returned, open or not. `finish()` schedules that ladder at 500 ms and 1600 ms after an operation, so closing the screen within a second and a half of confirming one -- which is what you do when you are finished -- ran the whole reset against a closed panel. Every call in it is a reset-to-empty, and the widget is reused on the next open, so a reset applied while it was closed is one the player cannot undo from the UI. `SetupPassiveChangeItem()` is the worst of them: it destroys and rebuilds all 118 entries from the screen's selected Pal, and with no Pal selected it has nothing to build them from.
+
+What changed, in `Scripts/lp/ui.lua`:
+
+- Nothing is written to a panel that is not open. `is_open` demands a positive `IsVisible`, which is the opposite bias from the gate's `find_visible_tab_page` -- that one still counts a FAILED `IsVisible` as visible, because the worst it can do is grey a button. The two biases are now stated side by side.
+- `SetupPassiveChangeItem()` additionally requires the screen to have a Pal selected (`CurrentHandle` valid).
+- `find_visible_tab_page` prefers a page that positively reports itself visible over one whose `IsVisible` call merely failed. Before, `FindAllOf` order decided, so one stale page early in the list could take every gate pass for the rest of the session and the real panel would never be gated -- a second way the mod can appear to switch itself off mid-session.
+
+To confirm: run several operations, close the screen immediately after one, reopen it, and keep going for as long as the original sessions ran. Two new lines exist for this. `The Surgery panel was already closed when a refresh came due` is informational and says the guard did its job; a `WARNING: found N open Surgery panel(s) and M open screen(s)` means more than one of either is live at once, which is the remaining suspicion and is worth reporting with the log.
+
+This is a diagnosis from the code, not a reproduction. If the panel still blanks with those lines absent from the log, the cause is elsewhere and the next place to look is vanilla's own `Setup`/`SwitchTab` path.
+
+#### BUG: conveyor modules went to the host rather than to the Pal's owner
+
+Confirmed by reading it: `delivery_candidates` sorted `local_player` ahead of everything, so on a listen server the host collected the modules for every Pal, whoever owned it. Distance was only ever a tiebreak among the rest.
+
+The premise in the original note needed a correction, and it matters for how the fix is written: a host **without** the mod cannot receive modules, because the mod is not running there. Nothing on an unmodded peer creates items, and the one peer that does create them gates on `HasAuthority()`. What the ordering actually produced was a modded host collecting a guest's modules -- the wrong player, not an unmodded one.
+
+What changed:
+
+- `Pal.hpp`'s `FPalIndividualCharacterSaveParameter.OwnerPlayerUId` is snapshotted with the passives, in the same pass, because that is the last moment the Pal exists to be asked. Property reads only.
+- The pending ledger is keyed by owner and item, `LPL2`. An `LPL1` file is still read, as unowned rows, rather than discarded -- the debt is the same, one column short.
+- A row with a known owner goes to that owner **and to nobody else**. If they are not online it is held on disk and retried on every map load and every later disassembly. A guest can queue ten Pals and log off while the machine is still eating them; a preference with a fallback would hand all ten to the host, which is the behaviour being removed.
+- One fallback, for the comparison not running rather than not matching: if no candidate yields a readable `PlayerUId` at all, the fault is ours, so it pays out in the old order and says so loudly once.
+
+"Deliver only to a player who has the mod" is **not implementable as stated** and the plan should stop asking for it. UE4SS Lua has no custom network channel and nothing exposes a peer's loaded DataTables, so no peer can be asked. Owner-first is the closest approximation. The cost is deliberate and is now documented in `README.md`: a guest without the mod who feeds the conveyor gets modules their game cannot resolve, which the multiplayer test already showed rendering as blank chest entries and crashing nothing. That is a better outcome than the host silently taking them.
+
+To confirm, in single-player first: the summary line for a disassembly must read as it always did, with neither a ` held for the player who owned the Pal` clause nor a `No owner UId could be read from the consumed Pal` line. Those two are opposite ends of one question and both are said once per session. `held` means the owner match is running and rejecting -- `OwnerPlayerUId` on the Pal not equalling `PlayerUId` on `APalPlayerState` -- so modules would be withheld rather than delivered until that is fixed. That is the one regression risk in this change; it is loud, and the debt survives it. The `No owner UId` line means the read is not running at all, which fails open: single-player carries on working and the multiplayer rule is quietly inert.
+
+#### Module sort order in the inventory
+
+`SortID` on the 94 `LP_Implant_*` items was two alphabetical-by-id runs from two rounds of authoring (`95001`+ and `96001`+), which is why rarity scattered in `docs/sort-order.png`.
+
+Now one contiguous block, `95001`-`95094`: **rarity descending, then English display name ascending**. Orange first, so Legend, Lucky and the other prizes head the block and the white negatives tail it. Values only -- the file stays alphabetical by item id, which is what makes it maintainable by hand.
+
+The 21 vanilla `PalPassiveSkillChange_Consumable_*` modules keep vanilla's own `SortID` and will still sort apart from these 94. Deliberate: their `Rarity` is not readable from this machine, so any block chosen for them could put an orange module in the purple run, and patching `Rarity` to force agreement would be the first time this mod changed how a vanilla item looks.
+
+### Open
+
+#### IMPROVEMENT: PalSchema JSON to Lua -- do not do this; take the schemas instead
+
+Asked as: could the JSON item definitions become Lua, for configurable values and for verification. Both halves have an answer, and neither is the conversion.
+
+**PalSchema has no Lua API.** Its `dlls/main.dll` carries no Lua bindings -- the only Lua symbols in it are the inherited `CppUserModBase::on_lua_start`/`on_lua_stop` vtable entries -- and the mod-content strings in the binary are the folder names it scans (`items`, `raw`, `blueprints`, `appearance`, `buildings`, `skins`, `translations`, `mods`) plus `.json` and `.jsonc`. So there is no Lua form of a PalSchema mod to convert to. The data half would instead have to be rebuilt through UE4SS Lua against the live tables, which means reimplementing what PalSchema does natively: adding rows to `DT_ItemDataTable` and entries to `DA_StaticItemDataAsset`, neither of which UE4SS Lua exposes. Not a refactor; a rewrite of the part that already works.
+
+**Verification: PalSchema will generate JSON Schemas from the live game tables.** `main.dll` contains `JsonSchemaGenerator::GenerateRawSchemas`, `GenerateEnumSchema`, a `Generate JSON Schema Files` button under `Generators` in its UE4SS debugging-tools tab, a `schemas` output folder, and the `raw/{}.schema.json`, `enums.schema.json`, `utility.schema.json` names it writes. That is a stronger check than anything hand-written could be, because it is generated from the same reflected properties PalSchema patches through -- it catches a misspelled column or an illegal enum value, which is most of what fails silently today.
+
+How to wire it up, once generated: map the schemas by path glob in `.vscode/settings.json` under `json.schemas`, and run the same schemas in a pre-commit or CI step with any validator (`npx ajv-cli`, for instance). Do **not** add an inline `$schema` key to `items/*.json`: the top level there is a map of item id to definition, so an extra key would read as a 95th item.
+
+Unestablished, and it is one in-game click each: whether the generator covers `items/` as well as `raw/`, and where the `schemas` folder lands.
+
+**Configurable pricing is a different problem and the JSON is not what blocks it.** The charge is server-side, from `Price` in `DT_OperatingTablePassiveSkillDataTable`; the widget's `CurrentRequireMoney` is display only. Writing a DataTable row at runtime is the same capability UE4SS Lua does not expose, so a setting cannot simply override the value. What *is* reachable: money in Palworld is an inventory item, so the Lua half could rebate the difference after a transaction by granting `Money`. That makes a setting able to discount the JSON price but never to raise it, since taking items back needs a container walk this mod has never done. A sketch, not a plan -- nothing here has been tried.
+
+#### `extract_additional` journal churn
+
+Unchanged and still deliberate. The `clear_journal()` per passive is redundant against the next iteration's `write_journal`, which opens `"w"`. The final clear is NOT redundant: it is what stops recovery replaying a completed sweep. So the change is "skip between iterations, clear once at the end" -- a restructure of crash-recovery ordering to save a handful of file deletes per extract-all. Wrong trade immediately before publishing.
+
+#### `find_visible_tab_page` caching
+
+Still low priority, and the measured 1.4 calls a second still stands. Note that the scan now makes two passes over the `FindAllOf` result in the worst case -- see the blank-panel fix above -- so if this is ever cached, the pass order is part of what has to be preserved.
 
 ---
 

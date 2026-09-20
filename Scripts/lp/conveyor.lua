@@ -219,6 +219,12 @@ local tracked = {}
 -- from the hooks not firing unless it says which it was.
 local authority_reported = false
 
+-- Also reported once, and for the mirror-image reason: a failed owner read
+-- fails OPEN. It looks like nothing at all -- single-player carries on
+-- delivering to the only player there is -- so the multiplayer rule this whole
+-- snapshot exists for would be quietly not working and nothing would say so.
+local unowned_reported = false
+
 -- Only the authoritative peer may create items.
 --
 -- Every hook here is a _ServerInternal function, so on a client they should not
@@ -275,6 +281,13 @@ local function on_consumed(entry, actor)
         -- would fire for every Pal every guest watches.
         return
     end
+    if entry.owner == nil and not unowned_reported then
+        unowned_reported = true
+        log("No owner UId could be read from the consumed Pal, so its modules go to the nearest "
+            .. "player rather than to whoever owned it. Expected only for a Pal nobody owns; in "
+            .. "single-player it means the OwnerPlayerUId read is not working.")
+    end
+
     local names = {}
     for _, passive_id in ipairs(entry.passives) do
         local item_id = PASSIVE_ITEMS[passive_id]

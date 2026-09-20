@@ -13,7 +13,7 @@ This repo contains a Palworld mod made to be published to the Steam workshop.  B
 ```text
 Scripts/                         Lua runtime (main.lua, settings.lua, lp/*.lua); ships
 PalSchemaMods/LootablePassives/  JSON data patches: items, DataTable rows, English strings; ships
-tools/                           install.ps1, capture.ps1, luacheck.js; these do not ship
+tools/                           install.ps1, capture.ps1, luacheck.js, ledger_test.lua; these do not ship
 docs/PLAN.md                     the working plan; does not ship
 CLAUDE.md                        Agent guidance
 README.md / LICENSE              the user-facing docs; these ship
@@ -115,11 +115,13 @@ become unknown items; passives already implanted are real passives and stay put.
 
 ```powershell
 node tools\luacheck.js       # Lua syntax check. Run after ANY Lua edit.
+luacheck Scripts             # The real static analyzer. Baseline is 0 errors.
+lua tools\ledger_test.lua    # The one automated test. Run after ANY lp/ledger.lua edit.
 .\tools\install.ps1          # repo -> game install. The normal direction; run before every test.
 .\tools\capture.ps1          # game install -> repo. Rescue only, for edits made in the game folder.
 ```
 
-There is no data generator and no data verifier; see **The JSON is the source of truth** above before reaching for one.
+`ledger_test.lua` is a behaviour test for one module, not a data verifier: it stubs `lp.inventory` and asserts the ledger's TSV round-trip and which candidate a row is delivered to. It exists because that logic is the only part of the mod with no engine call in it. There is still no data generator and no data verifier for the JSON; see **The JSON is the source of truth** above before reaching for one.
 
 ### CLI Development Tools
 
@@ -155,6 +157,8 @@ Hard-won, each one from a crash or a wrong conclusion in this repo. Read before 
 
 **Log immediately before each engine call in a probe.** One log line per call, so that if the game dies, the last line in `UE4SS.log` names the call. A probe that makes three engine calls between two log lines cannot be diagnosed after the fact, and the crash above could not be attributed to either of its two candidate calls.
 
+**Never write to a widget that is not open.** The Surgery panel's whole refresh ladder is reset-to-empty calls, the widget instance is reused across openings, and `SetupPassiveChangeItem()` destroys and rebuilds all 118 entries from the screen's selected Pal. Applied to a closed panel — which `finish()`'s 500 ms and 1600 ms timers will do if the player shuts the screen after confirming — the result is sticky and the player cannot undo it from the UI. That is the suspected cause of the blank panel in `docs/double-trouble.png`. Hence the two deliberately opposite biases in `lp/ui.lua`: the Edit gate counts a FAILED `IsVisible` as visible (it can only grey a button), the repair path demands a positive `IsVisible` (it writes).
+
 **Check arity against the header dumps, and not just `Pal.hpp`.** Widget functions live in `CXXHeaderDump/WBP_*.hpp`, CommonUI in `CommonUI.hpp`, engine in `Engine.hpp`. Prefer no-argument getters; avoid out-parameter overloads (`TryGetContainer(Out&)`) when a by-value equivalent exists (`GetContainer()`).
 
 **"It is already in the codebase" is not evidence.** Much of this repo was written by agents and never executed. `GetPlayerCharacterByPlayerIndex` sat in `inventory.lua` looking established, on a branch that only runs in multiplayer and had almost certainly never run at all.
@@ -176,6 +180,7 @@ These are properties of the game's tables, not choices this mod made. Breaking o
 - **Marker rows carry `RequireItemId: "None"`, so nothing gates them.** Vanilla will happily run the swap and leave the marker sitting on the Pal. Every protection against that is in the Lua half — see *Mod registration* below for what happens when only the data half loads.
 - **Naming `RequireItemId` in the vanilla reprice file would destroy the recipe gate.** That file sets `Price` and nothing else, on purpose.
 - **Module rarity tracks passive tier** — white for negatives, green/blue/purple ascending, orange for Diamond and World Tree. A convention, but an established one; match it.
+- **`SortID` on the 94 modules is one contiguous block, `95001`-`95094`, ordered by rarity descending then English display name ascending.** Orange first. It is derived, so adding a module means recomputing the whole block rather than appending to it — the two alphabetical-by-id runs that came from appending are exactly why rarity used to scatter in the inventory. The 21 vanilla `PalPassiveSkillChange_Consumable_*` items keep vanilla's own `SortID`: their `Rarity` is not readable from the repo, so any block chosen for them risks putting an orange module in the purple run.
 
 ### Invariants worth preserving
 
@@ -212,6 +217,12 @@ The important discovery is that **a full bag is not a failure case**. `AddItem_S
 **Multiplayer is a first-class case, not a later port.** `find_inventory(nil)` resolves a player only when `state_count == 1`, so it returns nil with two players connected. Any base-camp feature needs a stated rule for *which* player receives something, or a mechanism that does not need one.
 
 Gating is `AActor::HasAuthority()` (0-arg) for server/client, `APawn::IsLocallyControlled()` to identify the host.
+
+**The conveyor's rule is the Pal's owner, and it holds rather than substituting.** `FPalIndividualCharacterSaveParameter.OwnerPlayerUId` is snapshotted with the passives — the last moment the Pal exists to be asked — and compared against `PlayerUId` on `APalPlayerState`. The pending ledger (`LPL2`) is keyed by owner and item for that reason: a row with a known owner goes to that owner and to nobody else, and waits on disk when they are offline. Ranking `IsLocallyControlled()` first instead, which is what it used to do, meant a modded host collected a guest's modules for every Pal the guest queued.
+
+**"Only deliver to a player who has the mod" is not implementable.** UE4SS Lua has no custom network channel and nothing exposes a peer's loaded DataTables, so no peer can be asked. Do not write code, comments or docs that imply otherwise. Owner-first is the approximation, and its cost — a modless owner receiving items their game renders blank — is accepted and documented in `README.md`.
+
+**An unmodded host cannot receive modules at all**, so that failure mode does not need designing around: the mod is not running there, and the one peer that creates items gates on `HasAuthority()`.
 
 **Tested, on real hardware: host has the mod, client does not.** Extraction and disassembly worked for the host, the game was stable for both, and items the client could not resolve rendered as blank entries in a shared chest rather than crashing anything. Asymmetric installs are therefore survivable, which is what the Workshop description promises.
 
