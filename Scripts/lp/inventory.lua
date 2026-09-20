@@ -52,25 +52,23 @@ local function find_player_state(request_player_id)
         end
     end
 
-    if wanted ~= nil then
-        local utility = StaticFindObject("/Script/Pal.Default__PalUtility")
-        local world = FindFirstOf("World")
-        if is_valid(utility) and is_valid(world) then
-            local found, character = pcall(function()
-                return utility:GetPlayerCharacterByPlayerIndex(world, wanted)
-            end)
-            character = unwrap(character)
-            if found and is_valid(character) then
-                local controller = unwrap(character:GetPalPlayerController())
-                if is_valid(controller) then
-                    local state = unwrap(controller.PlayerState)
-                    if is_valid(state) then
-                        return state
-                    end
-                end
-            end
-        end
-    end
+    -- REMOVED: a GetPlayerCharacterByPlayerIndex(world, wanted) fallback.
+    --
+    -- It passed a PlayerId where a PlayerIndex belongs. Those are different
+    -- things: PlayerId is a unique identifier -- 259 in this mod's own logs --
+    -- while PlayerIndex is a small 0-based index into the local player array.
+    -- Asking for index 259 is an out-of-range lookup, and this is one of the
+    -- two calls that could have produced the EXCEPTION_ACCESS_VIOLATION seen
+    -- during development. It only ran when the PlayerId scan above had already
+    -- failed, which is never in single-player, so it was shipped unexercised.
+    --
+    -- Nothing replaces it. If the scan cannot match the requesting player, the
+    -- honest answer is "no player", and the caller refuses the exchange.
+
+    -- SINGLE-PLAYER ONLY, deliberately. With one player state loaded there is
+    -- no ambiguity about who asked. With two or more this returns nil rather
+    -- than guessing, so a multiplayer request whose id did not match fails
+    -- closed instead of handing another player's Pal to the wrong inventory.
     if state_count == 1 then
         return only_state
     end
@@ -90,6 +88,75 @@ local function find_inventory(request_player_id)
         return inventory
     end
     return nil
+end
+
+-- Who may receive a granted module, best candidate first.
+--
+-- find_inventory(nil) resolves a player only when EXACTLY ONE exists, which is
+-- a single-player rule. A base-camp machine has no requesting player, so this
+-- returns an ordered list instead of a lookup.
+--
+-- THE ORDER IS A SAFETY RULE, NOT A CONVENIENCE. The locally controlled player
+-- comes first, because on a listen server that is the host -- the machine
+-- running this mod, and therefore the only player guaranteed to have the item
+-- definitions that make an LP_Implant render. A guest without the mod shown one
+-- of our items sees an unresolved placeholder, which is jarring enough to pull
+-- them out of the world, and consoles cannot install the mod at all.
+--
+-- We cannot ask a peer whether it has the mod: UE4SS Lua has no custom network
+-- channel and nothing exposes a peer's loaded DataTables. Preferring the local
+-- player is the closest thing to a guarantee available.
+--
+-- On a DEDICATED server there is no locally controlled player, so this falls
+-- through to nearest-first. That is correct there: every client of a modded
+-- dedicated server is expected to have installed the mod, and Info.json ships
+-- IsServer install rules for exactly that.
+--
+-- Distance is compared SQUARED. Only the ordering matters, so no square root.
+local function delivery_candidates(near_location)
+    local characters = nil
+    pcall(function() characters = FindAllOf("PalPlayerCharacter") end)
+    local found = {}
+    for _, character in ipairs(characters or {}) do
+        if is_valid(character) then
+            local data = nil
+            pcall(function()
+                local controller = unwrap(character:GetPalPlayerController())
+                if is_valid(controller) then
+                    local state = unwrap(controller.PlayerState)
+                    if is_valid(state) then
+                        data = unwrap(state:GetInventoryData())
+                    end
+                end
+            end)
+            if is_valid(data) then
+                local local_player = false
+                pcall(function() local_player = character:IsLocallyControlled() == true end)
+                local distance = math.huge
+                if near_location ~= nil then
+                    pcall(function()
+                        local here = character:K2_GetActorLocation()
+                        local dx = (unwrap(here.X) or 0) - (unwrap(near_location.X) or 0)
+                        local dy = (unwrap(here.Y) or 0) - (unwrap(near_location.Y) or 0)
+                        local dz = (unwrap(here.Z) or 0) - (unwrap(near_location.Z) or 0)
+                        distance = dx * dx + dy * dy + dz * dz
+                    end)
+                end
+                found[#found + 1] = { data = data, distance = distance, local_player = local_player }
+            end
+        end
+    end
+    table.sort(found, function(a, b)
+        if a.local_player ~= b.local_player then
+            return a.local_player -- the local player outranks distance entirely
+        end
+        return a.distance < b.distance
+    end)
+    local ordered = {}
+    for index, entry in ipairs(found) do
+        ordered[index] = entry.data
+    end
+    return ordered
 end
 
 --------------------------------------------------------------------------------
@@ -133,6 +200,56 @@ local function add_implant(inventory, item_id)
         return false, "EPalItemOperationResult=" .. tostring(code)
     end
     return true, nil
+end
+
+-- A COUNTED grant, for the conveyor's pending ledger.
+--
+-- add_implant above grants exactly one and is what the Surgery Table wants.
+-- This takes a count, because AddItem_ServerInternal honours one -- measured:
+-- asking for 5 delivered 5, asking for 50 delivered 50 -- so a debt of 40 is
+-- one call rather than forty.
+--
+-- Returns true only on Success. A full bag reports
+-- FailedContainerOverflowSlotNum and creates NOTHING, so a false here means
+-- the whole count is still owed, never part of it.
+-- Success means THE ITEM WAS CREATED -- not that it is in the bag.
+--
+-- Measured, and it overturns what a comment in this file used to claim: with a
+-- full inventory AddItem_ServerInternal returns Success and the game spills the
+-- item onto the ground at the player's feet. It does NOT return
+-- FailedContainerOverflowSlotNum. That value exists in the enum; this path does
+-- not produce it.
+--
+-- So a count that does not move is NOT a failure, and treating it as one cost
+-- real duplication: the debt stayed owed, the next flush granted again, and
+-- each retry spilled another copy. One module was created five times that way.
+--
+-- The count is still read, but only to tell the player WHERE the item went.
+-- Returns ok, detail -- where detail on success means "spilled, look on the
+-- ground" and on failure means why nothing was created at all.
+local function add_modules(data, item_id, count)
+    if not is_valid(data) then
+        return false, "no inventory"
+    end
+    local before = -1
+    pcall(function() before = unwrap(data:CountItemNum(FName(item_id))) or -1 end)
+    local succeeded, result = pcall(function()
+        return data:AddItem_ServerInternal(FName(item_id), count, false, 0.0, true)
+    end)
+    if not succeeded then
+        return false, "call raised an error"
+    end
+    local code = operation_result_code(result)
+    local after = -1
+    pcall(function() after = unwrap(data:CountItemNum(FName(item_id))) or -1 end)
+    if code ~= ITEM_RESULT_SUCCESS then
+        return false, "EPalItemOperationResult=" .. tostring(code)
+    end
+    if before >= 0 and after >= 0 and after - before == count then
+        return true, nil
+    end
+    -- Created, but it did not land in the bag. The engine put it on the ground.
+    return true, "spilled"
 end
 
 -- Verification here is COUNT-BASED, deliberately, not length-based.
@@ -214,7 +331,9 @@ end
 
 return {
     add_implant = add_implant,
+    add_modules = add_modules,
     find_inventory = find_inventory,
+    delivery_candidates = delivery_candidates,
     operation_result_code = operation_result_code,
     player_id_number = player_id_number,
     remove_skill = remove_skill,

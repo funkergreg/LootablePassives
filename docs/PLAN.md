@@ -14,58 +14,30 @@ Four goals, in the order they should be done:
 `PalSchemaMods/LootablePassives/` and `Scripts/passive_items.lua` are now hand-maintained and are
 the source of truth. Nothing below should assume any of those exist.
 
-## Refactor
+## Refactor — status
 
-Ordered.
+**DONE: `lp/hooks.lua` is the single hook registrar.** Both widget registrations in `main.lua`
+moved onto it, along with the conveyor's two. `main.lua` went 370 -> 289 lines. The coalescing
+flags stayed in `main.lua` because they are specific to those two callbacks; the retry bound,
+warn-once and per-map re-arm are shared. Fixed on the way: `hooks.lua` re-armed its *warning* on
+every map load, the same defect found in `main.lua`, so a startup said the same thing three or
+four times.
 
-**`lp/hooks.lua` — one bounded hook registrar. HALF DONE.** The module exists and is the single
-implementation of the pattern: attempt counter, 12-attempt bound, warn-once, per-map retry-budget
-reset, callback built once at load. `main.lua`'s `RegisterLoadMapPostHook` calls
-`hooks.rearm_on_map_load()`, and the conveyor registers through it — so the third copy the plan
-warned about was never written.
+**DONE (earlier session): one resolver loop.** `resolve_record` already iterates a single
+`snapshots` list whatever produced it, with `expect_passive_id` carried per snapshot — exactly the
+fix this plan proposed. The item was stale.
 
-**Still to do:** move `register_button_guard` and `register_passive_update_hook` onto it. They were
-left alone deliberately. That pattern is load-bearing — unbounded retries and per-call closures are
-both traced to the `0xffffffffffffffff` crash — and those two are tested and working, so they move
-only in a session where all three hooks can be exercised in game together. Coalescing is theirs
-alone and did not go into `hooks.lua`; add it as an option when they move, not before.
+**NOT DONE, AND RECOMMENDED AGAINST BEFORE RELEASE:**
 
-**One resolver loop.** `resolve_record` in `transaction.lua` forks on
-`record.snapshots == nil` and rebuilds the resolved-record literal three times in ~60 lines, so
-adding a field means editing three places. The fork also hides an asymmetry: the targeted path
-requires `removed == record.passive_id`, the snapshot path accepts any `removed`. Fix by having
-`capture_targeted_record` return a one-element `snapshots` list with the expected `passive_id`
-attached, leaving one loop and making the asymmetry an explicit field. The snapshot path is the
-dedicated-server one — least tested, and the one that diverged.
+- **`extract_additional` journal churn.** The `clear_journal()` per passive is redundant against
+  the next iteration's `write_journal`, which opens `"w"`. But the final clear is NOT redundant: it
+  is what stops recovery replaying a completed sweep, so the change is "skip between iterations,
+  clear once at the end" — a restructure of crash-recovery ordering to save a handful of file
+  deletes per extract-all. Wrong trade immediately before publishing.
+- **`find_visible_tab_page` caching.** This plan already measured the call rate at 1.4/second and
+  called it low priority. It still is.
 
-**`OPERATIONS[id] = { mode, target }`.** `ids.EXTRACTION_MODES` answers two
-questions with one 56-entry table — *is this id ours* and *which of three operations is it* — which
-shows up as membership scans, a mode re-derived by string compare in the Edit gate, and the target
-read from a second table. `is_ours(id)` plus one record per id says it once; ~a dozen mechanical
-call sites. **Treat as load-bearing:** `ids.lua`'s own header records that conflating markers with
-aliases in this set was once a near-miss for stripping real passives off Pals.
-
-**Resolve on the event, not the poll.** `finalize_extraction` polls
-`resolve_record` 12× at 250 ms while `OnPassiveUpdate` — the engine's own "the passive list
-changed" event — is already hooked and used only to repaint. Make the event lead and demote the
-timer to the fallback it already is. **The timer must survive:** `snapshot_server_parameters` has no
-widget and therefore no event, and the hook demonstrably fails to register on splash, login and
-title maps. Same area, same trip: `finish()` arms three mechanisms to repaint one panel (event,
-500 ms, plus an unconditional 1600 ms `refresh_surgery_ui(true, false)` for extractions), and
-`refresh_surgery_ui` still calls three functions its own comment records as having not repainted
-anything. Delete them or label them insurance at the call site.
-
-**Cheap and safe, just not done yet.**
-
-- `extract_additional` writes the journal twice and `clear_journal()`s per passive, so extract-all
-  deletes a file the next iteration immediately recreates. Keep one handle across the sweep — and do
-  it with the grant-first ordering in front of you; the churn is safe to drop because
-  `write_journal` opens `"w"`, the ordering is not negotiable.
-- `find_visible_tab_page` ([ui.lua:74](../Scripts/lp/ui.lua#L74)) runs a full `FindAllOf` on every
-  gate pass for a widget that does not change between passes. Cache and re-scan on `is_valid`
-  failure. Low priority: the measured 1.4 calls/second makes this cheaper than it looks.
-
----
+Both are safe to do after release, with a test cycle to spend on them.
 
 ## Pal Disassembly Conveyor — extract-all on consumption
 
@@ -98,22 +70,61 @@ header. What the sessions settled:
 - **The container walk is sound.** Across both sessions, zero unresolvable slots, zero missing
   parameters, and passive lists read correctly (including a Pal with genuinely none).
 
-### Remaining work
+### FINDING (2026-09-19): there is no way to create an item outside a player inventory
 
-1. **Confirm the corrected discriminator.** One run: `CONSUMED` for a completed disassembly,
-   `WITHDRAWN` for a hand-withdrawal. Nothing has yet produced a `CONSUMED` line in game.
-2. **Decide the output.** The deciding question is whether conveyors run with no player nearby — if
-   they do, an inventory grant has no recipient and the world drop wins by default.
-3. **Write the grant path. Journal first.** Grant-first ordering is impossible here: the game
-   destroys the Pal on its own schedule. The journal becomes the primary safety net rather than the
-   exception path — rows written at first sighting (state `pending`, phase `conveyor`), replayed by
-   `recovery.lua`. A failed grant has no refund path, so it needs a retry that survives a restart,
-   not a skipped line.
-4. **Delete the scaffolding**: `DRY_RUN`, the survey, the `HOOK CALLS` counter, and the whole
-   `trace()` block, in the session they stop earning their place.
-5. Confirm the structure's in-game name really is the Disassembly Conveyor before writing it into
-   the README. Still circumstantial: an `AKE_Build_Disassembly` audio key, and no "conveyor" or
-   "disassembly" string in any class name.
+Five mechanisms were tried. All reduce to one wall, and it is worth writing down so it is not
+re-litigated:
+
+**`UPalPlayerInventoryData::AddItem_ServerInternal` is the only item-creation function in the
+entire reflected API.** An exhaustive sweep for `Add*Item*` / `Set*` / `Put*` / `Insert*` /
+`Store*` / `Give*` / `Fill*` / `Transfer*` across `Pal.hpp` returns nothing else that writes an
+item; the rest is logging, durability and textures. It needs a player, and it fails with
+`FailedContainerOverflowSlotNum = 4` when the bag is full, creating nothing.
+
+| Mechanism | Outcome |
+| --- | --- |
+| `PalStatusCollectItem` / `PalIncidentBase` `DropItem(...)` | Right signature, **zero live instances** in four sessions |
+| Constructing one via `StaticConstructObject` | **Crashed the game** — `EXCEPTION_ACCESS_VIOLATION reading 0x2a8`. Do not retry |
+| Adding to any non-player container | No such function exists |
+| Base-camp quick-stack (`RequestMoveInventoryItemToBaseCamp`) | Real, but entry is still the player inventory, so it fails identically when full |
+| Spawning `CommonDropItem3D` via `RequestSpawnMapObject_Server` | Spawns, but a drop's contents live in a 1-slot `UPalItemContainer` (measured: `ItemId.StaticId=Egg`, `container holding [Egg x1]`). Empty bag, unfillable |
+
+The only untried avenue is writing `UPalItemSlot.ItemId` / `.StackCount` as raw properties on a
+spawned drop. That bypasses `UpdateItem_ServerInternal`'s dirty-marking and replication, so it is
+single-player-only at best and a save-integrity risk at worst. **Not recommended.**
+
+### Consequences for the feature
+
+The conveyor's ceiling is a deferred ledger: journal what a consumed Pal owed, grant it when the
+player next has room. Nothing is lost, but nothing appears while the bag is full, and:
+
+- **54 slots, 115 module types.** `Common` is 54 slots (measured; `GetInventoryTypeFromStaticItemID`
+  returns 0 for a module and that container's free count is what moves). A varied mass disassembly
+  cannot fit even with 9999 stacks.
+- **Multiplayer has no answer.** `find_inventory(nil)` resolves a player only when exactly one
+  exists, and a base-camp machine has no requesting player. Which player receives the modules is
+  undefined.
+
+### Multiplayer test result (2026-09-19)
+
+Run on real hardware, two machines: **host has the mod, joining client does not.**
+
+- Game stable for both players; no crash on either side.
+- Extraction and disassembly worked normally for the host.
+- Items the client's game cannot resolve render as **blank entries** in a shared chest.
+  Confirms the prior assumption. Viewing them does not crash the client.
+
+So asymmetric installs are survivable, and the Workshop description can say so. What this does
+**not** establish, and must not be written as if it did: the client had no mod at all, so **no
+non-authoritative peer has ever run this code**. The `HasAuthority()` false branch remains
+unexercised. Also still untested: a client that *has* the mod, and dedicated-server hosting.
+
+### Remaining work — BLOCKED PENDING A DECISION
+
+**SETTLED: the conveyor ships, with the ledger and the documented at-your-feet limitation.** The
+grant path is built, tested to a 54-Pal stress run with zero failures, and its limitations are
+written up in `README.md`. The alternatives considered and rejected were shipping the Surgery
+Table alone, and shelving the conveyor.
 
 Unchanged from the original design: **no gold** (the Pal is the price), and `passive_items.lua` and
 `is_extractable` are reused **as-is** — a module from the conveyor must be the same item as a module
@@ -121,12 +132,45 @@ from the Surgery Table, with no conveyor-specific rarity or naming.
 
 ---
 
+## Cleanup stage — agreed work
+
+### Documentation restructure — DONE
+
+`CLAUDE.md` is to hold **only true findings about engine usage and mod construction** that a future
+agent needs after release. The sketch design and intent have served their purpose and become
+context noise now that the thing is built. Specifically:
+
+- **Remove** from `CLAUDE.md`: "The Surgery Table Design" and "The Pal Disassembly Conveyor Design".
+- **Add** to `README.md`: a "What this mod does" section describing **actual** behaviour including
+  its known flaws and limitations — not the original sketch. Notably: modules go to the player's
+  inventory and overflow to the ground **at the player's feet**, not behind the machine. The engine
+  spills them; we do not choose where.
+- **Keep** in `CLAUDE.md`: "Reading the engine from Lua", "The JSON is the source of truth", "Mod
+  registration, and why there is no off switch", repo layout, naming, and the release material.
+
+### One change-once variable
+
+**Conveyor extraction on/off.** A single constant gating `conveyor.install()`. Deliberately a
+variable and not a settings UI: UI integration is a later decision and this is the cheap pre-step.
+
+### Cost configuration is SCRAPPED — remove its references
+
+Not deferred, dropped. Prices live in 171 JSON rows across four files, PalSchema has no templating,
+and the generator that could have derived them is deleted and not coming back. The remaining
+options were to mutate DataTable rows PalSchema owns from Lua at load, or to call a four-file
+search-and-replace a "variable". Neither is worth it.
+
+Cleanup work is therefore to **remove any text implying the cost is configurable**, so nobody picks
+this up again expecting a knob. Prices are fixed data: 1000 for the mod's operations, 5000 for the
+repriced vanilla rows, 10 for an implant's own item value. Sweep `CLAUDE.md`, `README.md`, the JSON
+`_comment` fields and this file.
+
 ## 4. Documentation
 
 - rewrite **Install** once the mod is a Workshop item, keeping `install.ps1` as the dev/manual path.
-- `CLAUDE.md` — the three-route design table stays accurate; add the conveyor as a fourth route
-  once it exists (no gold, no new items, reuses `passive_items.lua`), add `tools/stage.ps1` to the
-  commands table and the repo layout. **Done:** the mod-registration section, which claimed
+- `CLAUDE.md` — **done**, except `tools/stage.ps1`, which is added to the commands table and repo
+  layout when it is written in the publishing phase. The three-route design table moved to
+  `README.md`; `CLAUDE.md` is findings-only. **Done:** the mod-registration section, which claimed
   `mods.txt` controlled the mod. It controls the Lua half only; the PalSchema half has no switch at
   all, and the resulting half-off state actively destroys passives. See that section.
 - engine surface (class names, hook paths, the slot → parameter chain) belongs in a comment

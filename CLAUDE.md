@@ -4,59 +4,88 @@ Guidance for Claude Code working in this repository.
 
 ---
 
-## The Surgery Table Design
+## What the mod is
 
-### Three ways a passive gets listed in implants list
+Behaviour, and the design rationale behind it, live in `README.md` under **What this mod does**.
+That is the user-facing description and it is kept accurate; read it once before changing anything,
+then come back here. This file is findings only — things that cost a crash, a wrong conclusion or a
+test run to learn, and that are not visible in the code.
 
-1. **Default list** — As in vanilla Palworld, the Surgery Table comes with recipe-like options which are **not consumed**; The mod changes *only* the price, to 5,000.  In the surgery Table's passives list when inserting on a pal, these show a grey outline icon, no quantity, and a flavor line of dashes.
-2. **Reusable recipes** — bought with bounty or arena tokens, these are items that live in **Key Items**, are **not consumed** on use. The mod changes *only* the price, to 5,000. In the list these show a green chip icon, no quantity, and the flavour line `Implant: X` — which is vanilla's naming and must never be reused for our mod's items.
+## Data constraints that shaped the design
 
-The mechanics anove are not otherwise changed in this mod!
+These are properties of the game's tables, not choices this mod made. Breaking one produces a dead
+route with no error anywhere a player would see it.
 
-3. **Disposable modules** — single-use items in the regular inventory, **consumed** on use. Vanilla Palworld has only a few types of passives as disposable modules.  Adding ALL PASSIVES as disposable modules is the mod's core feature: expanding the set of sctractable/insertable passives to all 115 passives.   At the surgery table, insert one, extract one, or extract all each charge a flat 1,000 gold. Extraction produces items sent to the player's inventory; extracted passives are represented in the inventory and the surgery table list as a purple chip icon, a quantity, and the flavour line `Disposable Implant: X`; max stack is 9999.
+- **A passive can own only ONE row in `DT_OperatingTablePassiveSkillDataTable`.** For the 54
+  passives whose row is already the vanilla recipe one, an extracted module had nowhere to be
+  spent. That single constraint is the entire reason the `LP_Insert_*` alias routes exist; they are
+  not a stylistic choice and cannot be flattened away.
+- **Marker rows carry `RequireItemId: "None"`, so nothing gates them.** Vanilla will happily run
+  the swap and leave the marker sitting on the Pal. Every protection against that is in the Lua
+  half — see *Mod registration* below for what happens when only the data half loads.
+- **Naming `RequireItemId` in the vanilla reprice file would destroy the recipe gate.** That file
+  sets `Price` and nothing else, on purpose.
+- **Module rarity tracks passive tier** — white for negatives, green/blue/purple ascending, orange
+  for Diamond and World Tree. A convention, but an established one; match it.
 
-### Three Operations
+## Invariants worth preserving
 
-**Three operations** are added to the Passive Skill Selection list:
+Each of these is load-bearing for either the economy or crash-safety.
 
-- **Extract Passive** — removes the selected passive, returns one matching module.
-- **Extract All Passives** — removes every extractable passive, returns a module for each. One flat
-  1,000 gold for the whole operation.
-- **`<passive name>`** — one entry per passive, spending a disposable module.
-- NOTE: the game has a an over-write behavior that is also unchanged by this mod; overwritten passives are GONE and do not render items
+- **Extraction never hands back a reusable recipe.** Extracting a recipe-generated passive yields a
+  single-use module, never a permanent Key Item, or the bounty-token economy collapses.
+- **Grant before remove.** The module is created *before* the passive is removed, and the recovery
+  journal replays an interrupted exchange on the next load. Given a choice the mod duplicates an
+  item rather than destroying a passive.
+- **Vanilla's overwrite behaviour is untouched.** An overwritten passive is gone and yields no item.
+  Do not "fix" this; it is the game's rule.
 
-The Surgery screen stays open after extracting, so you can work through a Pal without reopening the interface.
+## The conveyor, and the two things that are not obvious
 
-The bounty-token economy stays meaningful: extracting a recipe-generated passive gives you a
-single-use module, never a permanent Key Item recipe.
+`Scripts/lp/conveyor.lua` is implemented and tested. Its header carries the detail; these are the
+parts that look like dead weight and are not.
 
-In the list the routes stay visually distinct, following the game's own conventions — a green chip
-with no quantity and the line `Implant: X` is a reusable recipe; a purple chip with a quantity and
-`Disposable Implant: X` is a single-use module.
+- **Both hooks are required, and the pass must not be throttled.** The progress watcher and the
+  arrival/departure watcher each miss cases the other catches.
+- **Progress rate is the consumed-versus-withdrawn test, and must not be replaced with an existence
+  test.** Measured: a Pal that was consumed reports 1.000–1.014; a Pal withdrawn by the player
+  reports 0.217–0.383. An existence test cannot tell those apart, and getting it wrong pays out
+  modules for Pals the player took back.
 
-## The Pal Disassembly Conveyor Design
+## Item creation: the engine spills, and that is the answer
 
-> **Status: not implemented yet.** `Scripts/lp/conveyor.lua` is an *observation pass* — it watches a
-> conveyor consume a Pal and logs the modules it would hand over, with `DRY_RUN = true`. It creates
-> nothing. The design below is the target, not the current behaviour. The remaining work, and the
-> questions that can only be answered by playing, are in that file's header and in `docs/PLAN.md`.
+`AddItem_ServerInternal` is the only item-creation call in the reflected API. Five other mechanisms
+for placing an item in the world were tried and all are dead ends; `docs/PLAN.md` lists them so they
+are not retried.
 
-### Automatic Extract All
+The important discovery is that **a full bag is not a failure case**. `AddItem_ServerInternal`
+returns Success and the engine drops the item on the ground. So:
 
-- Passives are to be extracted (extract-all) on the Pal Disassembly Conveyor along with normal Pal Disassembly
-- Disassembly UX is placing a pal in a slot (not new or changed)
-  - The Pal is automatically disassembled in a queue-like process
-  - The process costs no currencies, but the pal is removed from the world
-  - The items produced by the pal spit out the back of the machine and look like world drops (the machine's own meahcnics).  In our mod passives are to be added to this drop or dropped in a similar fashion to the same output locaion.
-  - With the mod functioning properly, Pal disassembly is expected to yield 0-4 passives per pal plus the normal loot
+- **Success means created.** Treating a ground-spill as a failure is what caused a real duplication
+  bug: the debt stayed owed, was retried, and paid out extra copies.
+- Degradation is per-item, not all-or-nothing. With zero free slots a module that stacks onto one
+  already held still fits, while a new type spills. Observed interleaved in a 54-Pal run.
 
-### Mod Dev notes
+## Multiplayer
 
-- A passive can own only **one** row in `DT_OperatingTablePassiveSkillDataTable`. For the 54 passives whose row is the vanilla recipe one, that left extracted modules with nowhere to be spent — hence the alias routes.
-- **Extraction never hands back a reusable recipe.** Extracting a recipe-generated-passive gives a single-use module, not a permanent Key Item, so the bounty-token economy stays meaningful.
-- **Duplicates are blocked**, matching vanilla. The Edit button greys out or inactive if the Pal already has the passive, and the transaction refuses and refunds the module even if the click gets through.
-- **Crash-safe by ordering.** The module is granted *before* the passive is removed, and a recovery journal replays an interrupted exchange on the next load. If anything goes wrong mid-transaction the mod would rather duplicate an item than destroy a passive.
-- **Module rarity tracks passive tier** — white for negatives, green/blue/purple as you go up, orange for Diamond and World Tree.
+**Multiplayer is a first-class case, not a later port.** `find_inventory(nil)` resolves a player
+only when `state_count == 1`, so it returns nil with two players connected. Any base-camp feature
+needs a stated rule for *which* player receives something, or a mechanism that does not need one.
+
+Gating is `AActor::HasAuthority()` (0-arg) for server/client, `APawn::IsLocallyControlled()` to
+identify the host.
+
+**Tested, on real hardware: host has the mod, client does not.** Extraction and disassembly worked
+for the host, the game was stable for both, and items the client could not resolve rendered as
+blank entries in a shared chest rather than crashing anything. Asymmetric installs are therefore
+survivable, which is what the Workshop description promises.
+
+**Still untested, and do not write as if it were:**
+
+- **The authority gate's negative case.** The client in that test had no mod at all, so no non-
+  authoritative peer has ever *run* this code. The `HasAuthority()` false branch is unexercised.
+- **A client that has the mod installed.**
+- **Dedicated-server operation.**
 
 ---
 
@@ -167,10 +196,7 @@ written by agents and never executed. `GetPlayerCharacterByPlayerIndex` sat in
 `inventory.lua` looking established, on a branch that only runs in multiplayer
 and had almost certainly never run at all.
 
-**Multiplayer is a first-class case, not a later port.** `find_inventory(nil)`
-resolves a player only when `state_count == 1`, so it returns nil with two
-players connected. Any base-camp feature needs a stated rule for *which* player
-receives something, or a mechanism that does not need one.
+**Multiplayer is a first-class case, not a later port.** See *Multiplayer* above.
 
 ### Verifying behaviour
 
@@ -206,8 +232,9 @@ installed folder name come out right.
   - `LootablePassivesVanillaPrices.json` — reprices the 54 vanilla routes to 5000. **`Price`
     only.** Naming `RequireItemId` here would overwrite and thereby destroy the recipe gate.
   - `LootablePassivesInsertRoutes.json` — the 54 alias routes, plus the 54 inert alias passives
-    that let those rows render. Every row needs a matching key in `settings.lua`'s
-    `implant_aliases`; the two are maintained together by hand.
+    that let those rows render. Every row needs a matching key in `lp/ids.lua`'s
+    `IMPLANT_TARGET`; the two are maintained together by hand. A row with no key installs an
+    inert alias and leaves it on the Pal; a key with no row is a dead list entry.
 - `translations/en/` — display strings by text id.
 
 ### Naming and Publishing

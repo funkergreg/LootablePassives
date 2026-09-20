@@ -86,8 +86,18 @@ local function journal_is_writable()
     if io ~= nil and type(io.open) == "function" then
         local opened, handle = pcall(io.open, JOURNAL_PATH, "a")
         if opened and handle ~= nil then
+            -- Opening "a" CREATES the file, so the probe used to leave a
+            -- zero-byte journal beside the user's UE4SS.log on every launch and
+            -- never clean it up. Measure the size while the handle is open and
+            -- remove it again if the probe is all that put it there. An empty
+            -- journal is harmless to read -- it parses as "nothing pending" --
+            -- but shipping litter into someone's game folder is not.
+            local sized, size = pcall(handle.seek, handle, "end")
             pcall(handle.close, handle)
             journal_writable = true
+            if sized and size == 0 and os ~= nil and type(os.remove) == "function" then
+                pcall(os.remove, JOURNAL_PATH)
+            end
         end
     end
     return journal_writable
