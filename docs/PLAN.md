@@ -1,19 +1,19 @@
 # Plan
 
-Goals, in the order they should be done:
-
-- Misc. Improvements
-- Publish to the Steam Workshop
+Goals, listed below in the order they should be addressed:
 
 ---
 
-## Misc. Improvements
+## Improvements
 
-- Look at feasability of transforming these to lua as item definitions in native mod formats.  Advantages:
+- **BUG:** On first interaction with Surgery Table things look fine and several transactions in a row will work.  Later, the pal surgery disappears (see screenshot: `docs\double-trouble.png`) -- seen in two separate sessions.  In last session, it was toward the very end where this occurred.  Successive table uses had NOT been tested in previous mod usage, so this is a NEW bug finding, likely related to some config/trigger that goes into an OFF position at some point, or the table otherwise gets into odd state and disables the implant side of the UI.
+- **BUG:** CONFIRM this: In multiplayer, the host receives the modules, by preferring the local player outright, not whoever fed the conveyor (TODO: CLARIFY DOES THIS MEAN MULTIPLAYER HOST OR PERSON RUNNING THE MOD?). Delivery falls back to the nearest player only among remote ones. This was initially intended as a means of ensuring a player with the mod got the disposable implant, and NOT a player without the mod, but if behavior could give the disposable implant item to a multiplayer host WITHOUT the mod, this is an unintended bad behavior/bug. FIX: ensure the implant goes to a player WITH the mod; prefer the person inserting into the machine (If the person inserting into the machine does NOT have this mod, it is OK if this mod does not trigger creation of the items).
+- **IMPROVEMENT:** Look at feasability of transforming PalSchema JSON item definitions (and related support) to lua as native mod formats.  Advantages:
   - We can better swap out fixed values with variables, such as for pricing being controled by a configurable setting.
   - As stated in the CLAUDE.md, the JSON item definitions have no verification phase and PalSchema can fail silently; making them lua opens up cleaner verification routes than hand-maintained JSON.
+- Possibly related to above, sort order for modules in inventory does not follow any discernable scheme.  Right now, sorting does not follow order like rarity (preferred) or alphabetical (by passive name, second preference, would be language-specific for English); might look at ratity then alphabetical sort order.
 - **`extract_additional` journal churn.** The `clear_journal()` per passive is redundant against the next iteration's `write_journal`, which opens `"w"`. But the final clear is NOT redundant: it is what stops recovery replaying a completed sweep, so the change is "skip between iterations, clear once at the end" — a restructure of crash-recovery ordering to save a handful of file deletes per extract-all. Wrong trade immediately before publishing.
-- **`find_visible_tab_page` caching.** This plan already measured the call rate at 1.4/second and called it low priority. It still is.
+- **`find_visible_tab_page` caching.** This plan already measured the call rate at 1.4/second. low priority.
 
 ---
 
@@ -45,8 +45,7 @@ Requirements, modelled on `install.ps1`: `-DryRun`; an **allowlist**, never an e
 5. `Create New Mod` (Lua) in the uploader to mint the folder and `PublishedFileId`, `stage.ps1` into it, upload **private**.
 6. Verify by installing from the Workshop into a clean game folder — not the dev install, which already has the files. Then make it public.
 
-
-## Multiplayer test result (2026-09-19)
+### Multiplayer test result (2026-09-19)
 
 Run on real hardware, two machines: **host has the mod, joining client does not.**
 
@@ -56,7 +55,7 @@ Run on real hardware, two machines: **host has the mod, joining client does not.
 
 This proves asymmetric installs are survivable, and the Workshop description can say so. What this does **not** establish, and must not be written as if it did: the client had no mod at all, so **no non-authoritative peer has ever run this code**. The `HasAuthority()` false branch remains unexercised. Also still untested: a client that *has* the mod, and dedicated-server hosting.  This can only come after publishing to the steam workshop due to resource constraints in testing; the mod will be testes on a Steam Machine console which can download and activate the mod from the workshop.
 
-## Notes on Mod activation
+### Notes on Mod activation
 
 **IMPORTANT:** This Section must be deleted once workshop publishing is complete as information would be OBE
 

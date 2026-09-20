@@ -68,6 +68,49 @@ Deploying is not optional and it is not automatic: the game loads only what is u
 
 **`install.ps1` copies; it never deletes.** A file deleted from the repo goes on living in the game folder, and the game goes on loading it — so the thing you just "removed" keeps working, and the repo you are testing is not the thing under test. When you delete a runtime file here, delete it from the install too.
 
+### Install
+
+This is not a Workshop item yet, so the in-game mod manager cannot install it. Clone and run the
+script:
+
+```powershell
+git clone https://github.com/funkergreg/LootablePassives.git && cd LootablePassives
+.\tools\install.ps1
+```
+
+Then **restart Palworld** — UE4SS hot reload is disabled, so a running game will not pick it up.
+
+If Palworld is somewhere other than the default Steam path:
+
+```powershell
+.\tools\install.ps1 -GameRoot "C:\path-to-games\Palworld"
+```
+
+Writing under `Program Files` may need an elevated shell.
+
+#### What it copies, and where
+
+```
+Scripts\                         ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\
+PalSchemaMods\LootablePassives\  ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\PalSchema\mods\LootablePassives\
+```
+
+The script also adds `LootablePassives : 1` to UE4SS's `mods.txt`, which is what actually starts the
+Lua half. PalSchema needs no registration — it loads any folder under its `mods/` directory.
+
+Nothing is deleted, and files the mod writes at runtime are left alone.
+
+### Uninstall
+
+Delete **both** destination folders, then remove the `mods.txt` line. Modules already in a save
+become unknown items; passives already implanted are real passives and stay put.
+
+> **Do not disable this mod by setting `LootablePassives : 0` in `mods.txt`.** That line controls
+> only the Lua half. The PalSchema half has no such switch — it loads whenever its folder is on
+> disk — so the mod's operations stay in the Surgery Table list with nothing behind them. Using one
+> in that state costs you the gold and the module and leaves an inert placeholder passive on your
+> Pal, in place of the passive you selected. Removing the folders is the only safe way off.
+
 ### Commands
 
 ```powershell

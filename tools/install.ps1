@@ -102,6 +102,5 @@ if ($DryRun) {
     Write-Host "Dry run only. Nothing was changed."
 }
 else {
-    Write-Host "Installed. Restart Palworld -- UE4SS hot reload is disabled, so a"
-    Write-Host "running game will not pick this up."
+    Write-Host "Installed. Restart Palworld -- UE4SS hot reload is disabled, so a running game will not pick this up."
 }

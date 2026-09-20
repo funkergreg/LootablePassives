@@ -5,6 +5,8 @@
 # change. Listed here in case anyone runs the game from a checkout.
 LootablePassives_journal.tsv
 
+# Ignore screenshots used in dev
+docs/*.png
 # Ensure we keep the thumbnail image
 !thumbnail.png
 
