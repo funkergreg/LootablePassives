@@ -1,10 +1,8 @@
 # Lootable Passives
 
-A Palworld mod. Passives become items you can take off one Pal and put onto another.
+Passives become items you can take off one Pal and put onto another.
 
-Vanilla has a handful of passives available as single-use implant modules. This mod makes that true
-of **all 115**, and gives you two ways to obtain them: extract one deliberately at the Surgery
-Table, or let the Pal Disassembly Conveyor recover them automatically from every Pal it consumes.
+Vanilla has a handful of passives available as single-use implant modules. This mod makes that true of **all 115**, and gives you two ways to obtain them: extract one or all at the Surgery Table, or let the Pal Disassembly Conveyor recover them from a Pal it consumes.
 
 ## What this mod does
 
