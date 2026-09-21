@@ -21,7 +21,7 @@ local MODES = {
 -- EVERY KEY HERE NEEDS A MATCHING ROW in PalSchema's
 -- LootablePassivesInsertRoutes.json, and every such row needs a key here.
 -- Nothing checks that; the insert-route count in the startup log line is the
--- only report of it. See CLAUDE.md.
+-- only report of it.
 --
 -- The rank in each trailing comment is the target passive's own rank, and
 -- matches the Rank on that route's row.

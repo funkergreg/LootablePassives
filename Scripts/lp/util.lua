@@ -3,8 +3,7 @@
 --
 -- The _call_/_index_ helpers are module-level functions passed to pcall by
 -- reference, never `pcall(function() ... end)`. field() and method() are the
--- general form. Keep new per-frame reads in that form; see CLAUDE.md on registry
--- churn.
+-- general form.
 
 local SETTINGS = require("settings")
 
@@ -27,7 +26,6 @@ SCRIPT_DIRECTORY = SCRIPT_DIRECTORY:gsub("([\\/])[Ll][Pp][\\/]$", "%1")
 local UE4SS_ROOT = SCRIPT_DIRECTORY:match("^(.*[\\/]UE4SS[\\/])") or SCRIPT_DIRECTORY
 
 -- The mod's only log channel, and it is unconditional. There is no second,
--- switchable channel; see CLAUDE.md before adding one.
 local function log(message)
     -- print supplies the newline. Do not format one in as well.
     print(string.format("[%s] %s", MOD_NAME, message))
@@ -117,8 +115,7 @@ local function is_valid(object)
     return succeeded and valid == true
 end
 
--- FName:ToString(), falling back to tostring(). Use this for every FName; see
--- CLAUDE.md on what tostring alone returns.
+-- FName:ToString(), falling back to tostring(). Prefer to use this for every FName.
 local function name_to_string(value)
     value = unwrap(value)
     if value == nil then
@@ -207,7 +204,7 @@ end
 -- conjunction, so a caller can report which one failed. An unasked question
 -- counts as unauthorised: this FAILS CLOSED.
 --
--- Not UGameplayStatics::IsServer(WorldContextObject); see CLAUDE.md.
+-- Not UGameplayStatics::IsServer(WorldContextObject)
 --
 -- One implementation, here, because it gates every AddItem_ServerInternal in the
 -- mod.

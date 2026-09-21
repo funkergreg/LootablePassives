@@ -79,8 +79,8 @@ RegisterHook(
 --
 -- Called at LOAD, three times. Each call builds its flag and its runner once, so
 -- the scheduler it returns allocates nothing however often a hook fires. That is
--- the point: these hooks fire at frame rate, and a closure per firing is the
--- registry churn CLAUDE.md describes. A flag alone would not do it, because
+-- the point: these hooks fire at frame rate, and a closure per firing is
+-- registry churn. A flag alone would not do it, because
 -- ExecuteWithDelay(0, ...) completes within the tick.
 local function coalescer(work, delay)
     local scheduled = false
@@ -108,8 +108,7 @@ local schedule_gate_pass = coalescer(enforce_extraction_gate, 0)
 --
 -- The context argument is the tab page: Update Button State is a method on
 -- WBP_OperatingTable_TabPage_C. Recorded on every firing, including those where
--- a pass is already queued. See CLAUDE.md, "Take a widget from the hook
--- context".
+-- a pass is already queued.
 local function on_update_button_state(context)
     note_live_page(unwrap(context))
     schedule_gate_pass()
@@ -213,7 +212,6 @@ end
 -- The startup counts line. The numbers come from passive_items.lua and
 -- lp/ids.lua; each entry needs a matching row in the PalSchema JSON to be
 -- reachable, so a number that reads low means a half that did not load.
--- CLAUDE.md records what this line should say.
 local extract_operations, insert_routes = 0, 0
 for _, mode in pairs(EXTRACTION_MODES) do
     if mode == "implant" then
@@ -229,4 +227,3 @@ log(string.format(
     conveyor_on and "on" or "off (conveyor_extraction = false in settings.lua)",
     SETTINGS.surgery_ui_gate == false and "off (surgery_ui_gate = false in settings.lua)" or "on"
 ))
-

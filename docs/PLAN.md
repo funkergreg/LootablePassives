@@ -1,45 +1,32 @@
 # Plan
 
-Goals, listed below in the order they should be addressed:
+Below are planning goals; this document is a living document intended to catch ephemeral knowledge subject to change on any edit.  Keep this planning document iself updated to:
+
+- align this document to code as code is changed
+- point to WHERE something happens in code; DO NOT replicate the content of the code (since this may become stale on successive edits)
+- incorporate new design elements, consistent with other items remaining in the plan (check for conflicts on adding to this document)
 
 ---
 
-## Improvements
+## Invariants worth preserving in design
 
-### Confirmed in game, 2026-09-20
+- **Extraction must never hand back a reusable recipe.** Extracting a recipe-generated passive yields a single-use disposable implant.
+- **Grant before remove.** The disposable implant is created *before* the passive is removed, and the recovery journal replays an interrupted exchange on the next load. Given a choice the mod duplicates an item rather than destroying a passive.
+- **Vanilla's overwrite behaviour is untouched.** An overwritten passive is gone and yields no item. Do not "fix" this; it is the game's rule.
+- **Multiplayer is a first-class case, not a later port.** `find_inventory(nil)` resolves a player only when `state_count == 1`, so it returns nil with two players connected. Any base-camp feature needs a stated rule for *which* player receives something, or a mechanism that does not need one. Gating is `AActor::HasAuthority()` (0-arg) for server/client, `APawn::IsLocallyControlled()` to identify the host.
+  - **Tested, on real hardware: host has the mod, client does not.** Extraction and disassembly worked for the host, the game was stable for both, and items the client could not resolve rendered as blank entries in a shared chest rather than crashing anything. Asymmetric installs are therefore survivable, which is what the Workshop description promises.  Other configurations, including dedicated server, are untested.
 
-#### Module sort order in the inventory -- confirmed in game
+---
 
-`SortID` on the 94 `LP_Implant_*` items was two alphabetical-by-id runs from two rounds of authoring (`95001`+ and `96001`+), which is why rarity scattered in `docs/sort-order.png`.
+## Improvements (TODOs)
 
-Now one contiguous block, `95001`-`95094`: **rarity descending, then English display name ascending**. Orange first, so Legend, Lucky and the other prizes head the block and the white negatives tail it. Values only -- the file stays alphabetical by item id, which is what makes it maintainable by hand.
+### Install reliability (HIGHEST PRIORITY)
 
-The 21 vanilla `PalPassiveSkillChange_Consumable_*` modules keep vanilla's own `SortID` and will still sort apart from these 94. Deliberate: their `Rarity` is not readable from this machine, so any block chosen for them could put an orange module in the purple run, and patching `Rarity` to force agreement would be the first time this mod changed how a vanilla item looks.
+- At present, **`install.ps1` copies; it never deletes.**  
+- The Problem: A file deleted from the repo goes on living in the game folder, and the game goes on loading it — so the thing you just "removed" may keep working, and the repo you are testing is not the thing under test.  This is the DEV install path and it is NOT resilient to change.
+- TODO: make install.ps1 do a remove step before deploying to game folders so leftover files don't cause conflicts; the deployment should match what is in the repo.  THEN, Update the CLAUDE.md section on this after new dev install process implemented.
 
-Verified 2026-09-20: sorted correctly in two base containers, and still correct after moving modules between the containers and re-sorting. Nothing further to do here.
-
-#### BUG: conveyor modules went to the host rather than to the Pal's owner -- fixed, single-player confirmed
-
-Confirmed by reading it: `delivery_candidates` sorted `local_player` ahead of everything, so on a listen server the host collected the modules for every Pal, whoever owned it. Distance was only ever a tiebreak among the rest.
-
-The premise in the original note needed a correction, and it matters for how the fix is written: a host **without** the mod cannot receive modules, because the mod is not running there. Nothing on an unmodded peer creates items, and the one peer that does create them gates on `HasAuthority()`. What the ordering actually produced was a modded host collecting a guest's modules -- the wrong player, not an unmodded one.
-
-What changed:
-
-- `Pal.hpp`'s `FPalIndividualCharacterSaveParameter.OwnerPlayerUId` is snapshotted with the passives, in the same pass, because that is the last moment the Pal exists to be asked. Property reads only.
-- The pending ledger is keyed by owner and item, `LPL2`. An `LPL1` file is still read, as unowned rows, rather than discarded -- the debt is the same, one column short.
-- A row with a known owner goes to that owner **and to nobody else**. If they are not online it is held on disk and retried on every map load and every later disassembly. A guest can queue ten Pals and log off while the machine is still eating them; a preference with a fallback would hand all ten to the host, which is the behaviour being removed.
-- One fallback, for the comparison not running rather than not matching: if no candidate yields a readable `PlayerUId` at all, the fault is ours, so it pays out in the old order and says so loudly once.
-
-"Deliver only to a player who has the mod" is **not implementable as stated** and the plan should stop asking for it. UE4SS Lua has no custom network channel and nothing exposes a peer's loaded DataTables, so no peer can be asked. Owner-first is the closest approximation. The cost is deliberate and is now documented in `README.md`: a guest without the mod who feeds the conveyor gets modules their game cannot resolve, which the multiplayer test already showed rendering as blank chest entries and crashing nothing. That is a better outcome than the host silently taking them.
-
-To confirm, in single-player first: the summary line for a disassembly must read as it always did, with neither a `held for the player who owned the Pal` clause nor a `No owner UId could be read from the consumed Pal` line. Those two are opposite ends of one question and both are said once per session. `held` means the owner match is running and rejecting -- `OwnerPlayerUId` on the Pal not equalling `PlayerUId` on `APalPlayerState` -- so modules would be withheld rather than delivered until that is fixed. That is the one regression risk in this change; it is loud, and the debt survives it. The `No owner UId` line means the read is not running at all, which fails open: single-player carries on working and the multiplayer rule is quietly inert.
-
-Verified 2026-09-20, in single-player, across twenty-five disassemblies: every one delivered, and **neither** of the two lines that would report the owner match failing appeared -- no ` held for the player who owned the Pal` and no `No owner UId could be read from the consumed Pal`. So `OwnerPlayerUId` on the Pal does read, and it does equal `PlayerUId` on `APalPlayerState`. That was the one regression risk in the change and it is answered. The multiplayer half -- a guest's Pal going to the guest, and a debt held while they are offline -- is still untested and needs two machines.
-
-### Open
-
-#### CTD: access violation in a Lua callback, Surgery screen open, conveyor running
+## CTD: access violation in a Lua callback, Surgery screen open, conveyor running
 
 Session of 2026-09-20 19:32-19:36. Sort order verified in two base containers, including after moving modules between them and re-sorting. Twenty-five Pals disassembled over about thirty seconds. Player left the disassembly menu with Pals still on the conveyor, opened the Surgery Table, saw the bugged panel, and the game went down with `EXCEPTION_ACCESS_VIOLATION reading address 0x0000686374617340` with no further interaction.
 
@@ -67,7 +54,7 @@ If it reproduces: the log plus `%LOCALAPPDATA%/Pal/Saved/Crashes/` is what to se
 
 **Background worth knowing before blaming this mod.** Five Lua mods were live, and PalSchema 0.6.7 failed two signature scans on this game build -- see the entry below, which has a fix. Neither explains an access violation while a menu opens, and the signature failures are about loading a world rather than about running one, but both belong in a bug report.
 
-#### PalSchema 0.6.7 fails two signature scans on this build -- fixed upstream in 0.6.71, not yet on the Workshop
+### PalSchema 0.6.7 fails two signature scans on this build -- fixed upstream in 0.6.71, not yet on the Workshop
 
 From the 19:36 log:
 
@@ -88,7 +75,26 @@ Routes, in order of preference: wait for 0.6.71 to reach the Workshop; ask the a
 
 This is also the likeliest reading of the multiplayer test, where the guest without the mod saw blank chest entries and did not crash: those items were in the host's world, not in the guest's own save.
 
-#### The Edit button refuses the click but never greys out
+#### The blank Surgery panel: the earlier diagnosis is wrong
+
+Recorded because it cost a test cycle. The panel was blamed on `refresh_surgery_ui` writing to a closed screen, and that entry read as settled. The 19:36 session disproves it: the panel came up bugged -- gender change only, no Pal selectable, no `+` to pick a module -- in a session where **no transaction ran at all**, so `refresh_surgery_ui` was never called once. It cannot be the cause, and the guard cannot be the fix.
+
+The guard stays anyway, on its own merit: writing reset-to-empty calls into a panel nobody has open is wrong whether or not it caused this, and it now costs nothing because it acts on one recorded widget rather than on everything `FindAllOf` returned.
+
+**The leading explanation now is that the panel is not corrupted at all: there were no Pals to list.** Twenty-five Pals had just gone through the disassembler, and Pals still on the conveyor are in the machine's container rather than in the box. With nothing to select, there is no Pal, so there is no passive panel and no `+`, and what is left showing is the gender side. That fits the 19:36 sighting exactly, and it fits "toward the very end" of the two earlier sessions. Note also that the first screenshot, `docs/double-trouble.png`, shows an empty framed area rather than a broken one, which is what `WBP_NoData` looks like.
+
+That is a ten-second test and it should be the next thing done: open the Surgery Table with Pals in the box page, then with the box page emptied into the conveyor, and see whether the panel differs. If it is the Pal list, this is vanilla behaviour and the entry closes as not-a-bug -- possibly worth a line in the README instead. If the panel is bugged with Pals available, the next place to look is vanilla's own `Setup` / `SwitchTab` / `SwitchPanel` path, and the question becomes whether 117 added rows in `DT_OperatingTablePassiveSkillDataTable` can make the list build abort.
+
+#### Panel repaint: dead ends, so they are not retried
+
+`lp/ui.lua` resets the panel rather than repainting the passive cards. Four approaches were tried first and none of them works; the file points here rather than carrying the list.
+
+- `ReflectPassiveChange`, `RefreshCurrentPassiveItem` and `RefreshItemDisplay`, called on the page and the screen, do not repaint the slots on their own. They are still called as part of the reset, where they are cheap and harmless.
+- `On Click Pal List` with the screen's own `CurrentHandle` executes -- it reported `reselect=true` -- and the stale label stays. Re-selecting the Pal that is already selected is evidently a no-op inside the Blueprint, which is why clicking to a *different* Pal and back is what works by hand.
+- Writing the cards directly with `SetPassiveSkill` / `Clear` is worse. The calls succeed (`cleared=4 failed=0`) but `Clear()` leaves a card blank instead of showing the empty `+` slot, and the cards are reused across Pal selections, so every Pal afterwards showed an empty panel. The empty state is its own visual -- the card has an `Anm_EmptySlot_HideToShow` animation -- and `Clear()` does not reach it.
+- Diagnosing staleness from `BindedPassiveSkillName` does not work either: it was correct while `Text_SkillName` was stale, so the card data agreed with reality the whole time and only the paint was wrong.
+
+### The Edit button refuses the click but never greys out
 
 Reported from the 2026-09-20 build: the gate blocks correctly, and the button goes on looking pressable. Recorded here because the wrong half was in a code comment presented as settled -- `set_edit_interactable` claimed that "EnabledButton = false is what the game itself uses to show the greyed look", which was never verified and is probably false. `WBP_CommonButton.hpp` declares no disabled state for that widget at all: the animations are `Anm_Normal`, `Anm_NormalToFocus`, `Anm_OpenFocus` and `Anm_DefaultToRed`, and there is no enabled/disabled setter on it.
 
@@ -100,59 +106,15 @@ Instead, `lp/ui.lua` now has a one-shot probe: `describe_button_state` logs `pag
 
 `Text_Warning` is the first candidate. A text field named that, on a panel with `Image_NoItem` and `Canvas_RequireMoney` beside it, is how a widget with no disabled style usually says no.
 
-#### The blank Surgery panel: the earlier diagnosis is wrong
+### `extract_additional` journal churn
 
-Recorded because it cost a test cycle. The panel was blamed on `refresh_surgery_ui` writing to a closed screen, and that entry read as settled. The 19:36 session disproves it: the panel came up bugged -- gender change only, no Pal selectable, no `+` to pick a module -- in a session where **no transaction ran at all**, so `refresh_surgery_ui` was never called once. It cannot be the cause, and the guard cannot be the fix.
+The `clear_journal()` per passive is redundant against the next iteration's `write_journal`, which opens `"w"`. The final clear is NOT redundant: it is what stops recovery replaying a completed sweep. So the change is "skip between iterations, clear once at the end" -- a restructure of crash-recovery ordering to save a handful of file deletes per extract-all.
 
-The guard stays anyway, on its own merit: writing reset-to-empty calls into a panel nobody has open is wrong whether or not it caused this, and it now costs nothing because it acts on one recorded widget rather than on everything `FindAllOf` returned.
+### Simplification Finds
 
-**The leading explanation now is that the panel is not corrupted at all: there were no Pals to list.** Twenty-five Pals had just gone through the disassembler, and Pals still on the conveyor are in the machine's container rather than in the box. With nothing to select, there is no Pal, so there is no passive panel and no `+`, and what is left showing is the gender side. That fits the 19:36 sighting exactly, and it fits "toward the very end" of the two earlier sessions. Note also that the first screenshot, `docs/double-trouble.png`, shows an empty framed area rather than a broken one, which is what `WBP_NoData` looks like.
+Below are simplification findings worth a pass prior to publishing.
 
-That is a ten-second test and it should be the next thing done: open the Surgery Table with Pals in the box page, then with the box page emptied into the conveyor, and see whether the panel differs. If it is the Pal list, this is vanilla behaviour and the entry closes as not-a-bug -- possibly worth a line in the README instead. If the panel is bugged with Pals available, the next place to look is vanilla's own `Setup` / `SwitchTab` / `SwitchPanel` path, and the question becomes whether 117 added rows in `DT_OperatingTablePassiveSkillDataTable` can make the list build abort.
-
-#### IMPROVEMENT: PalSchema JSON to Lua -- do not do this; take the schemas instead
-
-Asked as: could the JSON item definitions become Lua, for configurable values and for verification. Both halves have an answer, and neither is the conversion.
-
-**PalSchema has no Lua API.** Its `dlls/main.dll` carries no Lua bindings -- the only Lua symbols in it are the inherited `CppUserModBase::on_lua_start`/`on_lua_stop` vtable entries -- and the mod-content strings in the binary are the folder names it scans (`items`, `raw`, `blueprints`, `appearance`, `buildings`, `skins`, `translations`, `mods`) plus `.json` and `.jsonc`. So there is no Lua form of a PalSchema mod to convert to. The data half would instead have to be rebuilt through UE4SS Lua against the live tables, which means reimplementing what PalSchema does natively: adding rows to `DT_ItemDataTable` and entries to `DA_StaticItemDataAsset`, neither of which UE4SS Lua exposes. Not a refactor; a rewrite of the part that already works.
-
-**Verification: PalSchema will generate JSON Schemas from the live game tables.** `main.dll` contains `JsonSchemaGenerator::GenerateRawSchemas`, `GenerateEnumSchema`, a `Generate JSON Schema Files` button under `Generators` in its UE4SS debugging-tools tab, a `schemas` output folder, and the `raw/{}.schema.json`, `enums.schema.json`, `utility.schema.json` names it writes. That is a stronger check than anything hand-written could be, because it is generated from the same reflected properties PalSchema patches through -- it catches a misspelled column or an illegal enum value, which is most of what fails silently today.
-
-How to wire it up, once generated: map the schemas by path glob in `.vscode/settings.json` under `json.schemas`, and run the same schemas in a pre-commit or CI step with any validator (`npx ajv-cli`, for instance). Do **not** add an inline `$schema` key to `items/*.json`: the top level there is a map of item id to definition, so an extra key would read as a 95th item.
-
-Unestablished, and it is one in-game click each: whether the generator covers `items/` as well as `raw/`, and where the `schemas` folder lands.
-
-**Configurable pricing is a different problem and the JSON is not what blocks it.** The charge is server-side, from `Price` in `DT_OperatingTablePassiveSkillDataTable`; the widget's `CurrentRequireMoney` is display only. Writing a DataTable row at runtime is the same capability UE4SS Lua does not expose, so a setting cannot simply override the value. What *is* reachable: money in Palworld is an inventory item, so the Lua half could rebate the difference after a transaction by granting `Money`. That makes a setting able to discount the JSON price but never to raise it, since taking items back needs a container walk this mod has never done. A sketch, not a plan -- nothing here has been tried.
-
-#### Panel repaint: dead ends, so they are not retried
-
-`lp/ui.lua` resets the panel rather than repainting the passive cards. Four approaches were tried first and none of them works; the file points here rather than carrying the list.
-
-- `ReflectPassiveChange`, `RefreshCurrentPassiveItem` and `RefreshItemDisplay`, called on the page and the screen, do not repaint the slots on their own. They are still called as part of the reset, where they are cheap and harmless.
-- `On Click Pal List` with the screen's own `CurrentHandle` executes -- it reported `reselect=true` -- and the stale label stays. Re-selecting the Pal that is already selected is evidently a no-op inside the Blueprint, which is why clicking to a *different* Pal and back is what works by hand.
-- Writing the cards directly with `SetPassiveSkill` / `Clear` is worse. The calls succeed (`cleared=4 failed=0`) but `Clear()` leaves a card blank instead of showing the empty `+` slot, and the cards are reused across Pal selections, so every Pal afterwards showed an empty panel. The empty state is its own visual -- the card has an `Anm_EmptySlot_HideToShow` animation -- and `Clear()` does not reach it.
-- Diagnosing staleness from `BindedPassiveSkillName` does not work either: it was correct while `Text_SkillName` was stale, so the card data agreed with reality the whole time and only the paint was wrong.
-
-#### `extract_additional` journal churn
-
-Unchanged and still deliberate. The `clear_journal()` per passive is redundant against the next iteration's `write_journal`, which opens `"w"`. The final clear is NOT redundant: it is what stops recovery replaying a completed sweep. So the change is "skip between iterations, clear once at the end" -- a restructure of crash-recovery ordering to save a handful of file deletes per extract-all. Wrong trade immediately before publishing.
-
-#### `find_visible_tab_page` caching -- closed
-
-Nothing to cache: the function is gone. The page is taken from the hook context and read back as a validated local, so the 1.4 scans a second it was measured at are now zero engine calls. See the CTD entry above.
-
----
-
-## Simplification Finds
-
-Below are simplification findings worth a pass.
-
-### Dead path
-
-`recovery.lua:70` read `journal.lock ~= "" and journal.lock or marked[1].lock`, but `read_journal` produces no `lock` column — the marker it records is `passive_name`. The first two terms were dead and it always took the third branch. I simplified to the behaviour it already had and left a comment; if the journal's recorded marker was meant to be authoritative, that's a real bug and a /code-review matter, not a cleanup.
-
-### Larger Issues
-
+- **Dead path:** `recovery.lua:70` read `journal.lock ~= "" and journal.lock or marked[1].lock`, but `read_journal` produces no `lock` column — the marker it records is `passive_name`. The first two terms were dead and it always took the third branch. I simplified to the behaviour it already had and left a comment; if the journal's recorded marker was meant to be authoritative, that's a real bug and a /code-review matter, not a cleanup.
 - **`finish()`'s UI policy → `ui.on_transaction_complete(mode)`** (altitude). Correct in principle, but it restructures the 500ms/1600ms refresh ladder — the least testable code in the mod and the suspected cause of `docs/double-trouble.png`. Not without an in-game session.
 - **Bounding the conveyor's snapshot-miss re-walk**. Changes behaviour (stops retrying a snapshot after N frames).
 - **Caching `before_counts` on snapshots** to stop `counts()` being rebuilt per resolve attempt. Real waste on the ~500-parameter fallback path, but it means new signatures for the mod's most safety-critical predicates.
@@ -162,11 +124,9 @@ Two notes: `ledger.owe`'s signature changed to `owe(owner, item_ids)`, and I upd
 
 I have not run `install.ps1`; nothing here is verified in game yet.
 
----
+### Publish to the Steam Workshop
 
-## Publish to the Steam Workshop
-
-### Facts established (uploader docs + installed packages on disk)
+#### Facts established (uploader docs + installed packages on disk)
 
 - `InstallRule.Targets` copies each named folder **with its name** into the destination for its `Type`. `Lua` → `Mods\NativeMods\UE4SS\Mods\<PackageName>`; `PalSchema` → `Mods\NativeMods\UE4SS\Mods\PalSchema\mods`; also `UE4SS`, `LogicMods`, `Paks`. This is why the payload is `PalSchemaMods/LootablePassives/`.
 - `Info.json` is correct as it stands: `PackageName` `LootablePassives`, `DebugMode: false`, four `InstallRule`s (client + `IsServer` for both types), Tags all legal, and `Dependencies` `["UE4SSExperimentalPW", "PalSchema"]` — **both verified against the installed packages' own `Info.json`** at `steamapps\workshop\content\1623730\3625223587` and `…\3625280368`.
@@ -177,13 +137,13 @@ I have not run `install.ps1`; nothing here is verified in game yet.
 - The uploader is GUI-only — no CLI — so the upload click cannot be scripted. **Do not subscribe to your own item:** subscribed packages are view-only and can no longer be updated from that machine.
 - rewrite **Install** once the mod is a Workshop item, keeping `install.ps1` as the dev/manual path.
 
-### `tools/stage.ps1`
+#### `tools/stage.ps1`
 
 The repo cannot be uploaded in place: Steam UGC uploads the item folder recursively, so without a staging step every subscriber downloads `.git/`, `tools/`, `data/` and `docs/`. Copy **only** `Info.json`, `thumbnail.png`, `Scripts/`, `PalSchemaMods/LootablePassives/`, `README.md` and `LICENSE` into the uploader's numbered folder under `C:\Program Files (x86)\Steam\steamapps\workshop\content\1623730\<id>\`.
 
 Requirements, modelled on `install.ps1`: `-DryRun`; an **allowlist**, never an exclude list, so a new top-level folder in the repo cannot leak by default; and leave `.workshop.json` in the destination untouched — it holds the `PublishedFileId`. It should run its own two self-contained checks rather than call out to anything: `Info.json` parses, and every `InstallRule.Targets` path plus `Thumbnail` exists in the staged set. Keep those inside `stage.ps1`; do not grow a second verifier tool.
 
-### Release checklist
+#### Release checklist
 
 1. `luacheck.js` green; `install.ps1`; restart; confirm the startup counts line reads `115 extractable passives, 2 extraction operations, 54 insert routes`; exercise Extract One, Extract All, an insert, a duplicate-blocked insert, and (once §3 lands) the conveyor.
 2. Re-derive `MinRevision` from that build's title screen; bump `Version`; confirm `DebugMode: false`. `MinRevision` is a FLOOR, not the build you happen to be on, so 82182 is not automatically stale -- UE4SS, PalSchema and every other package on this machine still declare it. The real question is which floor we can honestly claim: testing has only ever happened on `v1.0.5.102999`, so 82182 asserts a compatibility nobody has checked, while 102999 locks out anyone on an older build. Decide it deliberately rather than by leaving the number alone.
@@ -192,17 +152,7 @@ Requirements, modelled on `install.ps1`: `-DryRun`; an **allowlist**, never an e
 5. `Create New Mod` (Lua) in the uploader to mint the folder and `PublishedFileId`, `stage.ps1` into it, upload **private**.
 6. Verify by installing from the Workshop into a clean game folder — not the dev install, which already has the files. Then make it public.
 
-### Multiplayer test result (2026-09-19)
-
-Run on real hardware, two machines: **host has the mod, joining client does not.**
-
-- Game stable for both players; no crash on either side.
-- Extraction and disassembly worked normally for the host.
-- Items the client's game cannot resolve render as **blank entries** in a shared chest.  Confirms the prior assumption. Viewing them does not crash the client.
-
-This proves asymmetric installs are survivable, and the Workshop description can say so. What this does **not** establish, and must not be written as if it did: the client had no mod at all, so **no non-authoritative peer has ever run this code**. The `HasAuthority()` false branch remains unexercised. Also still untested: a client that *has* the mod, and dedicated-server hosting.  This can only come after publishing to the steam workshop due to resource constraints in testing; the mod will be testes on a Steam Machine console which can download and activate the mod from the workshop.
-
-### Notes on Mod activation
+#### Notes on Mod activation
 
 **IMPORTANT:** This Section must be deleted once workshop publishing is complete as information would be OBE
 
@@ -236,3 +186,52 @@ The marker rows carry `RequireItemId: "None"`, so nothing gates them — vanilla
 **Turning the mod off means removing files, not clearing a flag.** For a manual dev install, delete both destinations (`install.ps1` lists them). Do not ship a build that relies on `mods.txt` as the player-facing switch.
 
 **This is the strongest argument for publishing to the Workshop**, and the reason it should happen before the mod is shared any further. A Workshop package is installed by the official loader, which records every file it copied in `Mods\ManagedMods\<PackageName>\InstallManifest.json` and removes exactly that set when the mod is deactivated. Because both halves are declared in one `Info.json`, they are installed and removed as one unit, and the in-game mod manager becomes a real off switch for the whole mod. Nothing in the repo can reproduce that: a manual `install.ps1` install has no `ManagedMods` entry at all, so the in-game manager cannot see it, and `PalModSettings.ini`'s `ActiveModList` never mentions it.
+
+---
+
+## Data constraints that shaped the design
+
+These are properties of the game's tables, not choices this mod made. Breaking one produces a dead route with no error anywhere a player would see it.
+
+- **A passive can own only ONE row in `DT_OperatingTablePassiveSkillDataTable`.** For the 54 passives whose row is already a vanilla recipe, an extracted module could be tied to a recipe in key items creating a duplicate; the `LP_Insert_*` alias routes exist to prevent that.
+- **Marker rows carry `RequireItemId: "None"`, so nothing gates them.** Vanilla will happily run the swap and leave the marker sitting on the Pal.
+- **Naming `RequireItemId` in the vanilla reprice file would destroy the recipe gate.** That file sets `Price` and nothing else, on purpose.
+- **Module rarity tracks passive tier** — white for negatives, green/blue/purple ascending, orange for Diamond and World Tree. A convention, but an established one; match it.
+- **`SortID` on the 94 modules is one contiguous block, `95001`-`95094`, ordered by rarity descending then English display name ascending.** Orange first. It is derived, so adding a module means recomputing the whole block rather than appending to it — the two alphabetical-by-id runs that came from appending are exactly why rarity used to scatter in the inventory. The 21 vanilla `PalPassiveSkillChange_Consumable_*` items keep vanilla's own `SortID`: their `Rarity` is not readable from the repo, so any block chosen for them risks putting an orange module in the purple run.
+
+---
+
+## Item creation: the engine spills, and that is the answer
+
+`AddItem_ServerInternal` is the only item-creation call in the reflected API. Five other mechanisms for placing an item in the world were tried and all are dead ends.  The important discovery is that **a full bag is not a failure case**. `AddItem_ServerInternal` returns Success and the engine drops the item on the ground. So:
+
+- **Success means created.** Treating a ground-spill as a failure is what caused a real duplication bug: the debt stayed owed, was retried, and paid out extra copies.
+- Degradation is per-item, not all-or-nothing. With zero free slots a module that stacks onto one already held still fits, while a new type spills. Observed interleaved in a 54-Pal run.
+- **Modules owed when you quit are paid on your next load.** If the game closes mid-disassembly the debt is recorded to disk and delivered when you load back in, usually before you touch anything.  A hard crash at the wrong instant can still lose an in-flight module.
+- Matching the machine's own output position was not achievable with the interfaces the game exposes to mods through UE4SS or PalSchema (may be possible with Unreal Engine modding).
+
+---
+
+## Multiplayer test result (2026-09-19)
+
+Run on real hardware, two machines: **host has the mod, joining client does not.**
+
+- Game stable for both players; no crash on either side.
+- Extraction and disassembly worked normally for the host.
+- Items the client's game cannot resolve render as **blank entries** in a shared chest.  Confirms the prior assumption. Viewing them does not crash the client.
+
+This proves asymmetric installs are survivable, and the Workshop description can say so. What this does **not** establish, and must not be written as if it did: the client had no mod at all, so **no non-authoritative peer has ever run this code**. The `HasAuthority()` false branch remains unexercised. Also still untested: a client that *has* the mod, and dedicated-server hosting.  This can only come after publishing to the steam workshop due to resource constraints in testing; the mod will be testes on a Steam Machine console which can download and activate the mod from the workshop.
+
+---
+
+### DEV Tips
+
+Each item below caused a crash or a wrong conclusion in this repo.  These indicate known problem areas where extra care must be taken, though these may not remain relevant to later designs.
+
+- **`FName` needs `util.name_to_string()`, never `tostring()`.** `tostring` on an FName yields `FNameUserdata: 000001DF50F0E428`, which looks like output and carries nothing. A whole test run was wasted logging three ids that way.
+- **`pcall` does not catch a native access violation.** It catches Lua errors. A wrong-arity UFunction call, or engine code that dereferences null, takes the process down regardless. `StaticConstructObject` on `UPalIncidentBase` crashed the game with `EXCEPTION_ACCESS_VIOLATION reading 0x2a8` after being described as unable to crash because it "only constructs and inspects" — **construction runs engine code. It is not inspection.**
+- **Log immediately before each engine call in a probe.** One log line per call, so that if the game dies, the last line in `UE4SS.log` names the call. A probe that makes three engine calls between two log lines cannot be diagnosed after the fact, and the crash above could not be attributed to either of its two candidate calls.
+- **Take a widget from the hook context. Never go looking for one.** Every widget hook this mod owns is a method on the widget it wants, so UE4SS hands that object to the callback as its first argument, live by construction — `Update Button State` gives the tab page, `OnPassiveUpdate` gives the screen. `lp/ui.lua` records both and calls `FindAllOf` nowhere.
+- **A closure per call is a crash, not an inefficiency.** `pcall(function() ... end)` allocates a fresh Lua closure and a UE4SS registry ref every time it runs. On a hook that fires at frame rate that churn produced `Error: [Lua::Registry::get_function_ref] Ref was not function` followed by `EXCEPTION_ACCESS_VIOLATION reading 0xffffffffffffffff`, with a call stack entirely inside UE4SS. Everything on a per-frame path therefore uses argument-form `pcall` against a module-level accessor — `util.field`, `util.method`, and the `_call_`/`_index_` helpers — and every hook callback is built once, at load, and passed by reference. `main.lua`'s `coalescer()` and `hooks.lua`'s per-registration `entry.retry` exist for the same reason: a flag alone is not enough, because `ExecuteWithDelay(0, ...)` completes within the tick and the next firing would allocate again.
+- **`restore_replaced_passive` removes the marker before adding the passive, and the order is load-bearing.** `AddPassiveSkill(AddSkill, OverrideSkill)` does not reliably honour the override: it appended the passive and left the marker attached, which is how a Pal ended up carrying Infinite Stamina twice. It is also how the overwrite case crashed — a Pal whose four slots were full gained a fifth entry, and the passive panel has only four cards to index, which is why inserting into an *empty* slot never crashed. Removing first keeps the list from growing past what the UI can address. The trade is that a failed add leaves the Pal with neither, so every caller checks the result and the implant callers refund the module.
+- **Check arity against the header dumps, and not just `Pal.hpp`.** Widget functions live in `CXXHeaderDump/WBP_*.hpp`, CommonUI in `CommonUI.hpp`, engine in `Engine.hpp`. Prefer no-argument getters; avoid out-parameter overloads (`TryGetContainer(Out&)`) when a by-value equivalent exists (`GetContainer()`).

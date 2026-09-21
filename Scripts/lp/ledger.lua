@@ -8,7 +8,7 @@
 -- go through the machine. AddItem takes a count, so a row of 40 is one call.
 --
 -- The owner column is what lets a row be delivered to the player whose Pal it
--- came from; see ordered_for. Do not drop it; see CLAUDE.md on the delivery rule.
+-- came from; see ordered_for.
 --
 -- The file sits at util.UE4SS_ROOT, outside the folder the mod loader replaces on
 -- a version change, as does the recovery journal.

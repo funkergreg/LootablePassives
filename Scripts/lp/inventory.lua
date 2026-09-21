@@ -53,7 +53,7 @@ local function find_player_state(request_player_id)
     end
 
     -- There is no PlayerIndex fallback here on purpose. PlayerId and
-    -- PlayerIndex are different numbers; see CLAUDE.md.
+    -- PlayerIndex are different numbers.
     if state_count == 1 then
         return only_state
     end
@@ -77,8 +77,7 @@ end
 --   local_player = <bool> }, sorted local-player-first and then by distance.
 --
 -- uid is what lp/ledger.lua matches a debt's recorded owner against. The sort
--- order below is only the fallback it works down when no candidate matches;
--- see the note on ordered_for there, and CLAUDE.md on the delivery rule.
+-- order below is only the fallback it works down when no candidate matches.
 --
 -- Distances are squared and never rooted: only their order is used.
 local function delivery_candidates(near_location)
@@ -164,8 +163,7 @@ end
 -- and a reason string when ok is false.
 --
 -- A SUCCESS RESULT WITH NO COUNT CHANGE IS NOT A FAILURE and must not be
--- reported as one; the counts are read only to fill in detail. See CLAUDE.md,
--- "Item creation: the engine spills".
+-- reported as one; the counts are read only to fill in detail.
 local function add_modules(data, item_id, count)
     if not is_valid(data) then
         return false, "no inventory"
@@ -221,7 +219,7 @@ end
 --
 -- REMOVES FIRST, THEN ADDS. AddPassiveSkill(AddSkill, OverrideSkill) is called
 -- with the marker as OverrideSkill, but the removal above it is what the result
--- check relies on; do not drop it. See CLAUDE.md.
+-- check relies on.
 --
 -- Returns true only when the marker's count is zero and the passive's count has
 -- risen by one, so a failed add leaves the Pal with neither and every caller

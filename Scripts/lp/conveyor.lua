@@ -26,10 +26,10 @@
 -- and none takes an out-parameter: GetContainer() rather than
 -- TryGetContainer(Out&), K2_GetActorLocation() rather than
 -- GetMapObjectLocation(FVector&). A wrong-arity native call is an access
--- violation pcall does not catch; see CLAUDE.md.
+-- violation pcall does not catch.
 --
 --------------------------------------------------------------------------------
--- Three things not to change without reading docs/PLAN.md first
+-- Three guesses at behavior (take with caution)
 --------------------------------------------------------------------------------
 --
 -- BOTH HOOKS ARE REGISTERED. OnProceedConvertProcess fires per frame while the
@@ -67,8 +67,7 @@ local PROCEED_HOOK =
 local CONTAINER_HOOK =
 "/Script/Pal.PalMapObjectConvertCharacterToItemModel:OnUpdateCharacterContainer_ServerInternal"
 
--- ConvertProgressRate at or above this counts the Pal as consumed; below it, as
--- withdrawn. See CLAUDE.md for the measurements behind the value.
+-- GUESS: ConvertProgressRate at or above this counts the Pal as consumed; below it, as withdrawn.
 local COMPLETE_RATE = 0.999
 
 --------------------------------------------------------------------------------
@@ -142,8 +141,7 @@ local function read_queued_passives(model)
     local slot_count = unwrap(method(container, "Num")) or 0
     for index = 0, slot_count - 1 do
         local slot
-        -- Get(Index) takes an argument, so it is written out: util.method is for
-        -- zero-arity calls only.
+        -- Get(Index) takes an argument, so it is written out: util.method is for zero-arity calls only.
         pcall(function() slot = unwrap(container:Get(index)) end)
         if is_valid(slot) then
             local handle = unwrap(method(slot, "GetHandle"))
@@ -171,8 +169,7 @@ end
 -- Tracking
 --------------------------------------------------------------------------------
 
--- instance key -> { passives = { id, ... }, owner = <UId key or nil>,
---                   rate = number }
+-- instance key -> { passives = { id, ... }, owner = <UId key or nil>, rate = number }
 --
 -- Keyed by InstanceId, which is unique across the world, so entries from two
 -- conveyors share one table without colliding.
@@ -186,8 +183,7 @@ local unowned_reported = false
 -- main.lua's ledger flush; what is local here is the reporting.
 local function may_create_items(actor)
     local allowed, valid_actor, asked, authoritative = has_authority(actor)
-    -- Only the negative case logs: a closed gate and an unfired hook look the
-    -- same in the log otherwise.
+    -- Only the negative case logs: a closed gate and an unfired hook look the same in the log otherwise.
     if not allowed and not authority_reported then
         authority_reported = true
         log(string.format(
@@ -207,7 +203,7 @@ local function actor_location(actor)
 end
 
 -- Records the debt, then delivers it. ledger.owe writes to disk before
--- ledger.flush is called; do not reorder these.
+-- ledger.flush is called; do not reorder these without good reason.
 local function on_consumed(entry, actor)
     if not may_create_items(actor) then
         return
@@ -219,8 +215,7 @@ local function on_consumed(entry, actor)
             .. "single-player it means the OwnerPlayerUId read is not working.")
     end
 
-    -- One owe() call for the whole Pal: it sorts and rewrites the entire file
-    -- per call.
+    -- One owe() call for the whole Pal: it sorts and rewrites the entire file per call.
     local names, owed_items = {}, {}
     for _, passive_id in ipairs(entry.passives) do
         local item_id = module_for(passive_id)
@@ -235,8 +230,8 @@ local function on_consumed(entry, actor)
     ledger.owe(entry.owner, owed_items)
 
     -- Logged BEFORE the delivery call, so this line with no summary line after
-    -- it localises a crash to the delivery. Remove once docs/PLAN.md no longer
-    -- lists an unexplained CTD.
+    -- it localises a crash to the delivery.
+    -- TODO: Remove once unexplained CTD solved.
     log(string.format("Disassembly consumed a Pal owing %d module(s); delivering.", #names))
     local delivered, owed, spilled, held = ledger.flush(actor_location(actor))
     local summary = string.format("Disassembly yielded %d module(s): %s.",

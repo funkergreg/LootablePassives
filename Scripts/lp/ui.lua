@@ -1,7 +1,7 @@
 -- Lootable Passives -- The Surgery widget: access, the Edit gate, and panel repair.
 --
--- The gate here duplicates checks the transaction also makes; it is not the
--- enforcement point. See CLAUDE.md.
+-- The gate here duplicates checks the transaction also makes
+-- TODO: simplify
 --
 -- This module must NOT require lp.transaction. transaction requires this one, and
 -- keeping that edge one-directional is what stops the pair forming a cycle.
@@ -73,8 +73,7 @@ end
 -- methods: the tab page from Update Button State, the screen from
 -- OnPassiveUpdate. Nothing in this file calls FindAllOf.
 --
--- Do not reintroduce a scan here. See CLAUDE.md, "Take a widget from the hook
--- context".
+-- Do not reintroduce a scan here without good reason.
 
 local live_page = nil
 local live_screen = nil
@@ -188,14 +187,14 @@ local function describe_button_state(page, label)
     local warning = unwrap(field(page, "Text_Warning"))
     local no_item = unwrap(field(page, "Image_NoItem"))
     local readings = {
-        { "page.EnabledButton", field(page, "EnabledButton") },
-        { "button.bIsEnabled", field(button, "bIsEnabled") },
-        { "button.RenderOpacity", field(button, "RenderOpacity") },
-        { "button.Visibility", field(button, "Visibility") },
-        { "inner.bIsEnabled", field(inner, "bIsEnabled") },
+        { "page.EnabledButton",         field(page, "EnabledButton") },
+        { "button.bIsEnabled",          field(button, "bIsEnabled") },
+        { "button.RenderOpacity",       field(button, "RenderOpacity") },
+        { "button.Visibility",          field(button, "Visibility") },
+        { "inner.bIsEnabled",           field(inner, "bIsEnabled") },
         { "inner.IsInteractionEnabled", method(inner, "IsInteractionEnabled") },
-        { "Text_Warning.Visibility", field(warning, "Visibility") },
-        { "Image_NoItem.Visibility", field(no_item, "Visibility") },
+        { "Text_Warning.Visibility",    field(warning, "Visibility") },
+        { "Image_NoItem.Visibility",    field(no_item, "Visibility") },
     }
     local parts = {}
     for _, reading in ipairs(readings) do
@@ -335,7 +334,7 @@ local closed_skip_reported = false
 --
 -- Both are skipped entirely unless the recorded page is open, and the screen
 -- half is skipped unless the recorded screen is open. Nothing is written to a
--- widget that is not open; see CLAUDE.md.
+-- widget that is not open.
 local function refresh_surgery_ui(reset_panel, rebuild_list)
     local page = open_recorded(current_page())
     if page == nil then

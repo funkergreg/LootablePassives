@@ -13,8 +13,7 @@
 --                                               21 entries.
 --
 -- NEVER put a plain PalPassiveSkillChange_<passive> id here. Those are
--- vanilla's reusable recipes; see CLAUDE.md on why extraction must not yield
--- one.
+-- vanilla's reusable recipes.
 
 local items = {
     ["Alien"] = "LP_Implant_Alien",

@@ -2,8 +2,7 @@
 --
 -- Call order in the extraction path: write_journal("prepared"), add_implant,
 -- write_journal("granted"), remove_skill, clear_journal. The module is created
--- before the passive is removed. Do not reorder these; see CLAUDE.md under
--- "Invariants worth preserving".
+-- before the passive is removed.
 
 local util = require("lp.util")
 local ids = require("lp.ids")

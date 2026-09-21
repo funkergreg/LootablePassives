@@ -4,8 +4,7 @@
 -- and both conveyor hooks. Coalescing a hook that fires at frame rate is not
 -- here; that is main.lua's coalescer().
 --
--- Four properties of the shape below are deliberate. Preserve them; see
--- CLAUDE.md on registry churn.
+-- Four properties of the shape below are deliberate:
 --
 --   * Retries are BOUNDED.
 --   * The callback is built once, by the caller, at load, and must capture no
@@ -53,7 +52,7 @@ local function announce_if_complete()
     log(string.format("All %d hooks installed: %s.", #installed, table.concat(installed, ", ")))
 end
 
--- Is a player character resolvable? Used to suppress the gave-up warning on the
+-- Is a player character resolvable? Suppresses warning on the
 -- splash, login and title maps, where a widget hook has nothing to bind to.
 local function in_world()
     -- util.find_first validates before returning; raw FindFirstOf can return a

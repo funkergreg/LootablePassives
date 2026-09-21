@@ -2,8 +2,8 @@
 --
 --   lua tools\ledger_test.lua
 --
--- The only automated test in this repo, and not a verifier for the JSON data --
--- see CLAUDE.md. It covers the part of the mod with no engine call in it:
+-- The only automated test in this repo, and not a verifier for the JSON data.
+-- It covers the part of the mod with no engine call in it:
 -- owe/persist/load and ordered_for. lp.inventory is stubbed, so the assertions
 -- are about which candidate was chosen, never about an item existing.
 --
@@ -75,15 +75,14 @@ check("unowned row uses the sentinel",
     text:find("LPL2\t%*\tLP_Implant_Legend\t4") ~= nil, true)
 
 -- Loading is LAZY and no longer a public step: nothing is read off disk until
--- something asks, and every public reader asks. total_owed used to be the one
--- that did not, which is how a debt could read as 0 with the file sitting there.
+-- something asks, and every public reader asks.
 ledger = fresh_ledger()
 check("total owed after reload", ledger.total_owed(), 8)
 
 -- 2. A row with a known owner goes to that owner and to nobody else.
 GRANTS = {}
 CANDIDATES = {
-    { data = { name = "host" }, uid = BOB, local_player = true },
+    { data = { name = "host" },  uid = BOB,   local_player = true },
     { data = { name = "alice" }, uid = ALICE, local_player = false },
 }
 local delivered, owed, spilled, held = ledger.flush(nil)
@@ -111,7 +110,7 @@ check("held for an absent owner: no grants", #GRANTS, 0)
 
 -- ...and is delivered once that owner turns up.
 CANDIDATES = {
-    { data = { name = "host" }, uid = BOB, local_player = true },
+    { data = { name = "host" },  uid = BOB,   local_player = true },
     { data = { name = "alice" }, uid = ALICE, local_player = false },
 }
 delivered, owed, spilled, held = ledger.flush(nil)
