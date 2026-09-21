@@ -26,7 +26,22 @@ Below are planning goals; this document is a living document intended to catch e
 - The Problem: A file deleted from the repo goes on living in the game folder, and the game goes on loading it — so the thing you just "removed" may keep working, and the repo you are testing is not the thing under test.  This is the DEV install path and it is NOT resilient to change.
 - TODO: make install.ps1 do a remove step before deploying to game folders so leftover files don't cause conflicts; the deployment should match what is in the repo.  THEN, Update the CLAUDE.md section on this after new dev install process implemented.
 
-## CTD: access violation in a Lua callback, Surgery screen open, conveyor running
+### Simplification Finds (SECOND PRIORITY)
+
+Below are simplification findings worth a pass.
+
+- **Dead path:** `recovery.lua:70` read `journal.lock ~= "" and journal.lock or marked[1].lock`, but `read_journal` produces no `lock` column — the marker it records is `passive_name`. The first two terms were dead and it always took the third branch. I simplified to the behaviour it already had and left a comment; if the journal's recorded marker was meant to be authoritative, that's a real bug and a /code-review matter, not a cleanup.
+- **`finish()`'s UI policy → `ui.on_transaction_complete(mode)`** (altitude). Correct in principle, but it restructures the 500ms/1600ms refresh ladder — the least testable code in the mod and the suspected cause of `docs/double-trouble.png`. Not without an in-game session.
+- **Bounding the conveyor's snapshot-miss re-walk**. Changes behaviour (stops retrying a snapshot after N frames).
+- **Caching `before_counts` on snapshots** to stop `counts()` being rebuilt per resolve attempt. Real waste on the ~500-parameter fallback path, but it means new signatures for the mod's most safety-critical predicates.
+- **`recovery.schedule_recovery`'s per-call closures**. A one-slot fix would coalesce the startup and map-load recoveries into one when they overlap. Cold path; not worth the behaviour change.
+
+Two notes: `ledger.owe`'s signature changed to `owe(owner, item_ids)`, and I updated `tools/ledger_test.lua` to match. You were editing ui.lua concurrently (a probe around `set_edit_interactable` using the new `util.method`) — I left that alone and the checks above ran against your current state.
+
+I have not run `install.ps1`; nothing here is verified in game yet.
+
+
+### CTD: access violation in a Lua callback, Surgery screen open, conveyor running (ADDRESSED, NEEDS FOLLOWUP AND VERIFICATION)
 
 Session of 2026-09-20 19:32-19:36. Sort order verified in two base containers, including after moving modules between them and re-sorting. Twenty-five Pals disassembled over about thirty seconds. Player left the disassembly menu with Pals still on the conveyor, opened the Surgery Table, saw the bugged panel, and the game went down with `EXCEPTION_ACCESS_VIOLATION reading address 0x0000686374617340` with no further interaction.
 
@@ -110,21 +125,7 @@ Instead, `lp/ui.lua` now has a one-shot probe: `describe_button_state` logs `pag
 
 The `clear_journal()` per passive is redundant against the next iteration's `write_journal`, which opens `"w"`. The final clear is NOT redundant: it is what stops recovery replaying a completed sweep. So the change is "skip between iterations, clear once at the end" -- a restructure of crash-recovery ordering to save a handful of file deletes per extract-all.
 
-### Simplification Finds
-
-Below are simplification findings worth a pass prior to publishing.
-
-- **Dead path:** `recovery.lua:70` read `journal.lock ~= "" and journal.lock or marked[1].lock`, but `read_journal` produces no `lock` column — the marker it records is `passive_name`. The first two terms were dead and it always took the third branch. I simplified to the behaviour it already had and left a comment; if the journal's recorded marker was meant to be authoritative, that's a real bug and a /code-review matter, not a cleanup.
-- **`finish()`'s UI policy → `ui.on_transaction_complete(mode)`** (altitude). Correct in principle, but it restructures the 500ms/1600ms refresh ladder — the least testable code in the mod and the suspected cause of `docs/double-trouble.png`. Not without an in-game session.
-- **Bounding the conveyor's snapshot-miss re-walk**. Changes behaviour (stops retrying a snapshot after N frames).
-- **Caching `before_counts` on snapshots** to stop `counts()` being rebuilt per resolve attempt. Real waste on the ~500-parameter fallback path, but it means new signatures for the mod's most safety-critical predicates.
-- **`recovery.schedule_recovery`'s per-call closures**. A one-slot fix would coalesce the startup and map-load recoveries into one when they overlap. Cold path; not worth the behaviour change.
-
-Two notes: `ledger.owe`'s signature changed to `owe(owner, item_ids)`, and I updated `tools/ledger_test.lua` to match. You were editing ui.lua concurrently (a probe around `set_edit_interactable` using the new `util.method`) — I left that alone and the checks above ran against your current state.
-
-I have not run `install.ps1`; nothing here is verified in game yet.
-
-### Publish to the Steam Workshop
+### Publish to the Steam Workshop (DO NOT START UNTIL TESTING IS GOOD, CODE CLEANED, AND DOCS UPDATED)
 
 #### Facts established (uploader docs + installed packages on disk)
 
@@ -145,7 +146,12 @@ Requirements, modelled on `install.ps1`: `-DryRun`; an **allowlist**, never an e
 
 #### Release checklist
 
-1. `luacheck.js` green; `install.ps1`; restart; confirm the startup counts line reads `115 extractable passives, 2 extraction operations, 54 insert routes`; exercise Extract One, Extract All, an insert, a duplicate-blocked insert, and (once §3 lands) the conveyor.
+0. **CLEAN CODE:**
+    - Remove trace-level debug from code
+    - Remove one-shot items used in development
+    - Remove dead code paths not called in the game's normal execution path
+    - Remove switches used in dev or testing cycles with no purpose in production code (if a switch or constant is not constollable in `settings.lua`, consider moving control there or removing the switch)
+1. `luacheck.js` green; `install.ps1`; restart; confirm the startup counts line reads `115 extractable passives, 2 extraction operations, 54 insert routes`; exercise Extract One, Extract All, an insert, a duplicate-blocked insert, and the conveyor.
 2. Re-derive `MinRevision` from that build's title screen; bump `Version`; confirm `DebugMode: false`. `MinRevision` is a FLOOR, not the build you happen to be on, so 82182 is not automatically stale -- UE4SS, PalSchema and every other package on this machine still declare it. The real question is which floor we can honestly claim: testing has only ever happened on `v1.0.5.102999`, so 82182 asserts a compatibility nobody has checked, while 102999 locks out anyone on an older build. Decide it deliberately rather than by leaving the number alone.
 3. Read <https://eula.pocketpair.jp/palworld-mod-guideline> — the only content gate, and not reproduced in the uploader docs.
 4. Write the Workshop description: both dependencies with their Workshop ids (`3625223587`, `3625280368`), and the dedicated-server `WorkshopRootDir` + ActiveModList=LootablePassives` note from `Mods\PalModSettings.ini`.

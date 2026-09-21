@@ -31,10 +31,10 @@ This repo contains a Palworld mod.
 
 ### `PalSchemaMods/LootablePassives/`
 
-- `items/` — the 94 mod-defined implant modules.
+- `items/` — the 94 mod-defined disposable implants.
 - `raw/` — DataTable patches. Four files, and the split matters:
   - `LootablePassivesOperation.json` — the two marker passives and their operations.
-  - `LootablePassivesOperatingTable.json` — 61 module routes for passives with no vanilla row.
+  - `LootablePassivesOperatingTable.json` — 61 routes for passives with no vanilla row.
   - `LootablePassivesVanillaPrices.json` — reprices the 54 vanilla routes to 5000. **`Price` only.** Naming `RequireItemId` here would overwrite and thereby destroy the recipe gate.
   - `LootablePassivesInsertRoutes.json` — the 54 alias routes, plus the 54 inert alias passives that let those rows render. Every row needs a matching key in `lp/ids.lua`'s `IMPLANT_TARGET`; the two are maintained together in current implementation. A row with no key installs an inert alias and leaves it on the Pal; a key with no row is a dead list entry.
 - `translations/en/` — display strings by text id.
@@ -46,7 +46,7 @@ This repo contains a Palworld mod.
 | Kind | Scheme | Example |
 | --- | --- | --- |
 | Package / mod folder | `LootablePassives` | `PalSchemaMods/LootablePassives/` |
-| Implant module items | `LP_Implant_<passive>` | `LP_Implant_Stamina_Up_1` |
+| Disposable Implant items | `LP_Implant_<passive>` | `LP_Implant_Stamina_Up_1` |
 | Insertion route passives | `LP_Insert_<passive>` | `LP_Insert_Stamina_Up_1` |
 | Extraction markers | `LP_ExtractOne`, `LP_ExtractAll` | — |
 | Text ids | `PASSIVE_LP_*` | `PASSIVE_LP_INSERT_STAMINA_UP_1_NAME` |
@@ -80,13 +80,20 @@ node tools\luacheck.js            # Lua parse check
 
 ### Dev Commands
 
-- node tools\luacheck.js       # Lua syntax check. Run after ANY Lua edit.
-- luacheck Scripts             # The real static analyzer. Baseline is 0 errors.
-- lua tools\ledger_test.lua    # The one automated test. Run after ANY lp/ledger.lua edit.
-- .\tools\install.ps1          # repo -> game install. The normal direction; run before every test.
-- `ledger_test.lua` is a behaviour test for one module, not a data verifier: it stubs `lp.inventory` and asserts the ledger's TSV round-trip and which candidate a row is delivered to. It exists because that logic is the only part of the mod with no engine call in it.
+- node tools\luacheck.js is a Lua syntax check. Run after ANY Lua edit.
+- luacheck Scripts are the real static analyzer. Baseline is 0 errors.
+- lua tools\ledger_test.lua is the one automated test. Run after ANY lp/ledger.lua edit.
+  - `ledger_test.lua` is a behaviour test for one insertion, not a data verifier: it stubs `lp.inventory` and asserts the ledger's TSV round-trip and which candidate a row is delivered to. It exists because that logic is the only part of the mod with no engine call in it.
+- .\tools\install.ps1 is the repo -> game install. The normal direction; run before every functional runtime test.
 
-### What `install.ps1` copies, and where
+...via Scoop, installed to user profile, no admin needed
+
+- Lua 5.5 (lua, luac on PATH) — for quick local sanity checks
+- luacheck 1.2.0 — a real static analyzer (undefined globals, unused vars, shadowing), stronger than this repo's tools/luacheck.js, which by its own comment is parse-only
+- .luacheckrc — declares UE4SS's injected globals (RegisterHook, ExecuteInGameThread, FindAllOf, etc.) so luacheck stops flagging the mod's own API as "undefined"
+- .luarc.json — same global list for LuaLS, so the in-editor LSP and the CLI checker agree `luacheck Scripts` from the repo root, alongside `node tools\luacheck.js`, in the normal edit/check/install loop. Without `.luacheckrc` it reports ~53 false positives from the unrecognised UE4SS globals; with it, only real findings.
+
+#### What `install.ps1` copies, and where
 
 ```test
 Scripts\                         ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\
@@ -97,21 +104,6 @@ PalSchemaMods\LootablePassives\  ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\PalSc
 Lua half. PalSchema needs no registration — it loads any folder under its `mods/` directory.  This split control CAN lead to unexpected states.
 - **Do not disable this mod by setting `LootablePassives : 0` in `mods.txt`.** That line controls only the Lua half. The PalSchema half has no such switch — it loads whenever its folder is on disk — so the mod's operations stay in the Surgery Table list with nothing behind them. Removing the folders is the only safe way off.
 
-### Uninstall
-
-Delete **both** destination folders, then remove the `mods.txt` line. Modules already in a save become unknown items; passives already implanted are real passives and stay put.
-
-
-
-### CLI Development Tools
-
-...via Scoop, installed to user profile, no admin needed
-
-- Lua 5.5 (lua, luac on PATH) — for quick local sanity checks
-- luacheck 1.2.0 — a real static analyzer (undefined globals, unused vars, shadowing), stronger than this repo's tools/luacheck.js, which by its own comment is parse-only
-- .luacheckrc — declares UE4SS's injected globals (RegisterHook, ExecuteInGameThread, FindAllOf, etc.) so luacheck stops flagging the mod's own API as "undefined"
-- .luarc.json — same global list for LuaLS, so the in-editor LSP and the CLI checker agree `luacheck Scripts` from the repo root, alongside `node tools\luacheck.js`, in the normal edit/check/install loop. Without `.luacheckrc` it reports ~53 false positives from the unrecognised UE4SS globals; with it, only real findings.
-
 ### Errors and warnings
 
 The baseline is **0 errors**. Treat any *error* or warning as something to fix rather than to note.
@@ -119,6 +111,10 @@ The baseline is **0 errors**. Treat any *error* or warning as something to fix r
 ### The JSON is the source of truth
 
 The mod's data half is the JSON under `PalSchemaMods/LootablePassives/` and `Scripts/passive_items.lua`. **Edit these directly to make changes.**  What that costs, stated plainly: nothing validates the data at build time. PalSchema fails **silently** — a malformed file simply does not load, and a mismatch between the files that define the alias routes produces a dead list entry with no error anywhere a player would see it. As a half-measure applied to trace, the **startup counts** line should read exactly: `Loaded 115 extractable passives, 2 extraction operations, 54 insert routes.` 115 = the 94 `LP_Implant_*` items plus the 21 vanilla PalPassiveSkillChange_Consumable_*` ones. A number that reads low means something did not load.  The saving grace is that these tables are finished. Nothing in normal work should touch them from this point forward except a major refactor of disposable implant item setup.
+
+### Uninstall Note
+
+Uninstall is not needed during DEV; may be needed if transitioning to Steam Workshop installs.  Delete **both** destination folders, then remove the `mods.txt` line. Disposable implant items defined by the mod already in a save become unknown items; passives already implanted are real passives and stay put.
 
 ---
 
