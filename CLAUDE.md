@@ -19,7 +19,7 @@ This repo contains a Palworld mod.
 | --- | --- | --- |
 | Scripts/ | Lua runtime (main.lua, settings.lua, lp/*.lua) | ships |
 | PalSchemaMods/LootablePassives/ | JSON data patches: items, DataTable rows, English strings | ships |
-| tools/ | install.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
+| tools/ | install.ps1, stage.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
 | docs/PLAN.md | the working plan | dev only-do not ship |
 | CLAUDE.md | Agent guidance | dev only-do not ship |
 | README.md / LICENSE | the user-facing docs | ships |
@@ -70,6 +70,7 @@ node tools\luacheck.js            # Lua parse check
 ```
 
 - Deploying is not optional and it is not automatic: the game loads only what is under `<Palworld>\Mods\NativeMods\UE4SS\Mods`, so an untested repo edit is just an untested repo edit. `install.ps1 -DryRun` first if you want to see what moves.
+- **A file the repo does not have stops the install.** The install is a mirror, and the check that makes it one runs before anything is copied: a file in either destination with no counterpart in the repo is listed and the run exits 1 with nothing changed. That file would still be loaded by the game, so a run that ignored it would be testing something other than the repo. `-Force` deletes those files, and any directory left empty, instead of stopping. Delete a Lua module or a JSON patch from the repo and the next install is `-Force`.
 - Log reading filters reads of `UE4SS.log` on...
   - `[LootablePassives]` gives mod-specific log messages, helps trace code paths reached
   - `PalSchema` gives verification on item loads from JSON
@@ -84,7 +85,8 @@ node tools\luacheck.js            # Lua parse check
 - luacheck Scripts are the real static analyzer. Baseline is 0 errors.
 - lua tools\ledger_test.lua is the one automated test. Run after ANY lp/ledger.lua edit.
   - `ledger_test.lua` is a behaviour test for one insertion, not a data verifier: it stubs `lp.inventory` and asserts the ledger's TSV round-trip and which candidate a row is delivered to. It exists because that logic is the only part of the mod with no engine call in it.
-- .\tools\install.ps1 is the repo -> game install. The normal direction; run before every functional runtime test.
+- .\tools\install.ps1 is the repo -> game install. The normal direction; run before every functional runtime test. Takes `-DryRun`, and `-Force` to delete files the repo no longer has.
+- .\tools\stage.ps1 is the repo -> Workshop item-folder copy, for publishing only. An allowlist, the same mirror rule and `-DryRun`/`-Force` as install.ps1, plus four checks on `Info.json` that the uploader itself does not make. It never touches `.workshop.json`, which holds the Published ID.
 
 ...via Scoop, installed to user profile, no admin needed
 
@@ -93,13 +95,14 @@ node tools\luacheck.js            # Lua parse check
 - .luacheckrc — declares UE4SS's injected globals (RegisterHook, ExecuteInGameThread, FindAllOf, etc.) so luacheck stops flagging the mod's own API as "undefined"
 - .luarc.json — same global list for LuaLS, so the in-editor LSP and the CLI checker agree `luacheck Scripts` from the repo root, alongside `node tools\luacheck.js`, in the normal edit/check/install loop. Without `.luacheckrc` it reports ~53 false positives from the unrecognised UE4SS globals; with it, only real findings.
 
-#### What `install.ps1` copies, and where
+#### What `install.ps1` mirrors, and where
 
 ```test
 Scripts\                         ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\
 PalSchemaMods\LootablePassives\  ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\PalSchema\mods\LootablePassives\
 ```
 
+- Those two destinations are the only thing the stale check examines, and the only thing `-Force` deletes from. Files the game folder holds elsewhere are not touched — including `LootablePassives\enabled.txt`, which is not ours and which UE4SS reads as a second way to start a Lua mod.
 - The script also adds `LootablePassives : 1` to UE4SS's `mods.txt`, which is what actually starts the
 Lua half. PalSchema needs no registration — it loads any folder under its `mods/` directory.  This split control CAN lead to unexpected states.
 - **Do not disable this mod by setting `LootablePassives : 0` in `mods.txt`.** That line controls only the Lua half. The PalSchema half has no such switch — it loads whenever its folder is on disk — so the mod's operations stay in the Surgery Table list with nothing behind them. Removing the folders is the only safe way off.

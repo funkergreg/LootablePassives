@@ -14,6 +14,8 @@ local log = util.log
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local clear_journal = journal.clear_journal
 local read_journal = journal.read_journal
+local count_id = passives.count_id
+local get_skill_ids = passives.get_skill_ids
 local snapshot_all = passives.snapshot_all
 local remove_skill = inventory.remove_skill
 local restore_replaced_passive = inventory.restore_replaced_passive
@@ -82,8 +84,13 @@ local function recover_interrupted_extraction(reason)
         -- The module exists; removing the marker completes the exchange.
         recovered = remove_skill(parameter, lock)
     elseif record.phase == "loop" and record.state == "granted" then
-        -- The module exists and its passive is still attached: remove both.
-        recovered = remove_skill(parameter, record.passive_id)
+        -- The module exists. Its passive is usually still attached, but this row
+        -- also stands while the extract-all sweep moves to the next passive, so
+        -- the passive may already be off. remove_skill reports a count that did
+        -- not fall as a failure, so what is gone is not asked for again; the
+        -- marker's removal is what decides the outcome.
+        local attached = count_id(get_skill_ids(parameter) or {}, record.passive_id) > 0
+        recovered = (not attached or remove_skill(parameter, record.passive_id))
             and remove_skill(parameter, lock)
     else
         -- phase "loop", state "prepared": nothing granted, passive intact, so

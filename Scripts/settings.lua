@@ -18,9 +18,10 @@ return {
 
     -- The Edit-button gate on the Surgery screen: on or off.
     --
-    -- A BISECTION SWITCH. This is the only part of the mod that writes to a UI
-    -- widget while the player is looking at it, on a hook that fires at frame
-    -- rate for as long as the screen is open. False makes
+    -- A KILL SWITCH, kept because this is the only part of the mod that writes
+    -- to a UI widget while the player is looking at it, on a hook that fires
+    -- for as long as the screen is open. If the Surgery screen ever misbehaves
+    -- on someone's install, this is the first thing to turn off. False makes
     -- enforce_extraction_gate return immediately, which removes that writing
     -- without changing anything else: the tab page is still recorded, so
     -- extraction, insertion and the panel repaint are unaffected.
@@ -32,7 +33,7 @@ return {
     -- refunds the operation's gold, which vanilla charges on confirm, before
     -- this mod runs.
     --
-    -- The gate blocks the click; it does not grey the button out. See the note
-    -- on set_edit_interactable in lp/ui.lua.
+    -- The gate blocks the click; it does not change how the button looks. See
+    -- the note on set_edit_interactable in lp/ui.lua.
     surgery_ui_gate = true,
 }

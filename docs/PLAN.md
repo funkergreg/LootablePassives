@@ -20,30 +20,31 @@ Below are planning goals; this document is a living document intended to catch e
 
 ## Improvements (TODOs)
 
-### Install reliability (HIGHEST PRIORITY)
+### Simplification Finds
 
-- At present, **`install.ps1` copies; it never deletes.**  
-- The Problem: A file deleted from the repo goes on living in the game folder, and the game goes on loading it — so the thing you just "removed" may keep working, and the repo you are testing is not the thing under test.  This is the DEV install path and it is NOT resilient to change.
-- TODO: make install.ps1 do a remove step before deploying to game folders so leftover files don't cause conflicts; the deployment should match what is in the repo. Probably best with a defensive check that finds files which do not exist in the pending install deployment and stops install exectution with a descriptive warning (require a `--force` flag to overcome).  Agents are the main callers and this provides a defensive check and verification means.
-  - THEN, Update the CLAUDE.md section on this after new dev install process implemented.
+Worked through; nothing in this section is open. The changes that were applied are described by the code's own comments — what is kept here is the reasoning for the three that were **not** made, so they are not proposed again.
 
-### Simplification Finds (SECOND PRIORITY)
+Applied:
 
-Below are simplification findings worth a pass.
+- **Dead path in `recovery.lua`.** The marker was read as `journal.lock ~= "" and journal.lock or marked[1].lock`, but `read_journal` produces no `lock` column, so only the third branch was ever taken. Simplified to the behaviour it already had. If the journal's recorded marker was meant to be authoritative that is a real bug and a `/code-review` matter, not a cleanup.
+- **UI policy left `finish()`.** `finish` in `lp/transaction.lua` now logs and calls `ui.on_transaction_complete(mode)`; the arming and both timers moved into `lp/ui.lua` unchanged. The 500 ms / 1600 ms ladder is not restructured — the worry that stopped this before was about redesigning it, and a move is not a redesign. The three timer callbacks are now built once at load rather than per transaction, and `arm_refresh` and `refresh_surgery_ui` are no longer exported, because nothing outside `ui.lua` calls them.
+- **`extract_additional`'s journal churn**, which turned out to be covering a hole. Its own section below.
 
-- **Dead path:** `recovery.lua:70` read `journal.lock ~= "" and journal.lock or marked[1].lock`, but `read_journal` produces no `lock` column — the marker it records is `passive_name`. The first two terms were dead and it always took the third branch. I simplified to the behaviour it already had and left a comment; if the journal's recorded marker was meant to be authoritative, that's a real bug and a /code-review matter, not a cleanup.
-- **`finish()`'s UI policy → `ui.on_transaction_complete(mode)`** (altitude). Correct in principle, but it restructures the 500ms/1600ms refresh ladder — the least testable code in the mod and the suspected cause of `docs/double-trouble.png`. Not without an in-game session.
-- **Bounding the conveyor's snapshot-miss re-walk**. Changes behaviour (stops retrying a snapshot after N frames).
-- **Caching `before_counts` on snapshots** to stop `counts()` being rebuilt per resolve attempt. Real waste on the ~500-parameter fallback path, but it means new signatures for the mod's most safety-critical predicates.
-- **`recovery.schedule_recovery`'s per-call closures**. A one-slot fix would coalesce the startup and map-load recoveries into one when they overlap. Cold path; not worth the behaviour change.
+Closed without changing code:
 
-Two notes: `ledger.owe`'s signature changed to `owe(owner, item_ids)`, and I updated `tools/ledger_test.lua` to match. You were editing ui.lua concurrently (a probe around `set_edit_interactable` using the new `util.method`) — I left that alone and the checks above ran against your current state.
+- **Bounding the conveyor's snapshot-miss re-walk.** The retry is already bounded by the queue: a key is re-walked only while it is still in `ConvertProcessArray`, which is the few seconds that Pal spends converting. Giving up after N frames would drop that Pal's debt and pay out nothing, against the mod's own grant-before-remove bias. Not worth a behaviour change.
+- **Caching `before_counts` on snapshots.** The lists being counted are passive lists: four slots plus a marker, so `counts()` builds a five-entry table. The saving is a few tiny allocations per snapshot per attempt, on a path that runs twelve times at 250 ms apart, and the price is a new signature on `detect_replaced_passive` and `detect_added_lock` — the two predicates that decide whether a transaction was ours at all. Wrong trade.
+- **`recovery.schedule_recovery`'s per-call closures.** Two closures, twice a session. The rule in DEV Tips is about per-frame paths.
 
-I have not run `install.ps1`; nothing here is verified in game yet.
+### CTD: access violation in a Lua callback, Surgery screen open, conveyor running -- CLOSED, unreproduced
 
-### CTD: access violation in a Lua callback, Surgery screen open, conveyor running (ADDRESSED, NEEDS FOLLOWUP AND VERIFICATION)
+**Closed on 2026-09-21, one occurrence, never reproduced.** The suspect with by far the highest exposure -- a `FindAllOf` widget scan running 1.4 times a second for as long as the Surgery screen was open -- was deleted, and sessions since have run the conveyor and the Surgery screen together without incident. The save this was seen on cannot produce the conditions again on demand, so there is nothing further to run. The account below is kept because it is the only record of it.
 
-Session of 2026-09-20 19:32-19:36. Sort order verified in two base containers, including after moving modules between them and re-sorting. Twenty-five Pals disassembled over about thirty seconds. Player left the disassembly menu with Pals still on the conveyor, opened the Surgery Table, saw the bugged panel, and the game went down with `EXCEPTION_ACCESS_VIOLATION reading address 0x0000686374617340` with no further interaction.
+**Reopen if it recurs**, and these are the first three moves: set `surgery_ui_gate = false`, which removes every read the gate makes while leaving transactions working; run with only this mod and PalSchema loaded, since five Lua mods were live and the dump could not be attributed to any of them; and set `FullMemoryDump = 1` in `UE4SS-settings.ini` before trying, because the dump that exists is minimal. Note also that `bUseUObjectArrayCache` is already `false` on this install, so a stale UE4SS object cache is not available as an explanation -- whatever `FindAllOf` returned was in the live object array.
+
+Three object-pool scans remain, and they are where to look: `find_player_state` and `delivery_candidates` in `lp/inventory.lua`, and `snapshot_all` in `lp/passives.lua`. Only `delivery_candidates` runs on the conveyor path.
+
+Session of 2026-09-20 19:32-19:36. Sort order verified in two base containers, including after moving modules between them and re-sorting. Twenty-five Pals disassembled over about thirty seconds. Player left the disassembly menu with Pals still on the conveyor, opened the Surgery Table, and the game went down with `EXCEPTION_ACCESS_VIOLATION reading address 0x0000686374617340` with no further interaction.
 
 What the crash dump says: thirty-seven consecutive `UE4SS` frames below `Palworld_Win64_Shipping` frames that are the engine invoking a hooked function. That is an engine hook dispatching into Lua, and the fault is inside UE4SS's own object machinery. The address is not a pointer that went slightly wrong -- its bytes are ASCII (`40 73 61 74 63 68`) -- which is what reading a freed object looks like once something else has reused the memory for text. Five Lua mods were loaded, so the dump does not by itself say the callback was ours.
 
@@ -63,7 +64,7 @@ The player scan in `delivery_candidates` stays: removing it would break multipla
 **Two things to make the next crash attributable**, because the last log line named a completed operation and therefore said nothing about what was running:
 
 - `settings.lua` gains `surgery_ui_gate`. Set it to `false` and the mod stops touching the Surgery widget entirely while still recording it, so extraction, insertion and the repaint all work and only the courtesy greying of the Edit button is lost -- every rule it enforces is enforced again at the transaction. If the crash survives that, it is not the gate.
-- The conveyor logs one line *before* delivering, not only after. A `Disassembly consumed a Pal owing N module(s); delivering.` with no summary line after it means the process died inside delivery. Take it out once this is settled.
+- The conveyor logged one line *before* delivering as well as after, so that a line with no summary after it would localise a crash to the delivery. Removed on closing, as that entry said it should be.
 
 If it reproduces: the log plus `%LOCALAPPDATA%/Pal/Saved/Crashes/` is what to send, and `surgery_ui_gate = false` is the first thing to try.
 
@@ -90,16 +91,6 @@ Routes, in order of preference: wait for 0.6.71 to reach the Workshop; ask the a
 
 This is also the likeliest reading of the multiplayer test, where the guest without the mod saw blank chest entries and did not crash: those items were in the host's world, not in the guest's own save.
 
-#### The blank Surgery panel: the earlier diagnosis is wrong
-
-Recorded because it cost a test cycle. The panel was blamed on `refresh_surgery_ui` writing to a closed screen, and that entry read as settled. The 19:36 session disproves it: the panel came up bugged -- gender change only, no Pal selectable, no `+` to pick a module -- in a session where **no transaction ran at all**, so `refresh_surgery_ui` was never called once. It cannot be the cause, and the guard cannot be the fix.
-
-The guard stays anyway, on its own merit: writing reset-to-empty calls into a panel nobody has open is wrong whether or not it caused this, and it now costs nothing because it acts on one recorded widget rather than on everything `FindAllOf` returned.
-
-**The leading explanation now is that the panel is not corrupted at all: there were no Pals to list.** Twenty-five Pals had just gone through the disassembler, and Pals still on the conveyor are in the machine's container rather than in the box. With nothing to select, there is no Pal, so there is no passive panel and no `+`, and what is left showing is the gender side. That fits the 19:36 sighting exactly, and it fits "toward the very end" of the two earlier sessions. Note also that the first screenshot, `docs/double-trouble.png`, shows an empty framed area rather than a broken one, which is what `WBP_NoData` looks like.
-
-That is a ten-second test and it should be the next thing done: open the Surgery Table with Pals in the box page, then with the box page emptied into the conveyor, and see whether the panel differs. If it is the Pal list, this is vanilla behaviour and the entry closes as not-a-bug -- possibly worth a line in the README instead. If the panel is bugged with Pals available, the next place to look is vanilla's own `Setup` / `SwitchTab` / `SwitchPanel` path, and the question becomes whether 117 added rows in `DT_OperatingTablePassiveSkillDataTable` can make the list build abort.
-
 #### Panel repaint: dead ends, so they are not retried
 
 `lp/ui.lua` resets the panel rather than repainting the passive cards. Four approaches were tried first and none of them works; the file points here rather than carrying the list.
@@ -109,21 +100,27 @@ That is a ten-second test and it should be the next thing done: open the Surgery
 - Writing the cards directly with `SetPassiveSkill` / `Clear` is worse. The calls succeed (`cleared=4 failed=0`) but `Clear()` leaves a card blank instead of showing the empty `+` slot, and the cards are reused across Pal selections, so every Pal afterwards showed an empty panel. The empty state is its own visual -- the card has an `Anm_EmptySlot_HideToShow` animation -- and `Clear()` does not reach it.
 - Diagnosing staleness from `BindedPassiveSkillName` does not work either: it was correct while `Text_SkillName` was stale, so the card data agreed with reality the whole time and only the paint was wrong.
 
-### The Edit button refuses the click but never greys out
+### The Edit button stays lit on a refused operation -- CLOSED, a documented limitation
 
-Reported from the 2026-09-20 build: the gate blocks correctly, and the button goes on looking pressable. Recorded here because the wrong half was in a code comment presented as settled -- `set_edit_interactable` claimed that "EnabledButton = false is what the game itself uses to show the greyed look", which was never verified and is probably false. `WBP_CommonButton.hpp` declares no disabled state for that widget at all: the animations are `Anm_Normal`, `Anm_NormalToFocus`, `Anm_OpenFocus` and `Anm_DefaultToRed`, and there is no enabled/disabled setter on it.
+The gate refuses the click and that is all it does. `SetIsInteractionEnabled(false)` on the inner `CommonButtonBase` is never touched by the Blueprint, so it holds for as long as the block lasts: the click does nothing and no gold is charged. This is the part that protects the player and it works in every case.
 
-The mechanism, as far as the code shows: `EnabledButton` is an input the Blueprint reads inside `Update Button State`, not a bound property the paint follows. The gate writes it one frame after that function ran -- deliberately, because writing earlier lets the game's own verdict overwrite ours -- so the paint has already happened from the game's value, and the next pass recomputes `EnabledButton` from scratch. `SetIsInteractionEnabled` on the inner `CommonButtonBase` is the part that sticks, because nothing in the Blueprint touches it. Blocked, and looking pressable.
+`EnabledButton` is not written, and **reintroducing that write is a regression.** The property belongs to the Blueprint. `Update Button State` recomputes it from scratch on a hook that fires for as long as the screen is open, and this module can only write it after that has run. Where the game's own verdict agreed the button should be off the write stood and the button greyed; where the game judged the selection usable -- an empty slot with an extract route, since vanilla has no notion of extraction -- the two writes alternated and the button flickered at hook rate. Flickering is worse than lit, and the greying that was lost with the write only ever worked where the game was going to refuse anyway.
 
-Deliberately NOT guessing a replacement. `SetIsEnabled(false)` on the outer button was already tried and gives a white cut-out. Dimming `RenderOpacity` ourselves would be inventing a look the game does not use, and it would have to be undone on release or the button stays dim.
+Three variants were tried and measured in play, and none of them is worth retrying:
 
-Instead, `lp/ui.lua` now has a one-shot probe: `describe_button_state` logs `page.EnabledButton`, the button's `bIsEnabled`, `RenderOpacity` and `Visibility`, the inner button's `bIsEnabled` and `IsInteractionEnabled()`, and the `Visibility` of `Text_Warning` and `Image_NoItem`. It fires at most three times a session, all reads: once before we block, once after we block, and once when **vanilla** disables the button on its own -- select a route you cannot afford, or one whose module you do not hold, to produce that third line. Diff the vanilla line against ours and the property carrying the look falls out. Then write it into the comment and delete the probe.
+- writing it only when it read enabled: greyed the uncontested cases, flickered the contested ones
+- writing it on every blocked pass: flickered the contested ones *and* cost the uncontested ones their grey
+- writing it until the game had overridden it a set number of times: restored the uncontested grey, did not stop the flicker
 
-`Text_Warning` is the first candidate. A text field named that, on a panel with `Image_NoItem` and `Canvas_RequireMoney` beside it, is how a widget with no disabled style usually says no.
+What the probe established along the way, so it is not re-derived: of sixteen properties read across the button, its label and the panel's three warning widgets, **not one** differs between the game's allow and refuse states except `EnabledButton` itself. `Text_Warning` stays collapsed in both -- it was the standing first guess and it is wrong. `bIsEnabled` reads true on both buttons in both states, which rules out `SetIsEnabled` and CommonUI's `DisabledStyle`. `Text_Main.RenderOpacity` reads 1.0, 0.7, 0.5 and values in between as the button animates, and tracks the route and the animation rather than any verdict.
 
-### `extract_additional` journal churn
+The limitation is in `README.md` under Surgery Table, and in `block_edit`'s comment. `describe_button_state` and `sample_button_paint` are deleted.
 
-The `clear_journal()` per passive is redundant against the next iteration's `write_journal`, which opens `"w"`. The final clear is NOT redundant: it is what stops recovery replaying a completed sweep. So the change is "skip between iterations, clear once at the end" -- a restructure of crash-recovery ordering to save a handful of file deletes per extract-all.
+### `extract_additional` journal churn -- done, and it was covering a hole
+
+The per-passive `clear_journal()` was redundant against the next iteration's `write_journal`, which opens `"w"`. Taking it out exposed what the *last* one had been doing: on any Pal with something to sweep, it wiped the outer `granted/marker` row before phase three tried to remove the marker. So the failure message there -- "the journal is kept so the marker is cleaned up on the next map load" -- was false, and a crash in that window left an inert marker on the Pal with nothing recorded that would remove it.
+
+As it stands now: `extract_additional` clears nothing; `finalize_extraction` writes the outer `granted/marker` row back when the sweep returns; and `lp/recovery.lua`'s `loop`/`granted` branch no longer fails when the passive it names is already gone, because that row now stands for the whole gap between passives and the marker's removal is what decides the outcome. Reasoned from the call order in `lp/transaction.lua` and the count-based return of `inventory.remove_skill`; it is not reachable by an in-game test that does not crash the process at an exact instant.
 
 ### Publish to the Steam Workshop (DO NOT START UNTIL TESTING IS GOOD, CODE CLEANED, AND DOCS UPDATED)
 
@@ -138,25 +135,38 @@ The `clear_journal()` per passive is redundant against the next iteration's `wri
 - The uploader is GUI-only — no CLI — so the upload click cannot be scripted. **Do not subscribe to your own item:** subscribed packages are view-only and can no longer be updated from that machine.
 - rewrite **Install** once the mod is a Workshop item, keeping `install.ps1` as the dev/manual path.
 
-#### `tools/stage.ps1`
+#### `tools/stage.ps1` -- written
 
-The repo cannot be uploaded in place: Steam UGC uploads the item folder recursively, so without a staging step every subscriber downloads `.git/`, `tools/`, `data/` and `docs/`. Copy **only** `Info.json`, `thumbnail.png`, `Scripts/`, `PalSchemaMods/LootablePassives/`, `README.md` and `LICENSE` into the uploader's numbered folder under `C:\Program Files (x86)\Steam\steamapps\workshop\content\1623730\<id>\`.
+The repo cannot be uploaded in place: Steam UGC uploads the item folder recursively, so without a staging step every subscriber downloads `.git/`, `tools/` and `docs/`. `tools/stage.ps1` copies an allowlist -- `Info.json`, `thumbnail.png`, `README.md`, `LICENSE`, `Scripts/`, `PalSchemaMods/LootablePassives/` -- into the numbered item folder, and nothing else, so a new top-level folder in the repo cannot leak by default.
 
-Requirements, modelled on `install.ps1`: `-DryRun`; an **allowlist**, never an exclude list, so a new top-level folder in the repo cannot leak by default; and leave `.workshop.json` in the destination untouched — it holds the `PublishedFileId`. It should run its own two self-contained checks rather than call out to anything: `Info.json` parses, and every `InstallRule.Targets` path plus `Thumbnail` exists in the staged set. Keep those inside `stage.ps1`; do not grow a second verifier tool.
+It takes `-ItemId` (resolved against the path the uploader recorded in its own `workshop_path.txt`) or `-Destination`, plus `-DryRun` and `-Force`. It mirrors, on the same rule as `install.ps1`: a file in the item folder that the package does not have stops the run before anything is copied, because that file would be uploaded to every subscriber. `.workshop.json` is the uploader's and is never written, deleted, or counted as stale.
+
+Four checks run before it copies, all of them for failures the uploader lets through and that then produce nothing at all: `Info.json` parses; `PackageName` is non-empty and alphanumeric; every `Tag` is one of the six the platform defines; every `InstallRule` `Type` is one of the five the loader knows and every `Targets` path, plus `Thumbnail`, resolves inside the staged set rather than merely inside the repo. It also refuses a folder already holding a different `PackageName` unless forced, and warns when `Version` matches the last upload recorded in `.workshop.json`.
+
+Tested against a simulated item folder: the stale check caught a planted file, `-Force` removed it, `.workshop.json` survived, and the staged `Scripts/` and `PalSchemaMods/LootablePassives/` came out identical to the repo with nothing else present.
+
+#### Pocketpair's mod guideline -- read, and it is not a gate
+
+The guideline is not the HTML page the EULA site appears to serve. `eula.pocketpair.jp/palworld-mod-guideline` redirects to `guideline.palworldgame.com`, a JavaScript app whose only content is a PDF per language at `/guideline-pdf/palworld/mod_20260708_<lang>.pdf` -- `mod_20260708_en.pdf` for English. Anyone re-reading it later should fetch the PDF directly rather than the page.
+
+It is short and it is permissive. There is **nothing about monetisation, nothing requiring an "unofficial" label, and no list of prohibited mod types**. Nothing in it touches what this mod does. The three things it does ask of an author: follow the distribution platform's own terms, do not infringe third-party rights -- it names characters, models, textures, audio, fonts, logos and illustrations *from other works* -- and accept that a game update may break the mod. This mod ships no assets at all, only JSON and Lua, so the middle one is satisfied by construction.
+
+Two things in it changed the docs rather than the code:
+
+- **Mods on official servers are prohibited outright**, with account suspension named as a possible consequence, and disruptive mod use on unofficial servers may also be acted on. Nothing in this repo said so. `README.md`'s Multiplayer section now opens with it, and the Workshop description must carry it too.
+- **Its own uninstall guidance is more cautious than this repo's was.** Pocketpair say that turning a mod off is not always enough, that files left in the game folder may still load, and that a save loaded with mods can keep showing problems afterwards. That is the vendor's position on all mods, and it sits more comfortably with the PalSchema `0.6.7` cleanup question than any promise of a clean uninstall would. `README.md` now has an Uninstall section that states the vendor's guidance and then says plainly what this mod leaves behind: implanted passives are real passives and stay, and disposable implants in an inventory refer to items that no longer exist.
+
+There is no acceptance step and no submission -- reading it is the whole of the obligation.
 
 #### Release checklist
 
-0. **CLEAN CODE:**
-    - Remove trace-level debug from code
-    - Remove one-shot items used in development
-    - Remove dead code paths not called in the game's normal execution path
-    - Remove switches used in dev or testing cycles with no purpose in production code (if a switch or constant is not constollable in `settings.lua`, consider moving control there or removing the switch)
-1. `luacheck.js` green; `install.ps1`; restart; confirm the startup counts line reads `115 extractable passives, 2 extraction operations, 54 insert routes`; exercise Extract One, Extract All, an insert, a duplicate-blocked insert, and the conveyor.
-2. Re-derive `MinRevision` from that build's title screen; bump `Version`; confirm `DebugMode: false`. `MinRevision` is a FLOOR, not the build you happen to be on, so 82182 is not automatically stale -- UE4SS, PalSchema and every other package on this machine still declare it. The real question is which floor we can honestly claim: testing has only ever happened on `v1.0.5.102999`, so 82182 asserts a compatibility nobody has checked, while 102999 locks out anyone on an older build. Decide it deliberately rather than by leaving the number alone.
-3. Read <https://eula.pocketpair.jp/palworld-mod-guideline> — the only content gate, and not reproduced in the uploader docs.
-4. Write the Workshop description: both dependencies with their Workshop ids (`3625223587`, `3625280368`), and the dedicated-server `WorkshopRootDir` + ActiveModList=LootablePassives` note from `Mods\PalModSettings.ini`.
-5. `Create New Mod` (Lua) in the uploader to mint the folder and `PublishedFileId`, `stage.ps1` into it, upload **private**.
-6. Verify by installing from the Workshop into a clean game folder — not the dev install, which already has the files. Then make it public.
+0. **CLEAN CODE** -- done as far as reading finds anything. The two Surgery probes, the conveyor's pre-delivery trace line and the `TODO` markers are gone; `settings.lua` holds two switches, `conveyor_extraction` and `surgery_ui_gate`, both of which are player-facing controls rather than dev leftovers. Re-read before uploading rather than trusting this line.
+1. `node tools\luacheck.js` and `luacheck Scripts` green, `lua tools\ledger_test.lua` passing; `install.ps1`; restart; confirm the startup counts line reads `115 extractable passives, 2 extraction operations, 54 insert routes`; exercise Extract One, Extract All, an insert, a duplicate-blocked insert, and the conveyor. This is the one deliberate pass, not an incidental one during some other test.
+2. DONE. `MinRevision` is `102999` and `Version` is `1.0.0`; `DebugMode` was already `false`. The floor is the build the mod has actually been tested on rather than the `82182` the dependencies declare, which asserts a compatibility nobody has checked, and a first publication to Steam reaches nobody who is on an older build. `README.md`'s Requirements line matches. Bump `Version` on every later upload -- the loader compares it as a plain string, so an unchanged one is not seen as an update at all.
+3. DONE. See the guideline section above.
+4. Write the Workshop description. It must carry: both dependencies with their Workshop ids (`3625223587`, `3625280368`); the dedicated-server `WorkshopRootDir` and `ActiveModList=LootablePassives` note from `Mods\PalModSettings.ini`; **the prohibition on mods on official servers**, which the guideline requires and which `README.md` now leads its Multiplayer section with; and an uninstall note no stronger than `README.md`'s, which describes what this mod leaves behind without promising more than Pocketpair's own guidance does.
+5. `Create New Mod` (Lua) in the uploader to mint the folder and its Published ID, `tools\stage.ps1 -ItemId <id> -DryRun` and then for real, upload **private**.
+6. Verify by installing from the Workshop into a clean game folder -- not the dev install, which already has the files. Then make it public.
 
 #### Notes on Mod activation
 

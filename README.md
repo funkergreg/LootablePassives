@@ -20,6 +20,7 @@ and the line `Disposable Implant: X`, which keeps them visually distinct from va
 recipes (a green chip, no quantity, `Implant: X`). Max stack is 9,999.
 - Disposable implants sort as one block, highest rarity first and then by name, so the prizes sit together at the top rather than scattered through your bag. The 21 implants/modules vanilla already defined keep vanilla's own place in the sort.
 - **Surgery Table's prices to Edit a Pal are fixed** and are not configurable (in current design)
+- **A known cosmetic limitation:** for an operation this mod refuses — extracting from an empty passive slot, or inserting a passive the Pal already has — the Edit button stays lit rather than greying out. The click is still refused and no gold is spent; only the colour is wrong. The button's enabled look is owned and continuously recalculated by the game, and a mod that writes it makes the button flicker instead of grey, which is worse.
 
 ### Pal Disassembly Conveyor
 
@@ -45,7 +46,7 @@ the other two alone apart from price. Notably, extracting a passive that came fr
 
 ## Requirements
 
-- Palworld 1.0, build revision **82182** or newer
+- Palworld 1.0, build revision **102999** or newer — the build this mod is tested on
 - [UE4SS Experimental (Palworld)](https://steamcommunity.com/sharedfiles/filedetails/?id=3625223587) — Workshop id `3625223587`
 - [PalSchema](https://steamcommunity.com/sharedfiles/filedetails/?id=3625280368) — Workshop id `3625280368`
 
@@ -54,6 +55,8 @@ initialise before this mod's Lua runs, and PalSchema has to apply its data patch
 can reference the item ids they create.
 
 ## Multiplayer
+
+**Do not enable any mod, including this one, on an official server.** Pocketpair's mod guideline prohibits it outright and says accounts may be suspended for it. The same guideline notes that disruptive mod use on unofficial servers may also be acted on. This mod is for single-player and for servers you or your group run.
 
 **Install it on every player for full functionality.** Without it, a player simply cannot use the disposable implants and they appear as undefined objects in shared inventory; nothing causes catastrophic crashes.
 
@@ -71,7 +74,17 @@ and reports are welcome.
 
 ## Install
 
-TODO: Rewrite once Steam workshop install is possible
+Subscribe on the Steam Workshop to this mod and to both dependencies above, then start Palworld and enable all three under **Options → Mod Management**. The official loader copies the files in and records what it copied, so the mod manager is also how you turn it off again.
+
+For a dedicated server, mods are configured by editing `Mods\PalModSettings.ini` directly rather than in-game: set `WorkshopRootDir` to the Workshop content directory and add `ActiveModList=LootablePassives` alongside entries for UE4SS and PalSchema.
+
+## Uninstall
+
+Disable it in **Options → Mod Management**, which removes the files the loader installed.
+
+Two things to know before you do, both of them general to Palworld modding rather than specific to this mod. Pocketpair's guidance is that turning a mod off is not always enough and that files left in the game folder can still be loaded — if you have ever installed mods by hand, delete them with File Explorer and verify the game files through Steam. And a save that has been loaded with mods enabled can keep showing problems afterwards, so back up a save you care about before experimenting.
+
+What this mod leaves behind is ordinary: passives already implanted are real passives and stay on the Pal. Disposable implants still sitting in an inventory refer to items that no longer exist once the mod is gone.
 
 ## Credits
 

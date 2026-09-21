@@ -229,10 +229,6 @@ local function on_consumed(entry, actor)
     end
     ledger.owe(entry.owner, owed_items)
 
-    -- Logged BEFORE the delivery call, so this line with no summary line after
-    -- it localises a crash to the delivery.
-    -- TODO: Remove once unexplained CTD solved.
-    log(string.format("Disassembly consumed a Pal owing %d module(s); delivering.", #names))
     local delivered, owed, spilled, held = ledger.flush(actor_location(actor))
     local summary = string.format("Disassembly yielded %d module(s): %s.",
         #names, table.concat(names, ", "))

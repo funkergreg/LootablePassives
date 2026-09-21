@@ -31,10 +31,8 @@ local find_inventory = inventory.find_inventory
 local player_id_number = inventory.player_id_number
 local remove_skill = inventory.remove_skill
 local restore_replaced_passive = inventory.restore_replaced_passive
-local consume_pending_refresh = ui.consume_pending_refresh
-local arm_refresh = ui.arm_refresh
 local current_page = ui.current_page
-local refresh_surgery_ui = ui.refresh_surgery_ui
+local on_transaction_complete = ui.on_transaction_complete
 local selected_passive = ui.selected_passive
 local visible_extraction_widget = ui.visible_extraction_widget
 
@@ -199,33 +197,12 @@ local function stranded_marker(record)
     return found_snapshot, found_lock
 end
 
--- Logs the outcome and arms the panel refresh.
---
--- reset_panel is false for mode == "implant", which is what stops
--- refresh_surgery_ui clearing the operation chip and the consume-item count for
--- an insert. See the note on refresh_surgery_ui in lp/ui.lua.
+-- Logs the outcome. The panel refresh that follows it is
+-- ui.on_transaction_complete, which reads mode and owns every timing decision
+-- in it.
 local function finish(message, mode)
     log(message)
-
-    local reset_panel = mode ~= "implant"
-    arm_refresh(reset_panel)
-
-    -- Second path to the same armed refresh, for when the OnPassiveUpdate hook
-    -- does not reach it. consume_pending_refresh runs at most once per arming.
-    ExecuteWithDelay(500, function()
-        ExecuteInGameThread(consume_pending_refresh)
-    end)
-
-    if reset_panel then
-        -- Unconditional, and not gated on the armed refresh. Excluded for an
-        -- implant because this call is not idempotent there: it clears a
-        -- selection the mod did not make.
-        ExecuteWithDelay(1600, function()
-            ExecuteInGameThread(function()
-                refresh_surgery_ui(true, false)
-            end)
-        end)
-    end
+    on_transaction_complete(mode)
 end
 
 -- One passive of an extract-all. The marker is still on the Pal here.
@@ -233,6 +210,10 @@ end
 -- copies is how many times this passive appears in the list; RemovePassiveSkill
 -- filters by name and takes every copy in one call, so all copies are granted
 -- before the single removal. Returns the number granted, or 0.
+--
+-- Nothing here clears the journal. write_journal opens "w", so the next
+-- iteration overwrites this one's row, and extract_all_remaining's caller writes
+-- the outer row back when the sweep ends.
 local function extract_additional(parameter, passive_id, item_id, bag, lock, copies)
     copies = copies or 1
     if not write_journal("prepared", "loop", passive_id, item_id, lock) then
@@ -251,8 +232,8 @@ local function extract_additional(parameter, passive_id, item_id, bag, lock, cop
     end
     if granted < copies then
         -- Fewer granted than copies: keep the passive and keep what was
-        -- granted.
-        clear_journal()
+        -- granted. The row on disk still reads prepared, which recovery acts on
+        -- by removing the marker and nothing else.
         return 0
     end
     if not write_journal("granted", "loop", passive_id, item_id, lock) then
@@ -272,7 +253,6 @@ local function extract_additional(parameter, passive_id, item_id, bag, lock, cop
         ))
         return 0
     end
-    clear_journal()
     return granted
 end
 
@@ -493,6 +473,14 @@ local function finalize_extraction(record, attempt)
     local extra_extracted, extra_skipped = 0, {}
     if record.mode == "all" then
         extra_extracted, extra_skipped = extract_all_remaining(record, bag)
+        -- The sweep leaves its own last row on disk. Phase three's failure path
+        -- below relies on the outer granted/marker row being the one recovery
+        -- finds, so it is written back before that removal is attempted.
+        if not write_journal("granted", "marker", record.passive_id, record.item_id, record.lock) then
+            log("WARNING: the recovery journal could not be restored after the extract-all "
+                .. "sweep. If the marker removal below fails, recovery replays the sweep's last "
+                .. "row instead, which removes the marker and nothing else.")
+        end
     end
 
     -- Phase three: remove the marker.
