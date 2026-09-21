@@ -19,7 +19,7 @@ This repo contains a Palworld mod.
 | --- | --- | --- |
 | Scripts/ | Lua runtime (main.lua, settings.lua, lp/*.lua) | ships |
 | PalSchemaMods/LootablePassives/ | JSON data patches: items, DataTable rows, English strings | ships |
-| tools/ | install.ps1, capture.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
+| tools/ | install.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
 | docs/PLAN.md | the working plan | dev only-do not ship |
 | CLAUDE.md | Agent guidance | dev only-do not ship |
 | README.md / LICENSE | the user-facing docs | ships |
