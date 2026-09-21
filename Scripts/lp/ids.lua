@@ -1,43 +1,30 @@
 -- Lootable Passives -- Which passive ids are ours, and what each one means.
 --
--- EXTRACTION_MODES answers two questions with one table -- is this id ours, and
--- which operation is it. Splitting those two questions apart is worth doing,
--- but do it carefully: this set grew from 2 marker names to 56 entries, and
--- code that treated every member as a marker was once a near-miss for
--- stripping real passives off Pals.
+-- EXTRACTION_MODES is a flat id -> mode-string map of all 56 ids this mod
+-- defines. Most call sites read it only as "is this id one of ours"; the two
+-- that need more use is_extract_mode or IMPLANT_TARGET.
+--
+-- Not in settings.lua, because these are not settings: every key has to match a
+-- row in the PalSchema JSON exactly.
 
--- These two tables live HERE, not in settings.lua, because they are not
--- settings. Every key has to match a row in the PalSchema JSON exactly: a
--- changed name does not configure anything, it produces a dead list entry or
--- an inert alias left on a Pal. settings.lua is for what a player may safely
--- change, and neither of these is that.
-
--- Marker passives, one per operation. The vanilla Surgery transaction swaps
--- the player's chosen passive for one of these; which marker appears is how
--- the runtime knows which operation was requested.
+-- Marker passives, one per extraction operation. Which marker appears on the
+-- Pal is what tells lp/passives.lua's detectors which operation ran.
 local MODES = {
     LP_ExtractOne = "one",
     LP_ExtractAll = "all",
 }
 
--- Disposable-implant insertion routes: alias passive -> the real passive.
--- The list resolves each entry by ROW NAME, so a second row is given its own
--- name and registered as a real passive in DT_PassiveSkill_Main with its own
--- name/description text. Selecting it makes the vanilla transaction install
--- the ALIAS, and the same swap already used by Extract One / Extract All then
--- replaces the alias with the real passive.
+-- Disposable-implant insertion routes: alias passive id -> the passive it
+-- stands in for. 54 entries, one per passive whose only operating-table row is
+-- the vanilla recipe row. lp/transaction.lua reads this to complete the swap.
 --
--- All 54 of them: exactly the passives whose only operating-table row is
--- the vanilla recipe one. The other 61 need no alias, because their row is
--- already keyed on the real passive id and so renders with the right name
--- and rank already.
+-- EVERY KEY HERE NEEDS A MATCHING ROW in PalSchema's
+-- LootablePassivesInsertRoutes.json, and every such row needs a key here.
+-- Nothing checks that; the insert-route count in the startup log line is the
+-- only report of it. See CLAUDE.md.
 --
--- Rank shown in each comment is the target passive's own rank, and matches
--- the Rank on that route's row. These keys must stay in step with the rows
--- in PalSchema's LootablePassivesInsertRoutes.json -- a key here with no
--- row is a dead operation, and a row with no key here installs an inert
--- alias and leaves it on the Pal. Nothing checks that at build time any
--- more; the insert-route count in the startup log line is what reports it.
+-- The rank in each trailing comment is the target passive's own rank, and
+-- matches the Rank on that route's row.
 local IMPLANT_TARGET = {
     LP_Insert_SwimSpeed_up_2 = "SwimSpeed_up_2",                               -- Ace Swimmer (rank +3)
     LP_Insert_CraftSpeed_up2 = "CraftSpeed_up2",                               -- Artisan (rank +3)
@@ -98,9 +85,7 @@ local IMPLANT_TARGET = {
 -- Every passive this mod registers, mapped to what should happen when the
 -- vanilla transaction installs it: "one" and "all" extract, "implant" inserts.
 --
--- Kept as a flat name -> mode-string table because a great deal of code treats
--- EXTRACTION_MODES[id] purely as "is this one of ours?", and those call sites
--- must keep working unchanged. IMPLANT_TARGET carries the extra alias data.
+-- Flat, because most call sites read it only as "is this one of ours".
 local EXTRACTION_MODES = {}
 
 for name, mode in pairs(MODES) do
@@ -110,9 +95,8 @@ for alias in pairs(IMPLANT_TARGET) do
     EXTRACTION_MODES[alias] = "implant"
 end
 
--- True for the two extraction operations only. The empty-slot rule differs by
--- kind: extracting from an empty slot is meaningless and must be blocked, while
--- implanting INTO an empty slot is the normal, correct case.
+-- True for the two extraction modes, false for "implant". Callers that treat an
+-- empty selected slot differently by kind branch on this.
 local function is_extract_mode(mode)
     return mode == "one" or mode == "all"
 end

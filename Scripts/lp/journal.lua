@@ -1,60 +1,41 @@
 -- Lootable Passives -- The crash-recovery journal.
 --
--- Grant-first ordering is the mod's entire crash-safety story and this file is
--- what makes it recoverable. Every write is CHECKED by its caller; a failure
--- aborts the exchange rather than running it unprotected.
+-- One row, rewritten at each step of an exchange. Every write_journal result is
+-- checked by its caller, which aborts rather than continuing unjournalled.
 
-local PASSIVE_ITEMS = require("passive_items")
 local util = require("lp.util")
+local passives = require("lp.passives")
 
--- Localised so the function bodies below are byte-identical to what they
--- were in main.lua: this split is code motion, not a rewrite.
-local SCRIPT_DIRECTORY = util.SCRIPT_DIRECTORY
 local log = util.log
+local read_lines = util.read_lines
+local remove_file = util.remove_file
 local write_lines = util.write_lines
+local module_for = passives.module_for
 
--- The journal must NOT live in this folder.
---
--- Scripts\ sits inside the tree the official mod loader manages. On any change
--- to Version in Info.json the loader uninstalls and reinstalls the mod folder
--- from Mods\ManagedMods\<PackageName>\InstallManifest.json, and that manifest
--- lists only the files the loader itself copied -- so a journal written here is
--- orphaned or swept on every update, taking an in-flight transaction with it.
--- DebugMode:true does the same on every single launch.
---
--- So climb out to the UE4SS root, which is not managed per-mod and is already
--- where UE4SS writes its own log. The name keeps the mod prefix because it is no
--- longer in a folder that identifies it. Falls back to the old location if the
--- path does not look the way we expect, which is better than not journalling.
-local UE4SS_ROOT = SCRIPT_DIRECTORY:match("^(.*[\\/]UE4SS[\\/])") or SCRIPT_DIRECTORY
-local JOURNAL_PATH = UE4SS_ROOT .. "LootablePassives_journal.tsv"
+-- At util.UE4SS_ROOT, outside the folder the mod loader replaces on a Version
+-- change. The name carries the mod prefix because the folder no longer does.
+local JOURNAL_PATH = util.UE4SS_ROOT .. "LootablePassives_journal.tsv"
 
 --------------------------------------------------------------------------------
--- Recovery journal
+-- The row
 --
--- Columns: version, state, phase, passive_id, item_id, extractgion_mode
---   version  JOURNAL_VERSION. A journal stamped with anything else is from a
---            different build of this mod and is discarded rather than replayed,
---            because these column meanings are not guaranteed across versions.
---            The official loader can leave one orphaned across an update.
---   state    "prepared" (implant not yet granted) | "granted" (implant granted,
---            removal still pending)
---   phase    "marker"   the passive the vanilla swap replaced
---            "loop"     one of the additional passives removed by an extract-all
---            "stranded" vanilla committed the swap but the mod could not resolve
---                       it. passive_id and item_id may be empty here, because the
---                       empty-slot case appends a marker without replacing
---                       anything; there is then nothing to restore, only a
---                       marker to remove.
---   passive_name the marker passive name, so recovery can find the Pal again
---
--- Written OUTSIDE the loader-managed mod folder; see JOURNAL_PATH above for why.
+-- Columns: version, state, phase, passive_id, item_id, passive_name
+--   version       JOURNAL_VERSION. Any other stamp is discarded unread.
+--   state         "prepared" -- module not yet granted
+--                 "granted"  -- module granted, removal still pending
+--   phase         "marker"   -- the passive the swap replaced
+--                 "loop"     -- one passive of an extract-all
+--                 "implant"  -- an alias installed, module already spent
+--                 "stranded" -- the swap happened and could not be resolved;
+--                               passive_id and item_id may be empty
+--   passive_id    the passive being exchanged, or empty
+--   item_id       the module for it, or empty
+--   passive_name  the marker id on the Pal
 --------------------------------------------------------------------------------
 
--- Bump this if the column layout changes. A journal stamped with anything else
--- is from a different version of this mod and cannot be trusted to mean what
--- these columns mean -- which matters because the loader can leave an orphaned
--- journal behind across an update.
+-- Bump when the columns change. read_journal discards any other stamp, which is
+-- what stops a journal orphaned across an update being replayed against
+-- different column meanings.
 local JOURNAL_VERSION = "LPJ1"
 
 local function write_journal(state, phase, passive_id, item_id, passive_name)
@@ -70,12 +51,8 @@ local function write_journal(state, phase, passive_id, item_id, passive_name)
     }, "recovery journal")
 end
 
--- Is the journal path writable at all?
---
--- Checked once, at load, and reported loudly. Every write_journal call site used
--- to discard the return value, so on an install where io is unavailable or the
--- directory is read-only the entire grant-first crash-safety story silently did
--- not exist: the exchange ran unjournalled and nothing refused to proceed.
+-- Can the journal be written at all? Answered once and cached, and reported by
+-- main.lua at load. Extraction refuses when this is false.
 local journal_writable = nil
 
 local function journal_is_writable()
@@ -86,34 +63,28 @@ local function journal_is_writable()
     if io ~= nil and type(io.open) == "function" then
         local opened, handle = pcall(io.open, JOURNAL_PATH, "a")
         if opened and handle ~= nil then
-            -- Opening "a" CREATES the file, so the probe used to leave a
-            -- zero-byte journal beside the user's UE4SS.log on every launch and
-            -- never clean it up. Measure the size while the handle is open and
-            -- remove it again if the probe is all that put it there. An empty
-            -- journal is harmless to read -- it parses as "nothing pending" --
-            -- but shipping litter into someone's game folder is not.
+            -- Opening "a" creates the file, so its size is measured while the
+            -- handle is open and a zero-byte file -- one this probe created --
+            -- is removed again.
             local sized, size = pcall(handle.seek, handle, "end")
             pcall(handle.close, handle)
             journal_writable = true
-            if sized and size == 0 and os ~= nil and type(os.remove) == "function" then
-                pcall(os.remove, JOURNAL_PATH)
+            if sized and size == 0 then
+                remove_file(JOURNAL_PATH)
             end
         end
     end
     return journal_writable
 end
 
+-- The journal row as a table, or nil. The second return is true when the file
+-- should be deleted: it is unparseable, stamped for another build, or internally
+-- inconsistent, and every one of those cases has already been logged.
 local function read_journal()
-    if io == nil or type(io.open) ~= "function" then
-        return nil
-    end
-    local opened, handle = pcall(io.open, JOURNAL_PATH, "r")
-    if not opened or handle == nil then
-        return nil
-    end
-    local read_ok, line = pcall(handle.read, handle, "*l")
-    pcall(handle.close, handle)
-    if not read_ok or line == nil then
+    -- The first line is the whole journal; there is never a second exchange in
+    -- flight.
+    local line = (read_lines(JOURNAL_PATH) or {})[1]
+    if line == nil then
         return nil
     end
     local version, state, phase, passive_id, item_id, passive_name =
@@ -123,23 +94,20 @@ local function read_journal()
         return nil, true
     end
     if version ~= JOURNAL_VERSION then
-        -- Loudly, not silently: this is a journal we cannot act on, and leaving
-        -- it in place would only mean re-reading it on every load forever.
         log(string.format(
             "WARNING: discarded a recovery journal stamped %s; this build writes %s. "
             .. "An interrupted exchange from another version was NOT replayed.",
             tostring(version), JOURNAL_VERSION))
         return nil, true
     end
-    -- A stranded marker legitimately has no passive to restore -- the empty-slot
-    -- case appends a marker without replacing anything -- so only the phases
-    -- that actually exchange an item require these two columns.
+    -- A "stranded" row may name no passive, so only the exchanging phases
+    -- require these two columns to agree with the module map.
     if phase ~= "stranded" then
         if passive_id == "" then
             log("WARNING: ignored and discarded a recovery journal with no passive.")
             return nil, true
         end
-        if PASSIVE_ITEMS[passive_id] ~= item_id then
+        if module_for(passive_id) ~= item_id then
             log("WARNING: ignored a recovery journal whose item mapping no longer matches.")
             return nil, true
         end
@@ -154,9 +122,7 @@ local function read_journal()
 end
 
 local function clear_journal()
-    if os ~= nil and type(os.remove) == "function" then
-        pcall(os.remove, JOURNAL_PATH)
-    end
+    remove_file(JOURNAL_PATH)
 end
 
 return {

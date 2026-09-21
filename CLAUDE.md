@@ -90,7 +90,7 @@ Writing under `Program Files` may need an elevated shell.
 
 #### What it copies, and where
 
-```
+```test
 Scripts\                         ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\
 PalSchemaMods\LootablePassives\  ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\PalSchema\mods\LootablePassives\
 ```
@@ -104,6 +104,8 @@ Nothing is deleted, and files the mod writes at runtime are left alone.
 
 Delete **both** destination folders, then remove the `mods.txt` line. Modules already in a save
 become unknown items; passives already implanted are real passives and stay put.
+
+**That first claim now has a caveat, and it is not ours.** Unknown items are survivable because PalSchema strips them on load. On the 2026-09-20 build, PalSchema 0.6.7's signature scan for that cleanup fails and it says so: *"PalSchema will be unable to clean up invalid items and worlds with invalid items will crash on load."* Upstream 0.6.71 fixes it and has not reached the Workshop. Until it does, or until someone tests an uninstall with modules in a throwaway save, do not write anywhere player-facing that uninstalling is clean. See `docs/PLAN.md`.
 
 > **Do not disable this mod by setting `LootablePassives : 0` in `mods.txt`.** That line controls
 > only the Lua half. The PalSchema half has no such switch — it loads whenever its folder is on
@@ -157,7 +159,17 @@ Hard-won, each one from a crash or a wrong conclusion in this repo. Read before 
 
 **Log immediately before each engine call in a probe.** One log line per call, so that if the game dies, the last line in `UE4SS.log` names the call. A probe that makes three engine calls between two log lines cannot be diagnosed after the fact, and the crash above could not be attributed to either of its two candidate calls.
 
-**Never write to a widget that is not open.** The Surgery panel's whole refresh ladder is reset-to-empty calls, the widget instance is reused across openings, and `SetupPassiveChangeItem()` destroys and rebuilds all 118 entries from the screen's selected Pal. Applied to a closed panel — which `finish()`'s 500 ms and 1600 ms timers will do if the player shuts the screen after confirming — the result is sticky and the player cannot undo it from the UI. That is the suspected cause of the blank panel in `docs/double-trouble.png`. Hence the two deliberately opposite biases in `lp/ui.lua`: the Edit gate counts a FAILED `IsVisible` as visible (it can only grey a button), the repair path demands a positive `IsVisible` (it writes).
+**Take a widget from the hook context. Never go looking for one.** Every widget hook this mod owns is a method on the widget it wants, so UE4SS hands that object to the callback as its first argument, live by construction — `Update Button State` gives the tab page, `OnPassiveUpdate` gives the screen. `lp/ui.lua` records both and calls `FindAllOf` nowhere.
+
+What that replaced: `FindAllOf("WBP_OperatingTable_TabPage_C")` followed by `IsVisible()` on each result, driven by the gate at a measured 1.4 passes a second for as long as the Surgery screen was open. `FindAllOf` returns every instance the object pool still holds, including pages from earlier openings that nothing is using, and calling a native method on one of those is the crash `pcall` cannot catch. The 2026-09-20 session went down with `EXCEPTION_ACCESS_VIOLATION reading 0x0000686374617340` — ASCII bytes, so freed memory reused for text — inside a Lua callback dispatched from an engine hook, with the Surgery screen open and no transaction having run. Not proven to be that scan. It was the largest exposure of that shape, it ran at frame rate, and it was removable. `delivery_candidates` still walks `FindAllOf("PalPlayerCharacter")`, because multiplayer needs every player; that is the remaining instance of the pattern and it is the other candidate for that crash.
+
+**Never write to a widget that is not open.** The Surgery panel's whole refresh ladder is reset-to-empty calls, the widget instance is reused across openings, and `SetupPassiveChangeItem()` destroys and rebuilds all 118 entries from the screen's selected Pal. Applied to a closed panel — which `finish()`'s 500 ms and 1600 ms timers will do if the player shuts the screen after confirming — the result is sticky and the player cannot undo it from the UI. This is **not** the cause of the blank panel in `docs/double-trouble.png`: that panel appeared in a session where no transaction ran, so the ladder was never called. See `docs/PLAN.md`; the leading explanation there is that the Pal list was empty, which is vanilla behaviour. The rule stands on its own anyway.
+
+Hence the two deliberately opposite biases in `lp/ui.lua`: the Edit gate and the targeted capture count a FAILED `IsVisible` as visible, because an unanswerable question must not veto a transaction path (the worst case is a button that is not greyed); the repair path demands a positive `IsVisible`, because it writes.
+
+**A closure per call is a crash, not an inefficiency.** `pcall(function() ... end)` allocates a fresh Lua closure and a UE4SS registry ref every time it runs. On a hook that fires at frame rate that churn produced `Error: [Lua::Registry::get_function_ref] Ref was not function` followed by `EXCEPTION_ACCESS_VIOLATION reading 0xffffffffffffffff`, with a call stack entirely inside UE4SS. Everything on a per-frame path therefore uses argument-form `pcall` against a module-level accessor — `util.field`, `util.method`, and the `_call_`/`_index_` helpers — and every hook callback is built once, at load, and passed by reference. `main.lua`'s `coalescer()` and `hooks.lua`'s per-registration `entry.retry` exist for the same reason: a flag alone is not enough, because `ExecuteWithDelay(0, ...)` completes within the tick and the next firing would allocate again.
+
+**`restore_replaced_passive` removes the marker before adding the passive, and the order is load-bearing.** `AddPassiveSkill(AddSkill, OverrideSkill)` does not reliably honour the override: it appended the passive and left the marker attached, which is how a Pal ended up carrying Infinite Stamina twice. It is also how the overwrite case crashed — a Pal whose four slots were full gained a fifth entry, and the passive panel has only four cards to index, which is why inserting into an *empty* slot never crashed. Removing first keeps the list from growing past what the UI can address. The trade is that a failed add leaves the Pal with neither, so every caller checks the result and the implant callers refund the module.
 
 **Check arity against the header dumps, and not just `Pal.hpp`.** Widget functions live in `CXXHeaderDump/WBP_*.hpp`, CommonUI in `CommonUI.hpp`, engine in `Engine.hpp`. Prefer no-argument getters; avoid out-parameter overloads (`TryGetContainer(Out&)`) when a by-value equivalent exists (`GetContainer()`).
 
@@ -233,6 +245,22 @@ Gating is `AActor::HasAuthority()` (0-arg) for server/client, `APawn::IsLocallyC
 - **Dedicated-server operation.**
 
 ---
+
+## Rules for code comments
+
+The comments in `Scripts/` were rewritten in one pass on 2026-09-20 to follow these rules, after an agent read a comment as authority over the instructions it had been given in `docs/PLAN.md` and made the wrong change. Several of the claims it trusted were also simply untrue — one asserted that `EnabledButton = false` produced the game's greyed-out look, which was never verified and which the widget's own header contradicts.
+
+So a comment in this repo describes the code. It does not vouch for the game.
+
+- **Say what the code does**: what it reads, writes, calls, returns, in what order, and what it returns instead on failure.
+- **API facts are allowed where a header dump backs them** — arity, out-parameters, property versus call, a `WBP_*.hpp` line number. Those are checkable without launching anything.
+- **No claims about in-game behaviour.** Not "the player sees", not "vanilla will", not "this works". If behaviour has been observed, it is a finding and belongs in this file or in `docs/PLAN.md`, with its provenance attached.
+- **No evidence in comments.** No log timestamps, session references, screenshot numbers, or "measured". Those aged badly and read as proof of things nobody had checked.
+- **No design intent or future plans.** That is `docs/PLAN.md`'s job, and a comment that disagrees with the plan must not be able to win.
+
+The order of authority is: the prompt, then `docs/PLAN.md`, then this file, then comments. A comment is the weakest of the four and should never be the only place a fact lives.
+
+When editing comments only, prove it: parse the file before and after and compare the syntax trees. `node_modules/luaparse` is already present for `tools/luacheck.js`, and 15 files were verified that way in the pass above.
 
 ## Rules for Markdown
 

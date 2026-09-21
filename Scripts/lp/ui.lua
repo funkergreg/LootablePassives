@@ -1,20 +1,18 @@
 -- Lootable Passives -- The Surgery widget: access, the Edit gate, and panel repair.
 --
--- UI state is never a safety mechanism. Gating the Edit button is a courtesy;
--- every rule it enforces is also enforced at the transaction, because the click
--- can get through. Never write the passive cards directly -- reset the panel.
+-- The gate here duplicates checks the transaction also makes; it is not the
+-- enforcement point. See CLAUDE.md.
 --
--- This module must NOT require lp.transaction. transaction reaches in here (for
--- the widget reads and the repaint) and the one-directional edge is what keeps
--- the two from becoming a cycle.
+-- This module must NOT require lp.transaction. transaction requires this one, and
+-- keeping that edge one-directional is what stops the pair forming a cycle.
 
+local SETTINGS = require("settings")
 local util = require("lp.util")
 local ids = require("lp.ids")
 local passives = require("lp.passives")
 
--- Localised so the function bodies below are byte-identical to what they
--- were in main.lua: this split is code motion, not a rewrite.
-local _call_is_visible = util._call_is_visible
+local field = util.field
+local method = util.method
 local is_valid = util.is_valid
 local log = util.log
 local name_to_string = util.name_to_string
@@ -26,9 +24,7 @@ local count_id = passives.count_id
 local get_skill_ids = passives.get_skill_ids
 local is_extractable = passives.is_extractable
 
-local SURGERY_TAB_CLASS = "WBP_OperatingTable_TabPage_C"
-local SURGERY_SCREEN_CLASS = "WBP_OperatingTable_C"
-
+-- The tab page's four passive cards, indexed by CachedPassiveSlotIndex + 1.
 local PASSIVE_CARD_PROPERTIES = {
     "WBP_MainMenu_Pal_Skill_Passive",
     "WBP_MainMenu_Pal_Skill_Passive_1",
@@ -36,11 +32,20 @@ local PASSIVE_CARD_PROPERTIES = {
     "WBP_MainMenu_Pal_Skill_Passive_3",
 }
 
+-- Built once and passed by reference to pcall, like the accessors in
+-- lp/util.lua. Both visibility predicates below go through it.
+local function _call_is_visible(widget)
+    return widget:IsVisible()
+end
+
 
 --------------------------------------------------------------------------------
 -- Surgery widget access
 --------------------------------------------------------------------------------
 
+-- The passive id on the card at the selected slot, and that slot's index.
+-- Returns nil, nil for an invalid widget, a negative or out-of-range index, or
+-- an invalid card.
 local function selected_passive(widget)
     if not is_valid(widget) then
         return nil, nil
@@ -60,63 +65,99 @@ local function selected_passive(widget)
     return name_to_string(card.BindedPassiveSkillName), index
 end
 
--- Returns the visible Surgery tab page whose pending operation is one of our
--- markers, plus that marker's name.
--- The one visible-tab-page scan, shared by both callers below.
+--------------------------------------------------------------------------------
+-- The widgets, and where they come from
+--------------------------------------------------------------------------------
 --
--- require_marker restricts the result to a page whose pending operation is one
--- of ours, and additionally returns which one. Both variants were written out
--- separately before, which meant three copies of the load-bearing and
--- distinctly non-obvious rule on the next line: a FAILED IsVisible call counts
--- as visible. Getting that wrong in one copy and not the other is a silent
--- divergence, so it is stated once.
+-- Both widgets arrive as the context argument of a hook on one of their own
+-- methods: the tab page from Update Button State, the screen from
+-- OnPassiveUpdate. Nothing in this file calls FindAllOf.
 --
--- TWO PASSES, and the order is the point. A page that positively reports itself
--- visible wins over one whose IsVisible call merely failed. Both are accepted --
--- the rule above still holds -- but FindAllOf order decided which one was
--- returned before, so a single stale page early in the list took every gate pass
--- for the rest of the session and the real panel was never gated at all. That is
--- one of the ways this mod can appear to switch itself off mid-session.
-local function find_visible_tab_page(require_marker)
-    -- Argument-form pcall against the global: no closure per call, and this runs
-    -- at about 1.4 passes a second. See the note at the top of lp/util.lua.
-    local succeeded, widgets = pcall(FindAllOf, SURGERY_TAB_CLASS)
-    if not succeeded or widgets == nil then
+-- Do not reintroduce a scan here. See CLAUDE.md, "Take a widget from the hook
+-- context".
+
+local live_page = nil
+local live_screen = nil
+
+-- Set once, the first time note_live_page is given something is_valid rejects.
+local context_warning_reported = false
+
+local function note_live_page(widget)
+    if is_valid(widget) then
+        live_page = widget
+        return
+    end
+    if not context_warning_reported then
+        context_warning_reported = true
+        log("WARNING: the Update Button State hook did not hand us a usable tab page. The "
+            .. "Edit-button gate cannot run, and extraction falls back to the whole-world "
+            .. "snapshot to work out what was swapped. The transaction enforces every rule the "
+            .. "gate does either way, so operations still behave; the button simply is not "
+            .. "greyed out when it should be.")
+    end
+end
+
+local function note_live_screen(widget)
+    if is_valid(widget) then
+        live_screen = widget
+    end
+end
+
+-- Called from the map-load hook, which is the one point at which a recorded
+-- widget is known not to belong to the current level.
+local function forget_live_widgets()
+    live_page = nil
+    live_screen = nil
+end
+
+local function current_page()
+    if is_valid(live_page) then
+        return live_page
+    end
+    live_page = nil
+    return nil
+end
+
+local function current_screen()
+    if is_valid(live_screen) then
+        return live_screen
+    end
+    live_screen = nil
+    return nil
+end
+
+-- The recorded tab page and its CurrentPassiveId, if that id is one of ours.
+--
+-- A FAILED IsVisible call is treated as visible here, which is the opposite of
+-- is_open below. This result feeds the transaction path, so an unanswerable
+-- visibility question does not veto it; is_open guards writes instead.
+local function visible_extraction_widget()
+    local page = current_page()
+    if page == nil then
         return nil, nil
     end
-    for pass = 1, 2 do
-        for _, widget in ipairs(widgets) do
-            if is_valid(widget) then
-                local visible_ok, visible = pcall(_call_is_visible, widget)
-                local accept
-                if pass == 1 then
-                    accept = visible_ok and visible == true
-                else
-                    accept = not visible_ok
-                end
-                if accept then
-                    if not require_marker then
-                        return widget, nil
-                    end
-                    local pending = name_to_string(widget.CurrentPassiveId)
-                    if pending ~= nil and EXTRACTION_MODES[pending] ~= nil then
-                        return widget, pending
-                    end
-                end
-            end
-        end
+    local visible_ok, visible = pcall(_call_is_visible, page)
+    if visible_ok and visible ~= true then
+        return nil, nil
+    end
+    local pending = name_to_string(field(page, "CurrentPassiveId"))
+    if pending ~= nil and EXTRACTION_MODES[pending] ~= nil then
+        return page, pending
     end
     return nil, nil
 end
 
--- A visible Surgery tab page with one of our operations pending.
-local function visible_extraction_widget()
-    return find_visible_tab_page(true)
-end
-
--- Blocking the Edit button.
+-- True while this module is the reason the button is blocked.
 local edit_disabled_by_mod = false
 
+-- Writes SetIsInteractionEnabled on the inner CommonButtonBase
+-- (CommonUI.hpp:324, one bool argument).
+--
+-- SetIsEnabled on the outer WBP_CommonButton_C is not called. What the widget
+-- offers instead is unknown: WBP_CommonButton.hpp declares no enabled/disabled
+-- setter and no disabled-state animation -- Anm_Normal, Anm_NormalToFocus,
+-- Anm_OpenFocus, Anm_DefaultToRed. describe_button_state below is the probe for
+-- finding out which property carries it; see docs/PLAN.md.
 local function set_edit_interactable(widget, enabled)
     local button = unwrap(widget.WBP_CommonButton)
     if not is_valid(button) then
@@ -126,31 +167,58 @@ local function set_edit_interactable(widget, enabled)
     if is_valid(inner) then
         pcall(function() inner:SetIsInteractionEnabled(enabled) end)
     end
-    -- SetIsEnabled(false) on the outer WBP_CommonButton_C is NOT used. It works
-    -- -- the 04:57 log shows it succeeding -- but it renders the button as a
-    -- white cut-out rather than the game's normal greyed-out state, because a
-    -- UUserWidget's disabled appearance is not styled for this widget. Blocking
-    -- input on the inner CommonButtonBase is enough to stop the click, and
-    -- EnabledButton = false is what the game itself uses to show the greyed look.
 end
 
--- Both of these write only when the state is not already what is wanted.
+-- A ONE-SHOT PROBE, to be deleted once docs/PLAN.md carries its answer.
 --
--- The flicker came from writing unconditionally on every gate pass: the game
--- set the button enabled, the mod set it disabled, the game set it enabled
--- again. Reading EnabledButton first means at most one write per genuine change
--- by the game, and no writes at all once the state has settled.
+-- Logs eight widget properties under a label, once per label per session. Reads
+-- only, through field() and method(), so no argument is passed to anything.
+local reported_button_states = {}
+
+local function describe_button_state(page, label)
+    if reported_button_states[label] then
+        return
+    end
+    reported_button_states[label] = true
+    local button = unwrap(field(page, "WBP_CommonButton"))
+    local inner = nil
+    if is_valid(button) then
+        inner = unwrap(field(button, "WBP_PalInvisibleButton"))
+    end
+    local warning = unwrap(field(page, "Text_Warning"))
+    local no_item = unwrap(field(page, "Image_NoItem"))
+    local readings = {
+        { "page.EnabledButton", field(page, "EnabledButton") },
+        { "button.bIsEnabled", field(button, "bIsEnabled") },
+        { "button.RenderOpacity", field(button, "RenderOpacity") },
+        { "button.Visibility", field(button, "Visibility") },
+        { "inner.bIsEnabled", field(inner, "bIsEnabled") },
+        { "inner.IsInteractionEnabled", method(inner, "IsInteractionEnabled") },
+        { "Text_Warning.Visibility", field(warning, "Visibility") },
+        { "Image_NoItem.Visibility", field(no_item, "Visibility") },
+    }
+    local parts = {}
+    for _, reading in ipairs(readings) do
+        parts[#parts + 1] = string.format("%s=%s", reading[1], tostring(unwrap(reading[2])))
+    end
+    log(string.format("BUTTON STATE [%s]: %s", label, table.concat(parts, " ")))
+end
+
+-- Writes EnabledButton and the interaction flag only when the pair is not
+-- already in the wanted state, so a settled state costs no writes.
 local function block_edit(widget)
-    local current
-    local read_ok = pcall(function() current = unwrap(widget.EnabledButton) end)
-    if read_ok and current == false and edit_disabled_by_mod then
+    if unwrap(field(widget, "EnabledButton")) == false and edit_disabled_by_mod then
         return -- already blocked, and blocked by us: leave it alone
     end
+    describe_button_state(widget, "before we block it")
     widget.EnabledButton = false
     set_edit_interactable(widget, false)
     edit_disabled_by_mod = true
+    describe_button_state(widget, "after we block it")
 end
 
+-- Restores the interaction flag, and only if this module cleared it.
+-- EnabledButton is not written back: Update Button State recomputes it.
 local function release_edit(widget)
     if not edit_disabled_by_mod then
         return -- never touched it, so there is nothing to undo
@@ -159,55 +227,44 @@ local function release_edit(widget)
     set_edit_interactable(widget, true)
 end
 
--- Both operations require the SELECTED slot to hold an extractable passive.
+-- Is the passive an alias would install already on the Pal?
 --
--- An EMPTY slot must be rejected. Vanilla enables Edit for one because the
--- normal operation ADDS a passive, but there is nothing there to extract, and
--- confirming it appends the marker instead of swapping it. selected_passive
--- returns nil or "None" for an empty slot and is_extractable rejects both.
--- Any visible Surgery tab page, regardless of which operation is pending.
-local function visible_tab_page()
-    local widget = find_visible_tab_page(false)
-    return widget
-end
-
--- Vanilla will not implant a passive a Pal already carries: it compares the
--- chosen passive id against the Pal's list and refuses on a match.
---
--- An implant alias has a DIFFERENT id from the passive it installs, so that
--- comparison stopped matching and the duplicate check quietly ceased to apply.
--- Screenshot 118 is the result: a Pal holding Infinite Stamina twice. Re-impose
--- the check against the TARGET passive, which is what will actually be on the
--- Pal once the swap completes.
+-- Compares against IMPLANT_TARGET[pending], the id that ends up on the Pal,
+-- rather than against the alias id, which never matches anything in the list.
 local function alias_target_already_present(page, pending)
     local target = IMPLANT_TARGET[pending]
     if target == nil then
         return false
     end
-    local ids = get_skill_ids(unwrap(page.CachedCharacter))
-    if ids == nil then
+    local skill_ids = get_skill_ids(unwrap(page.CachedCharacter))
+    if skill_ids == nil then
         return false
     end
-    return count_id(ids, target) > 0
+    return count_id(skill_ids, target) > 0
 end
 
--- Finds ANY visible tab page, not only one with a marker pending.
+-- Blocks or releases the Edit button for the recorded tab page.
 --
--- The earlier version bailed out unless one of our markers was selected, so
--- once it had disabled the button, switching to a normal insert operation left
--- the gate inert and the button disabled forever. Release has to be reachable
--- from every state the player can switch into, not just from ours.
+-- Runs for whatever operation is pending, including none: the release branch has
+-- to be reachable from every state, or a block made in one state outlives it.
+--
+-- Blocks when an extract mode is pending and the selected slot does not hold an
+-- extractable passive -- selected_passive returns nil or "None" for an empty
+-- slot, and is_extractable rejects both -- or when an alias is pending and
+-- alias_target_already_present is true.
+--
+-- Takes no arguments so main.lua can hand it to ExecuteInGameThread by
+-- reference; see the note on closure allocation in lp/hooks.lua.
 local function enforce_extraction_gate()
-    local page = visible_tab_page()
+    if SETTINGS.surgery_ui_gate == false then
+        return
+    end
+    local page = current_page()
     if not is_valid(page) then
         return
     end
 
-    local pending
-    pcall(function() pending = name_to_string(page.CurrentPassiveId) end)
-    -- Only the two EXTRACT operations are gated. An implant alias is left alone:
-    -- inserting into an empty slot is exactly what it is for, so blocking on
-    -- "nothing extractable selected" would make it unusable.
+    local pending = name_to_string(field(page, "CurrentPassiveId"))
     local is_extraction = pending ~= nil and is_extract_mode(EXTRACTION_MODES[pending])
     local is_implant = pending ~= nil and EXTRACTION_MODES[pending] == "implant"
 
@@ -216,57 +273,33 @@ local function enforce_extraction_gate()
         passive_id = selected_passive(page)
     end
 
-    -- Only consulted while one of our implant aliases is pending, so this costs
-    -- nothing during normal play.
     local duplicate = is_implant and alias_target_already_present(page, pending)
 
     if (is_extraction and not is_extractable(passive_id)) or duplicate then
         block_edit(page)
     else
+        -- The other half of the probe: EnabledButton false while this module is
+        -- not the one blocking. The read stops once the label has fired.
+        if not reported_button_states["vanilla disabled it"]
+            and not edit_disabled_by_mod
+            and unwrap(field(page, "EnabledButton")) == false
+        then
+            describe_button_state(page, "vanilla disabled it")
+        end
         release_edit(page)
     end
 end
 
 --------------------------------------------------------------------------------
--- Extraction
+-- Panel repair
 --------------------------------------------------------------------------------
+--
+-- This file does not write the passive cards. SetPassiveSkill and Clear on a
+-- card are not called from anywhere; refresh_surgery_ui resets the panel
+-- instead. See "Panel repaint: dead ends" in docs/PLAN.md.
 
--- Repainting the passive slots after an exchange.
---
--- Three panel-level approaches were tried and measured, not guessed at:
---   ReflectPassiveChange / RefreshCurrentPassiveItem / RefreshItemDisplay
---       ran in the 03:53 session and did not repaint the slots.
---   "On Click Pal List" with the screen's own CurrentHandle reported
---       reselect=true in the 04:50 session -- it genuinely executed -- and the
---       stale label still stayed. Re-selecting the Pal already selected is
---       evidently a no-op inside the Blueprint, which is why clicking to a
---       DIFFERENT Pal and back is what works by hand.
---
---   Writing the cards directly with SetPassiveSkill / Clear was tried next and
---       was WORSE. The calls succeeded -- the 22:03 session reported
---       "cleared=4 failed=0" -- but Clear() leaves a card blank rather than
---       showing the empty "+" slot, and the cards are reused across Pal
---       selections, so every Pal afterwards displayed an empty panel even when
---       it plainly had four passives. The empty state is its own visual, hinted
---       at by the card's Anm_EmptySlot_HideToShow animation, and Clear() does
---       not reach it. "The calls succeeded" is not the same as "the result was
---       correct", and that distinction cost a test cycle.
---
--- What is left is the one thing not yet tried: stop repainting at all and
--- RESET THE PANEL instead, which is what the vanilla flow does anyway once an
--- operation has been consumed. See the body below.
---
--- Worth keeping in mind: BindedPassiveSkillName was already correct while
--- Text_SkillName was stale, so the card data agreed with reality the whole time
--- and only the paint was wrong. Never diagnose staleness from the bound value.
-
--- Positive visibility, for the WRITE path.
---
--- find_visible_tab_page counts a FAILED IsVisible as visible, and that is the
--- right bias for the gate: the worst a wrong answer does there is grey out a
--- button on a panel nobody is looking at. This path WRITES to the widgets, so
--- its bias has to be the other way round -- act only on a widget that
--- positively reports itself visible. Two paths, two biases, deliberately.
+-- Positive visibility, for the write path. The inverse of the rule in
+-- visible_extraction_widget: a failed IsVisible call counts as not open.
 local function is_open(widget)
     if not is_valid(widget) then
         return false
@@ -275,57 +308,37 @@ local function is_open(widget)
     return visible_ok and visible == true
 end
 
-local function open_instances(class_name)
-    local found = {}
-    local succeeded, widgets = pcall(FindAllOf, class_name)
-    if not succeeded or widgets == nil then
-        return found
+-- The recorded widget if it is open, else nil. Does not scan for another.
+local function open_recorded(widget)
+    if widget ~= nil and is_open(widget) then
+        return widget
     end
-    for _, widget in ipairs(widgets) do
-        if is_open(widget) then
-            found[#found + 1] = widget
-        end
-    end
-    return found
+    return nil
 end
 
--- Has the player actually got a Pal selected?
---
--- SetupPassiveChangeItem builds the operation list FROM the screen's selected
--- Pal, so with no Pal there is nothing to build it from. Checked because the
--- rebuild is destructive and its result is sticky: the screen widget is reused
--- across openings, so a list rebuilt from nothing stays empty on the next open
--- as well, and no amount of closing and reopening the panel gets it back.
+-- Does the screen have a Pal selected? SetupPassiveChangeItem builds the
+-- operation list from it, so the rebuild below is skipped when this is false.
 local function has_selected_pal(screen)
-    local handle
-    pcall(function() handle = unwrap(screen.CurrentHandle) end)
-    return is_valid(handle)
+    return is_valid(field(screen, "CurrentHandle"))
 end
 
--- Said once per session, not once per refresh: the ladder in finish() fires two
--- or three passes per transaction and every one of them would repeat it.
+-- Set once, the first time a refresh finds no open page.
 local closed_skip_reported = false
 
--- rebuild_list rebuilds the operation list from scratch. That is reserved for
--- the LAST pass of the refresh ladder: it destroys and recreates all 118 entry
--- widgets, so doing it while the player may still be moving the cursor over one
--- of them is asking for a destroyed-widget access.
+-- Resets the panel after a transaction. Returns true if it wrote anything.
 --
--- NOTHING IS WRITTEN TO A PANEL THAT IS NOT OPEN. This used to walk every
--- instance FindAllOf returned, open or not, so the whole ladder ran against a
--- closed panel whenever the player confirmed an operation and shut the screen
--- inside the next 1.6 seconds -- routine at the end of a session, which is
--- where the blank panel in docs/double-trouble.png turned up. Every write here
--- is a reset-to-empty, and the widget is reused on the next open, so a reset
--- applied while it was closed is one the player cannot undo from the UI. A
--- closed panel needs no repair in any case: it is rebuilt when it opens.
+-- reset_panel clears the operation chip and consume-item count; finish() passes
+-- false for an implant, where that selection is not this mod's to clear.
 --
--- Returns true when it actually touched something.
+-- rebuild_list calls SetupPassiveChangeItem, which recreates every entry widget
+-- in the operation list.
+--
+-- Both are skipped entirely unless the recorded page is open, and the screen
+-- half is skipped unless the recorded screen is open. Nothing is written to a
+-- widget that is not open; see CLAUDE.md.
 local function refresh_surgery_ui(reset_panel, rebuild_list)
-    local pages = open_instances(SURGERY_TAB_CLASS)
-    local screens = open_instances(SURGERY_SCREEN_CLASS)
-
-    if #pages == 0 then
+    local page = open_recorded(current_page())
+    if page == nil then
         if not closed_skip_reported then
             closed_skip_reported = true
             log("The Surgery panel was already closed when a refresh came due, so nothing was "
@@ -334,65 +347,33 @@ local function refresh_surgery_ui(reset_panel, rebuild_list)
         end
         return false
     end
+    local screen = open_recorded(current_screen())
 
-    -- One screen owns exactly one tab page -- WBP_OperatingTable.hpp declares a
-    -- single WBP_OperatingTable_TabPage member -- so anything else here is a
-    -- state this mod has no model for, and is the state the blank panel is
-    -- suspected of. Rare enough to stay loud.
-    if #pages > 1 or #screens > 1 then
-        log(string.format(
-            "WARNING: found %d open Surgery panel(s) and %d open screen(s); one of each is "
-            .. "expected. Refreshing all of them.", #pages, #screens))
-    end
-
-    -- The operation chip is reset ONLY for our own marker operations. An
-    -- implant is a vanilla insert and vanilla owns that state; see finish().
     if reset_panel then
-        for _, page in ipairs(pages) do
-            -- Deselect, then return the operation chip to its empty state.
-            --
-            -- CachedPassiveSlotIndex = -1 is what the panel treats as "nothing
-            -- chosen". "Set Passive Empty Item" is the widget's own reset for the
-            -- chip, arity checked at WBP_OperatingTable_TabPage.hpp:80 (no args);
-            -- the name contains spaces so it must be indexed, not dotted.
-            --
-            -- The end state is deliberately the same one you get immediately
-            -- after clicking a Pal: chip back to "+", nothing selected, Edit
-            -- greyed. The operation has been consumed, so leaving it selected was
-            -- what produced a stale label over a slot that was already empty,
-            -- and an Edit button whose verdict kept flipping.
-            pcall(function() page.CachedPassiveSlotIndex = -1 end)
-            -- Clear the CONSUME ITEM as well as the chip.
-            --
-            -- "Set Passive Empty Item" restores the "+" graphic but leaves
-            -- BP_PalTextBlock_Num showing the stock count of whatever was last
-            -- selected. That is the stray "(2)" in the corner of an empty slot
-            -- in screenshot 113: not a selection artefact but a leftover
-            -- quantity readout, still counting modules the player no longer has
-            -- selected. UpdateCurrentConsumeItem takes one FName and has no
-            -- output parameter (WBP_OperatingTable_TabPage.hpp:92).
-            pcall(function() page:UpdateCurrentConsumeItem(FName("None")) end)
-            pcall(function() page["Set Passive Empty Item"](page) end)
-            pcall(function() page:ReflectPassiveChange() end)
-            pcall(function() page:RefreshCurrentPassiveItem() end)
-        end
+        -- -1 is the panel's no-slot-selected value.
+        --
+        -- "Set Passive Empty Item" takes no arguments
+        -- (WBP_OperatingTable_TabPage.hpp:80) and its name contains spaces, so
+        -- it is indexed rather than dotted. UpdateCurrentConsumeItem takes one
+        -- FName and has no out-parameter (same header, line 92); it clears the
+        -- quantity readout, which "Set Passive Empty Item" leaves alone.
+        pcall(function() page.CachedPassiveSlotIndex = -1 end)
+        pcall(function() page:UpdateCurrentConsumeItem(FName("None")) end)
+        pcall(function() page["Set Passive Empty Item"](page) end)
+        pcall(function() page:ReflectPassiveChange() end)
+        pcall(function() page:RefreshCurrentPassiveItem() end)
     end
 
-    for _, screen in ipairs(screens) do
-        -- The screen caches the last consume item id and feeds it back to the
-        -- panel on refresh, so clearing it on the page alone is not enough --
-        -- the quantity comes straight back.
+    if screen ~= nil then
+        -- The screen holds its own copy of the consume item id and feeds it
+        -- back to the page on refresh, so the page-level clear above is not
+        -- sufficient on its own.
         if reset_panel then
             pcall(function() screen.CachedConsumeItemId = FName("None") end)
         end
-        -- Rebuild the operation list.
-        --
-        -- Entries are created with a validity flag returned by
-        -- Setup(PassiveId, IsValid&), and a module route is only valid while
-        -- the player holds a module. The list is built once when the panel
-        -- opens, which is exactly why an entry for a module you just spent your
-        -- last copy of lingers until you close the panel (screenshot 115).
         -- SetupPassiveChangeItem takes no arguments (WBP_OperatingTable.hpp:47).
+        -- Entry validity is decided when each entry is created, which is why a
+        -- module count only changes on a rebuild.
         if rebuild_list and has_selected_pal(screen) then
             pcall(function() screen:SetupPassiveChangeItem() end)
         end
@@ -402,18 +383,9 @@ local function refresh_surgery_ui(reset_panel, rebuild_list)
     return true
 end
 
--- Set when a transaction completes and the panel has not yet been refreshed for
--- it. reset_panel records whether the operation chip itself should be cleared:
--- true for our own markers, false for an implant, where vanilla owns that state.
---
--- Whichever mechanism reaches it first consumes it, so the refresh runs exactly
--- once -- the OnPassiveUpdate hook normally, the timer in finish() if that hook
--- never fires.
---
--- This used to be a bare "panel reset pending" boolean, which was only ever set
--- for extractions. That made the hook return early for every implant, leaving
--- implants on the timers alone -- the two-to-three second lag, while extraction
--- felt immediate. Both paths now ride the same event.
+-- Armed by lp.transaction's finish, consumed by whichever of two paths reaches
+-- it first: main.lua's OnPassiveUpdate hook, or finish's own timer. Consuming it
+-- clears it, so the refresh runs once per arming.
 local pending_refresh = nil
 
 local function consume_pending_refresh()
@@ -422,26 +394,12 @@ local function consume_pending_refresh()
         return
     end
     pending_refresh = nil
-    -- rebuild_list is always true here. It used to be held back to the last
-    -- timer pass out of caution about destroying a hovered entry widget, but on
-    -- the event it lands right after the click, while the cursor is still on the
-    -- Edit button -- strictly safer than doing it a second later, and it is what
-    -- makes the module count and the spent-module row update immediately.
     refresh_surgery_ui(pending.reset_panel, true)
 end
 
--- ACCESSORS, not an exported variable.
---
--- pending_refresh is written by lp.transaction (in finish), read and cleared
--- here, and read by main.lua's OnPassiveUpdate hook -- three modules, one
--- mutable. Exporting it in this module's return table would export the VALUE at
--- load time, so every consumer would hold a permanent nil and the event path
--- would silently never fire. These two functions are what keep the variable in
--- one place while the split leaves three readers.
---
--- Whichever mechanism reaches consume_pending_refresh first wins; the others
--- then find nil and do nothing. That is the consume-once contract the event and
--- its timer fallback both rely on.
+-- Accessors, not an exported variable: three modules read or write
+-- pending_refresh, and exporting it in the return table below would export its
+-- value at load time -- a permanent nil for every consumer.
 local function arm_refresh(reset_panel)
     pending_refresh = { reset_panel = reset_panel }
 end
@@ -452,11 +410,14 @@ end
 
 return {
     arm_refresh = arm_refresh,
+    forget_live_widgets = forget_live_widgets,
+    note_live_page = note_live_page,
+    note_live_screen = note_live_screen,
     consume_pending_refresh = consume_pending_refresh,
+    current_page = current_page,
     refresh_pending = refresh_pending,
     enforce_extraction_gate = enforce_extraction_gate,
     refresh_surgery_ui = refresh_surgery_ui,
     selected_passive = selected_passive,
     visible_extraction_widget = visible_extraction_widget,
-    visible_tab_page = visible_tab_page,
 }

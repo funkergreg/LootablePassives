@@ -1,13 +1,12 @@
 -- Lootable Passives -- Player lookup, item grants, and passive mutation.
 --
--- This mod only ever ADDS items. Taking them away costs a container walk per
--- item and is not currently done anywhere.
+-- Nothing here removes an item. add_modules is the only item-creation call in
+-- the mod.
 
 local util = require("lp.util")
 local passives = require("lp.passives")
 
--- Localised so the function bodies below are byte-identical to what they
--- were in main.lua: this split is code motion, not a rewrite.
+local find_all = util.find_all
 local is_valid = util.is_valid
 local log = util.log
 local unwrap = util.unwrap
@@ -30,46 +29,31 @@ local function player_id_number(value)
     return tonumber(value)
 end
 
+-- The PalPlayerState whose PlayerId matches, or -- only when exactly one state
+-- is loaded -- that one state. Returns nil with two or more states and no
+-- match, rather than picking one.
 local function find_player_state(request_player_id)
     local wanted = player_id_number(request_player_id)
-    local succeeded, states = pcall(function()
-        return FindAllOf("PalPlayerState")
-    end)
     local only_state = nil
     local state_count = 0
-    if succeeded and states ~= nil then
-        for _, state in ipairs(states) do
-            if is_valid(state) then
-                state_count = state_count + 1
-                only_state = state
-                local matched = false
-                pcall(function()
-                    matched = player_id_number(state.PlayerId) == wanted
-                end)
-                if matched then
-                    return state
-                end
+    for _, state in ipairs(find_all("PalPlayerState")) do
+        if is_valid(state) then
+            state_count = state_count + 1
+            only_state = state
+            -- The pcall wraps the COMPARISON, not just the read, so an
+            -- unreadable PlayerId cannot compare equal to an absent wanted id.
+            local matched = false
+            pcall(function()
+                matched = player_id_number(state.PlayerId) == wanted
+            end)
+            if matched then
+                return state
             end
         end
     end
 
-    -- REMOVED: a GetPlayerCharacterByPlayerIndex(world, wanted) fallback.
-    --
-    -- It passed a PlayerId where a PlayerIndex belongs. Those are different
-    -- things: PlayerId is a unique identifier -- 259 in this mod's own logs --
-    -- while PlayerIndex is a small 0-based index into the local player array.
-    -- Asking for index 259 is an out-of-range lookup, and this is one of the
-    -- two calls that could have produced the EXCEPTION_ACCESS_VIOLATION seen
-    -- during development. It only ran when the PlayerId scan above had already
-    -- failed, which is never in single-player, so it was shipped unexercised.
-    --
-    -- Nothing replaces it. If the scan cannot match the requesting player, the
-    -- honest answer is "no player", and the caller refuses the exchange.
-
-    -- SINGLE-PLAYER ONLY, deliberately. With one player state loaded there is
-    -- no ambiguity about who asked. With two or more this returns nil rather
-    -- than guessing, so a multiplayer request whose id did not match fails
-    -- closed instead of handing another player's Pal to the wrong inventory.
+    -- There is no PlayerIndex fallback here on purpose. PlayerId and
+    -- PlayerIndex are different numbers; see CLAUDE.md.
     if state_count == 1 then
         return only_state
     end
@@ -81,60 +65,25 @@ local function find_inventory(request_player_id)
     if not is_valid(state) then
         return nil
     end
-    local succeeded, inventory = pcall(function()
-        return state:GetInventoryData()
-    end)
-    inventory = unwrap(inventory)
-    if succeeded and is_valid(inventory) then
-        return inventory
+    local bag = unwrap(util.method(state, "GetInventoryData"))
+    if is_valid(bag) then
+        return bag
     end
     return nil
 end
 
--- Who may receive a granted module, in fallback order.
+-- Every player with a reachable inventory, as
+-- { data = <inventory>, uid = <PlayerUId key or nil>, distance = <number>,
+--   local_player = <bool> }, sorted local-player-first and then by distance.
 --
--- find_inventory(nil) resolves a player only when EXACTLY ONE exists, which is
--- a single-player rule. A base-camp machine has no requesting player, so this
--- returns an ordered list instead of a lookup.
+-- uid is what lp/ledger.lua matches a debt's recorded owner against. The sort
+-- order below is only the fallback it works down when no candidate matches;
+-- see the note on ordered_for there, and CLAUDE.md on the delivery rule.
 --
--- Each entry is { data = <inventory>, uid = <PlayerUId key or nil>,
--- local_player = <bool> }. The uid is the part that matters most: it is what
--- lets the ledger give a Pal's modules to the player who owned that Pal, rather
--- than to whoever this list happens to rank first.
---
--- THIS ORDER IS NOW THE FALLBACK, NOT THE RULE. lp/ledger.lua puts a row's
--- recorded owner ahead of everything here and only then works down this list,
--- so what is left for the ordering below is the case where the owner is not
--- online at all.
---
--- It still prefers the locally controlled player there, and for the original
--- reason: on a listen server that is the host, the machine running this mod, and
--- therefore the only player guaranteed to have the item definitions that make an
--- LP_Implant render. A guest without the mod sees an unresolved placeholder.
---
--- What changed is which of two wrong answers is preferred. Ranking the host
--- first unconditionally meant a guest could feed the conveyor and the host would
--- collect the modules -- silently, every time, with the guest's Pal gone. That
--- is worse than a placeholder icon, and the placeholder case is already known to
--- be survivable: the multiplayer test showed unresolvable items rendering as
--- blank chest entries and crashing nothing.
---
--- We still cannot ask a peer whether it has the mod. UE4SS Lua has no custom
--- network channel and nothing exposes a peer's loaded DataTables, so "deliver
--- only to a player who has the mod" is not implementable as stated. Owner-first
--- is the closest available approximation of the intent.
---
--- On a DEDICATED server there is no locally controlled player, so this falls
--- through to nearest-first. That is correct there: every client of a modded
--- dedicated server is expected to have installed the mod, and Info.json ships
--- IsServer install rules for exactly that.
---
--- Distance is compared SQUARED. Only the ordering matters, so no square root.
+-- Distances are squared and never rooted: only their order is used.
 local function delivery_candidates(near_location)
-    local characters = nil
-    pcall(function() characters = FindAllOf("PalPlayerCharacter") end)
     local found = {}
-    for _, character in ipairs(characters or {}) do
+    for _, character in ipairs(find_all("PalPlayerCharacter")) do
         if is_valid(character) then
             local data, uid = nil, nil
             pcall(function()
@@ -143,7 +92,7 @@ local function delivery_candidates(near_location)
                     local state = unwrap(controller.PlayerState)
                     if is_valid(state) then
                         data = unwrap(state:GetInventoryData())
-                        -- A property read on APalPlayerState (Pal.hpp: FGuid
+                        -- Property read on APalPlayerState (Pal.hpp: FGuid
                         -- PlayerUId at 0x0598), not a call.
                         uid = guid_key(state.PlayerUId)
                     end
@@ -184,9 +133,8 @@ end
 -- Mutation
 --------------------------------------------------------------------------------
 
--- AddItem_ServerInternal returns EPalItemOperationResult, where Success is 0.
--- Anything else (notably FailedContainerOverflowSlotNum on a full inventory)
--- must abort the exchange, or the passive is removed for nothing.
+-- EPalItemOperationResult as a number. The value arrives as a number on some
+-- paths and as an enum name on others, hence the text parsing.
 local function operation_result_code(value)
     value = unwrap(value)
     if type(value) == "number" then
@@ -206,81 +154,55 @@ local function operation_result_code(value)
     return nil
 end
 
-local function add_implant(inventory, item_id)
-    local succeeded, result = pcall(function()
-        return inventory:AddItem_ServerInternal(FName(item_id), 1, false, 0.0, true)
-    end)
-    if not succeeded then
-        return false, "call raised an error"
-    end
-    local code = operation_result_code(result)
-    if code == nil then
-        return false, "unrecognized result " .. tostring(result)
-    end
-    if code ~= ITEM_RESULT_SUCCESS then
-        return false, "EPalItemOperationResult=" .. tostring(code)
-    end
-    return true, nil
-end
-
--- A COUNTED grant, for the conveyor's pending ledger.
+-- The only item-creation call in the mod. Returns ok, detail.
 --
--- add_implant above grants exactly one and is what the Surgery Table wants.
--- This takes a count, because AddItem_ServerInternal honours one -- measured:
--- asking for 5 delivered 5, asking for 50 delivered 50 -- so a debt of 40 is
--- one call rather than forty.
+-- AddItem_ServerInternal(FName, Count, bool, float, bool). The count is honoured
+-- in one call, so a debt of 40 is one call.
 --
--- Returns true only on Success. A full bag reports
--- FailedContainerOverflowSlotNum and creates NOTHING, so a false here means
--- the whole count is still owed, never part of it.
--- Success means THE ITEM WAS CREATED -- not that it is in the bag.
+-- ok is true when the result code is Success and false otherwise. detail is
+-- "spilled" when the result was Success but CountItemNum did not rise by count,
+-- and a reason string when ok is false.
 --
--- Measured, and it overturns what a comment in this file used to claim: with a
--- full inventory AddItem_ServerInternal returns Success and the game spills the
--- item onto the ground at the player's feet. It does NOT return
--- FailedContainerOverflowSlotNum. That value exists in the enum; this path does
--- not produce it.
---
--- So a count that does not move is NOT a failure, and treating it as one cost
--- real duplication: the debt stayed owed, the next flush granted again, and
--- each retry spilled another copy. One module was created five times that way.
---
--- The count is still read, but only to tell the player WHERE the item went.
--- Returns ok, detail -- where detail on success means "spilled, look on the
--- ground" and on failure means why nothing was created at all.
+-- A SUCCESS RESULT WITH NO COUNT CHANGE IS NOT A FAILURE and must not be
+-- reported as one; the counts are read only to fill in detail. See CLAUDE.md,
+-- "Item creation: the engine spills".
 local function add_modules(data, item_id, count)
     if not is_valid(data) then
         return false, "no inventory"
     end
+    -- One FName for all three calls: constructing it is a name-table lookup.
+    local name = FName(item_id)
     local before = -1
-    pcall(function() before = unwrap(data:CountItemNum(FName(item_id))) or -1 end)
+    pcall(function() before = unwrap(data:CountItemNum(name)) or -1 end)
     local succeeded, result = pcall(function()
-        return data:AddItem_ServerInternal(FName(item_id), count, false, 0.0, true)
+        return data:AddItem_ServerInternal(name, count, false, 0.0, true)
     end)
     if not succeeded then
         return false, "call raised an error"
     end
     local code = operation_result_code(result)
     local after = -1
-    pcall(function() after = unwrap(data:CountItemNum(FName(item_id))) or -1 end)
+    pcall(function() after = unwrap(data:CountItemNum(name)) or -1 end)
     if code ~= ITEM_RESULT_SUCCESS then
         return false, "EPalItemOperationResult=" .. tostring(code)
     end
     if before >= 0 and after >= 0 and after - before == count then
         return true, nil
     end
-    -- Created, but it did not land in the bag. The engine put it on the ground.
     return true, "spilled"
 end
 
--- Verification here is COUNT-BASED, deliberately, not length-based.
+-- add_modules with a count of one. Not a second implementation: the enum
+-- handling and the spill rule live in one place.
+local function add_implant(data, item_id)
+    return add_modules(data, item_id, 1)
+end
+
+-- RemovePassiveSkill(FName), verified by COUNT rather than by list length.
 --
--- RemovePassiveSkill(id) filters the list by name, so on a Pal carrying two
--- copies of the same passive it takes BOTH and the length falls by two. The old
--- check demanded #after == #before - 1, so it reported failure on precisely the
--- case it had just successfully cleaned up. That is the origin of the two
--- "could not remove passive Stamina_Up_1" warnings in the 23:37 session, logged
--- while the passive was in fact already gone.
+-- The call filters the list by name and removes every copy, so on a Pal holding
+-- two copies the length falls by two. Returns true when the count of skill_id
+-- fell.
 local function remove_skill(parameter, skill_id)
     local before = get_skill_ids(parameter)
     if before == nil then
@@ -295,27 +217,15 @@ local function remove_skill(parameter, skill_id)
         and count_id(after, skill_id) < count_id(before, skill_id)
 end
 
--- Puts a passive in place of one of our markers.
+-- Replaces one of our markers with a passive.
 --
--- THE ORDER MATTERS: the marker comes off FIRST, then the passive goes on.
+-- REMOVES FIRST, THEN ADDS. AddPassiveSkill(AddSkill, OverrideSkill) is called
+-- with the marker as OverrideSkill, but the removal above it is what the result
+-- check relies on; do not drop it. See CLAUDE.md.
 --
--- AddPassiveSkill(AddSkill, OverrideSkill) does not reliably honour the
--- override. In the 23:35 and 23:37 sessions it APPENDED the passive and left
--- the marker sitting there, which is exactly what screenshot 118 shows --
--- Infinite Stamina and Infinite Stamina (Module) side by side on one Pal. Every
--- implant in that session then reported "could not restore", because the old
--- check required the list length to stay constant.
---
--- Appending is also how the overwrite case crashed. Overwriting a passive on a
--- Pal whose slots were already full leaves the marker occupying a slot, so
--- adding on top of it produces a FIFTH entry -- and the passive panel has only
--- four cards to index. Removing first means the list never grows beyond what
--- the UI can address, which is why inserting into an EMPTY slot never crashed:
--- there was a spare slot to absorb the append.
---
--- The trade is that a failed add now leaves the Pal with neither the marker nor
--- the passive, so every caller checks the result and the implant callers refund
--- the module.
+-- Returns true only when the marker's count is zero and the passive's count has
+-- risen by one, so a failed add leaves the Pal with neither and every caller
+-- checks the result.
 local function restore_replaced_passive(parameter, passive_id, extraction_mode)
     local before = get_skill_ids(parameter)
     if before == nil then
@@ -327,19 +237,14 @@ local function restore_replaced_passive(parameter, passive_id, extraction_mode)
     end)
     local after = get_skill_ids(parameter)
 
-    -- Judged on the OUTCOME rather than on how the engine got there: the marker
-    -- is gone, and the passive is present once more than it was.
     local restored = succeeded
         and after ~= nil
         and count_id(after, extraction_mode) == 0
         and count_id(after, passive_id) == count_id(before, passive_id) + 1
 
     if not restored then
-        -- Always log the lists themselves, uncapped. Reporting only "could not
-        -- restore" is what hid the append behaviour for an entire test cycle;
-        -- the shape of the list says immediately what happened. This fires only
-        -- when a swap genuinely failed, which is both rare and the single worst
-        -- thing this mod can do to a Pal -- exactly the line a bug report needs.
+        -- Both lists in full, uncapped: their shape is what identifies the
+        -- failure.
         local before_text, after_text = "?", "?"
         pcall(function() before_text = table.concat(before, ",") end)
         pcall(function() after_text = table.concat(after or {}, ",") end)
@@ -355,7 +260,6 @@ return {
     add_modules = add_modules,
     find_inventory = find_inventory,
     delivery_candidates = delivery_candidates,
-    operation_result_code = operation_result_code,
     player_id_number = player_id_number,
     remove_skill = remove_skill,
     restore_replaced_passive = restore_replaced_passive,

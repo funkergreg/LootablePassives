@@ -1,29 +1,20 @@
 -- Passive id -> implant item id, for LootablePassives.
 --
--- Covers all 115 real passives in the game, derived empirically from a dump of
--- DT_PassiveSkill_Main (118 rows, minus 3 extraction markers). This table is
--- hand-maintained and is the source of truth for which passives are
--- extractable: is_extractable() refuses any passive with no entry here.
+-- 115 entries, one per real passive. Hand-maintained, and the gate on which
+-- passives are extractable at all: lp/passives.lua's is_extractable refuses any
+-- passive with no entry here, and its MODULE_COUNT is the first number in the
+-- startup counts line.
 --
--- POLICY: extraction must always yield a one-time module that lands in the
--- regular Inventory. It must never yield a reusable recipe, which belongs in
--- Key Items and is meant to be bought with bounty tokens.
+-- Two id prefixes appear on the right-hand side, and the difference matters:
 --
--- Vanilla already draws that distinction, in the item id itself:
---   PalPassiveSkillChange_<passive>             plain  -> the reusable RECIPE.
---                                               Lands in Key Items. Confirmed
---                                               in game: Implant: Vanguard
---                                               (TrainerATK_UP_1) sits there.
---   PalPassiveSkillChange_Consumable_<passive>  -> a one-time module, regular
---                                               Inventory. 21 entries use these.
---   LP_Implant_<passive>                        this mod's own modules, also
---                                               regular Inventory. Confirmed in
---                                               game: Implant: Hydromaniac.
+--   LP_Implant_<passive>                        this mod's own module items,
+--                                               94 entries.
+--   PalPassiveSkillChange_Consumable_<passive>  vanilla's own module items,
+--                                               21 entries.
 --
--- These all display as "Disposable Implant: X" now, which is vanilla's own
--- naming for a single-use implant. Plain "Implant: X" is vanilla's RECIPE
--- naming and must never be reused here -- the two are told apart in the
--- operation list by exactly that text, plus icon colour and a stack count.
+-- NEVER put a plain PalPassiveSkillChange_<passive> id here. Those are
+-- vanilla's reusable recipes; see CLAUDE.md on why extraction must not yield
+-- one.
 
 local items = {
     ["Alien"] = "LP_Implant_Alien",

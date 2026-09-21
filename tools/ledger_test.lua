@@ -2,15 +2,13 @@
 --
 --   lua tools\ledger_test.lua
 --
--- THE ONLY AUTOMATED TEST IN THIS REPO, and it is not a verifier for the JSON
--- data -- see CLAUDE.md on why that does not exist. What makes the ledger
--- testable when nothing else here is: owe/persist/load and the owner-matching
--- rule are pure Lua plus io, with no engine call anywhere in them. The delivery
--- half IS engine work, so inventory is stubbed and the test asserts only which
--- candidate was chosen, never that an item appeared.
+-- The only automated test in this repo, and not a verifier for the JSON data --
+-- see CLAUDE.md. It covers the part of the mod with no engine call in it:
+-- owe/persist/load and ordered_for. lp.inventory is stubbed, so the assertions
+-- are about which candidate was chosen, never about an item existing.
 --
--- It writes and removes LootablePassives_pending.tsv beside Scripts\ while it
--- runs, which is where util.SCRIPT_DIRECTORY puts it outside a UE4SS install.
+-- Writes and removes LootablePassives_pending.tsv beside Scripts\ while it
+-- runs, which is where util.UE4SS_ROOT resolves to outside a UE4SS install.
 local TEST_SOURCE = debug.getinfo(1, "S").source:gsub("^@", "")
 local TOOLS_DIRECTORY = TEST_SOURCE:match("^(.*[\\/])") or "./"
 package.path = TOOLS_DIRECTORY .. "../Scripts/?.lua;" .. package.path
@@ -55,14 +53,18 @@ GRANTS = {}
 CANDIDATES = {}
 
 -- 1. owe writes an LPL2 row per owner per item, and reloads to the same totals.
+--
+-- owe takes ONE PAL'S WORTH of item ids, so a repeated id in the list is a
+-- repeated debt and the whole list costs a single file write.
 local ledger = fresh_ledger()
 local path = ledger.LEDGER_PATH
 os.remove(path)
 ledger = fresh_ledger()
-ledger.owe(ALICE, "LP_Implant_Stamina_Up_1", 2)
-ledger.owe(ALICE, "LP_Implant_Stamina_Up_1", 1)
-ledger.owe(BOB, "LP_Implant_Rare", 1)
-ledger.owe(nil, "LP_Implant_Legend", 4)
+ledger.owe(ALICE, { "LP_Implant_Stamina_Up_1", "LP_Implant_Stamina_Up_1" })
+ledger.owe(ALICE, { "LP_Implant_Stamina_Up_1" })
+ledger.owe(BOB, { "LP_Implant_Rare" })
+ledger.owe(nil, { "LP_Implant_Legend", "LP_Implant_Legend",
+    "LP_Implant_Legend", "LP_Implant_Legend" })
 check("total owed in memory", ledger.total_owed(), 8)
 
 local text = read_file(path)
@@ -72,10 +74,10 @@ check("alice row present",
 check("unowned row uses the sentinel",
     text:find("LPL2\t%*\tLP_Implant_Legend\t4") ~= nil, true)
 
--- load() is lazy, exactly as main.lua treats it: nothing is read off disk
--- until something asks for it.
+-- Loading is LAZY and no longer a public step: nothing is read off disk until
+-- something asks, and every public reader asks. total_owed used to be the one
+-- that did not, which is how a debt could read as 0 with the file sitting there.
 ledger = fresh_ledger()
-ledger.load()
 check("total owed after reload", ledger.total_owed(), 8)
 
 -- 2. A row with a known owner goes to that owner and to nobody else.
@@ -98,7 +100,7 @@ check("ledger file removed when empty", read_file(path), nil)
 
 -- 3. An owner who is not online has the row HELD, not paid to someone else.
 ledger = fresh_ledger()
-ledger.owe(ALICE, "LP_Implant_Rare", 3)
+ledger.owe(ALICE, { "LP_Implant_Rare", "LP_Implant_Rare", "LP_Implant_Rare" })
 GRANTS = {}
 CANDIDATES = { { data = { name = "host" }, uid = BOB, local_player = true } }
 delivered, owed, spilled, held = ledger.flush(nil)
@@ -118,7 +120,7 @@ check("owner returns: recipient", GRANTS[1] and GRANTS[1].who, "alice")
 
 -- 4. No readable uid anywhere is OUR fault, so it pays out rather than holding.
 ledger = fresh_ledger()
-ledger.owe(ALICE, "LP_Implant_Rare", 1)
+ledger.owe(ALICE, { "LP_Implant_Rare" })
 GRANTS = {}
 CANDIDATES = { { data = { name = "host" }, uid = nil, local_player = true } }
 delivered, owed, spilled, held = ledger.flush(nil)
@@ -132,7 +134,6 @@ handle:write("LPL1\tLP_Implant_Rare\t2\n")
 handle:write("LPL1\tLP_Implant_NotAnItem\t9\n") -- unknown item: still discarded
 handle:close()
 ledger = fresh_ledger()
-ledger.load()
 check("LPL1 rows are read", ledger.total_owed(), 2)
 GRANTS = {}
 CANDIDATES = { { data = { name = "host" }, uid = BOB, local_player = true } }
