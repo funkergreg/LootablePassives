@@ -24,7 +24,8 @@ Below are planning goals; this document is a living document intended to catch e
 
 - At present, **`install.ps1` copies; it never deletes.**  
 - The Problem: A file deleted from the repo goes on living in the game folder, and the game goes on loading it — so the thing you just "removed" may keep working, and the repo you are testing is not the thing under test.  This is the DEV install path and it is NOT resilient to change.
-- TODO: make install.ps1 do a remove step before deploying to game folders so leftover files don't cause conflicts; the deployment should match what is in the repo.  THEN, Update the CLAUDE.md section on this after new dev install process implemented.
+- TODO: make install.ps1 do a remove step before deploying to game folders so leftover files don't cause conflicts; the deployment should match what is in the repo. Probably best with a defensive check that finds files which do not exist in the pending install deployment and stops install exectution with a descriptive warning (require a `--force` flag to overcome).  Agents are the main callers and this provides a defensive check and verification means.
+  - THEN, Update the CLAUDE.md section on this after new dev install process implemented.
 
 ### Simplification Finds (SECOND PRIORITY)
 
@@ -39,7 +40,6 @@ Below are simplification findings worth a pass.
 Two notes: `ledger.owe`'s signature changed to `owe(owner, item_ids)`, and I updated `tools/ledger_test.lua` to match. You were editing ui.lua concurrently (a probe around `set_edit_interactable` using the new `util.method`) — I left that alone and the checks above ran against your current state.
 
 I have not run `install.ps1`; nothing here is verified in game yet.
-
 
 ### CTD: access violation in a Lua callback, Surgery screen open, conveyor running (ADDRESSED, NEEDS FOLLOWUP AND VERIFICATION)
 
