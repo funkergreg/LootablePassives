@@ -48,6 +48,10 @@ local ANY_OWNER = "*"
 local pending = {}
 local loaded = false
 
+-- True while the file on disk is known not to match pending: the last persist
+-- failed. flush retries the write on every call until one lands.
+local disk_stale = false
+
 local function bucket_for(owner)
     local bucket = pending[owner]
     if bucket == nil then
@@ -183,6 +187,7 @@ local function owe(owner, item_ids)
             item_id, MAX_STACK, dropped))
     end
     local written = persist()
+    disk_stale = not written
     if not written then
         -- In memory but not on disk: a restart loses it, so it is reported
         -- rather than held silently.
@@ -197,44 +202,56 @@ end
 -- Set once, on the first degraded pass in ordered_for.
 local uid_warning_reported = false
 
--- Which candidates may receive this row, in order. An EMPTY RESULT MEANS HOLD
--- THE ROW -- flush counts it and leaves it on disk.
+-- Which candidates may receive this row. An EMPTY RESULT MEANS HOLD THE ROW --
+-- flush counts it and leaves it on disk.
 --
--- An ANY_OWNER row goes to all candidates in their given order. A row with an
--- owner goes to candidates whose uid matches, and to no others. The result is a
--- list rather than one candidate because a grant can fail and because one player
--- can briefly have two characters.
+-- A row with an owner goes to candidates whose uid matches, and to no others.
+-- The result is a list rather than one candidate because a grant can fail and
+-- because one player can briefly have two characters.
 --
--- One fallback: if NO candidate yields a readable uid, the comparison cannot run
--- at all, and the row is sent to the others in their given order with a warning.
--- A uid that reads and does not match is not this case.
+-- A row that cannot be matched -- an ANY_OWNER row, or any row when NO candidate
+-- yields a readable uid -- goes to the one candidate when exactly one player is
+-- online, and is held otherwise. A uid that reads and does not match is not
+-- this case.
 local function ordered_for(owner, candidates)
-    if owner == ANY_OWNER then
-        return candidates
-    end
-    local matched, readable = {}, false
-    for _, candidate in ipairs(candidates) do
-        if candidate.uid ~= nil then
-            readable = true
-            if candidate.uid == owner then
-                matched[#matched + 1] = candidate
+    if owner ~= ANY_OWNER then
+        local matched, readable = {}, false
+        for _, candidate in ipairs(candidates) do
+            if candidate.uid ~= nil then
+                readable = true
+                if candidate.uid == owner then
+                    matched[#matched + 1] = candidate
+                end
             end
         end
-    end
-    if #matched > 0 then
-        return matched
-    end
-    if not readable then
+        if readable then
+            return matched
+        end
         if not uid_warning_reported then
             uid_warning_reported = true
             log("WARNING: no player UId could be read from any candidate, so modules cannot be "
-                .. "matched to the player who owned the Pal. Delivering to the nearest player "
-                .. "instead. This is a fault in the mod, not in the save.")
+                .. "matched to the player who owned the Pal. They are delivered only while a "
+                .. "single player is online, and held otherwise. This is a fault in the mod, not "
+                .. "in the save.")
         end
-        -- No uid read, so every candidate is an "other": the given order.
+    end
+    if #candidates == 1 then
         return candidates
     end
     return {}
+end
+
+-- Rewrites the file after a flush changed pending, or retries a rewrite that
+-- failed earlier. A failure leaves delivered rows on disk, which load() would
+-- read back and deliver again next session, so it is logged on every attempt.
+local function sync_after_flush()
+    disk_stale = not persist()
+    if disk_stale then
+        log(string.format(
+            "WARNING: could not rewrite the pending-grant ledger at %s after a delivery. It may "
+            .. "still list modules already delivered, which would be delivered again next "
+            .. "session. Retried on the next delivery attempt.", LEDGER_PATH))
+    end
 end
 
 -- Delivers every row it can. Returns delivered, owed, spilled, held.
@@ -242,17 +259,20 @@ end
 -- Each row goes to ordered_for's first candidate that add_modules succeeds on;
 -- a failure moves to the next candidate and a row with no candidates is counted
 -- in held. Whatever is not delivered stays on disk.
---
--- near_location, when given, is the point delivery_candidates measures distance
--- from; it orders the fallback only.
-local function flush(near_location)
+local function flush()
     load()
     local rows = pending_rows()
     if #rows == 0 then
+        if disk_stale then
+            sync_after_flush()
+        end
         return 0, 0, 0, 0
     end
-    local candidates = inventory.delivery_candidates(near_location)
+    local candidates = inventory.delivery_candidates()
     if #candidates == 0 then
+        if disk_stale then
+            sync_after_flush()
+        end
         -- Distinct from every candidate failing, so it gets its own line.
         log(string.format("No player inventory available; %d module(s) stay owed.", total_owed()))
         return 0, total_owed(), 0, 0
@@ -298,8 +318,8 @@ local function flush(near_location)
                 row.item_id, row.count, #recipients, tostring(reason)))
         end
     end
-    if changed then
-        persist()
+    if changed or disk_stale then
+        sync_after_flush()
     end
     return delivered, total_owed(), spilled, held
 end

@@ -8,10 +8,13 @@ local util = require("lp.util")
 local ids = require("lp.ids")
 
 local array_count = util.array_count
+local field = util.field
 local find_all = util.find_all
+local guid_key = util.guid_key
 local is_valid = util.is_valid
 local method = util.method
 local name_to_string = util.name_to_string
+local unwrap = util.unwrap
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 
 --------------------------------------------------------------------------------
@@ -58,6 +61,17 @@ local function get_skill_ids(parameter)
         skill_ids[index] = name_to_string(skills[index]) or "<invalid>"
     end
     return skill_ids
+end
+
+-- The Pal's IndividualId.InstanceId as a comparable string, or nil when it does
+-- not read. Property reads only (Pal.hpp: FPalInstanceID IndividualId at 0x0320
+-- on UPalIndividualCharacterParameter), through util.guid_key.
+local function pal_key(parameter)
+    local individual = unwrap(field(parameter, "IndividualId"))
+    if individual == nil then
+        return nil
+    end
+    return guid_key(field(individual, "InstanceId"))
 end
 
 -- Every PalIndividualCharacterParameter in the world, as
@@ -229,5 +243,6 @@ return {
     is_extractable = is_extractable,
     is_module_id = is_module_id,
     module_for = module_for,
+    pal_key = pal_key,
     snapshot_all = snapshot_all,
 }

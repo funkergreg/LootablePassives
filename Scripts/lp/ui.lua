@@ -96,6 +96,10 @@ end
 local live_page = nil
 local live_screen = nil
 
+-- True while this module is the reason the Edit button is blocked; see
+-- block_edit. Reset by forget_live_widgets along with the page it was set on.
+local edit_disabled_by_mod = false
+
 -- Set once, the first time note_live_page is given something is_valid rejects.
 local context_warning_reported = false
 
@@ -125,6 +129,7 @@ end
 local function forget_live_widgets()
     live_page = nil
     live_screen = nil
+    edit_disabled_by_mod = false
 end
 
 local function current_page()
@@ -164,12 +169,23 @@ local function visible_extraction_widget()
     return nil, nil
 end
 
--- True while this module is the reason the button is blocked.
-local edit_disabled_by_mod = false
-
 -- Built once and passed to pcall by reference, like _call_is_visible above.
 local function _call_set_interaction_enabled(widget, enabled)
     widget:SetIsInteractionEnabled(enabled)
+end
+
+-- The tab page's inner CommonButtonBase, the one the interaction flag lives on,
+-- or nil.
+local function edit_button(widget)
+    local button = unwrap(field(widget, "WBP_CommonButton"))
+    if not is_valid(button) then
+        return nil
+    end
+    local inner = unwrap(field(button, "WBP_PalInvisibleButton"))
+    if is_valid(inner) then
+        return inner
+    end
+    return nil
 end
 
 -- Writes SetIsInteractionEnabled on the inner CommonButtonBase
@@ -181,12 +197,8 @@ end
 -- reaching for CommonUI's DisabledStyle, and the game does not use that here --
 -- bIsEnabled reads true on both buttons whether the game is refusing or not.
 local function set_edit_interactable(widget, enabled)
-    local button = unwrap(field(widget, "WBP_CommonButton"))
-    if not is_valid(button) then
-        return
-    end
-    local inner = unwrap(field(button, "WBP_PalInvisibleButton"))
-    if is_valid(inner) then
+    local inner = edit_button(widget)
+    if inner ~= nil then
         pcall(_call_set_interaction_enabled, inner, enabled)
     end
 end
@@ -200,9 +212,15 @@ end
 -- usable -- an empty slot with an extract route is one, since vanilla has no
 -- notion of extraction -- the two writes alternate and the button flickers
 -- rather than greying. Blocked-and-lit is the accepted behaviour.
+--
+-- The interaction flag is not recomputed by the Blueprint, so it is written only
+-- when IsInteractionEnabled() (CommonUI.hpp:340, no arguments) reads anything
+-- but false. That read is on the button itself, so a page recreated without a
+-- map load is written to even while edit_disabled_by_mod is still true from the
+-- old one.
 local function block_edit(widget)
-    if edit_disabled_by_mod then
-        return -- the interaction flag is not recomputed, so it is written once
+    if edit_disabled_by_mod and method(edit_button(widget), "IsInteractionEnabled") == false then
+        return
     end
     set_edit_interactable(widget, false)
     edit_disabled_by_mod = true

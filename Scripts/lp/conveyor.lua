@@ -24,9 +24,8 @@
 --
 -- Every engine call in this file is zero-argument except container:Get(Index),
 -- and none takes an out-parameter: GetContainer() rather than
--- TryGetContainer(Out&), K2_GetActorLocation() rather than
--- GetMapObjectLocation(FVector&). A wrong-arity native call is an access
--- violation pcall does not catch.
+-- TryGetContainer(Out&). A wrong-arity native call is an access violation pcall
+-- does not catch.
 --
 --------------------------------------------------------------------------------
 -- Three guesses at behavior (take with caution)
@@ -38,8 +37,8 @@
 -- the other does not.
 --
 -- THE PASS IS NOT THROTTLED. pass() runs on every firing of either hook. The
--- per-call cost is one array read; the container walk inside it is guarded by
--- tracked[key] == nil.
+-- per-call cost is one array read and one GUID read; the container walk inside
+-- it is guarded by bucket[key] == nil.
 --
 -- CONSUMED VERSUS WITHDRAWN IS DECIDED BY COMPLETE_RATE, and by nothing else.
 -- Do not substitute a test for whether the individual still exists: a
@@ -174,11 +173,27 @@ end
 -- Tracking
 --------------------------------------------------------------------------------
 
--- instance key -> { passives = { id, ... }, owner = <UId key or nil>, rate = number }
+-- model key -> instance key -> { passives = { id, ... }, owner = <UId key or nil>, rate = number }
 --
--- Keyed by InstanceId, which is unique across the world, so entries from two
--- conveyors share one table without colliding.
+-- One bucket per conveyor. pass(model) treats every entry missing from that
+-- model's queue as having left it, so it may only look at the entries that model
+-- put there.
 local tracked = {}
+
+-- Bucket key for entries whose model InstanceId does not read.
+local UNKEYED_MODEL = "?"
+
+-- The model's own InstanceId (Pal.hpp: FGuid InstanceId at 0x00A0 on
+-- UPalMapObjectConcreteModelBase), a property read, and its bucket in tracked.
+local function bucket_for(model)
+    local key = guid_key(field(model, "InstanceId")) or UNKEYED_MODEL
+    local bucket = tracked[key]
+    if bucket == nil then
+        bucket = {}
+        tracked[key] = bucket
+    end
+    return bucket
+end
 
 -- Each set once, on the first occurrence.
 local authority_reported = false
@@ -200,13 +215,6 @@ local function may_create_items(actor)
     return allowed
 end
 
-local function actor_location(actor)
-    if not is_valid(actor) then
-        return nil
-    end
-    return method(actor, "K2_GetActorLocation")
-end
-
 -- Records the debt, then delivers it. ledger.owe writes to disk before
 -- ledger.flush is called; do not reorder these without good reason.
 local function on_consumed(entry, actor)
@@ -215,9 +223,9 @@ local function on_consumed(entry, actor)
     end
     if entry.owner == nil and not unowned_reported then
         unowned_reported = true
-        log("No owner UId could be read from the consumed Pal, so its modules go to the nearest "
-            .. "player rather than to whoever owned it. Expected only for a Pal nobody owns; in "
-            .. "single-player it means the OwnerPlayerUId read is not working.")
+        log("No owner UId could be read from the consumed Pal, so its modules are delivered only "
+            .. "while a single player is online, and held otherwise. Expected only for a Pal "
+            .. "nobody owns; in single-player it means the OwnerPlayerUId read is not working.")
     end
 
     -- entry.passives holds only ids is_extractable accepted, and each has a module.
@@ -232,13 +240,14 @@ local function on_consumed(entry, actor)
     end
     ledger.owe(entry.owner, owed_items)
 
-    local delivered, owed, spilled, held = ledger.flush(actor_location(actor))
+    local delivered, owed, spilled, held = ledger.flush()
     local summary = string.format("Disassembly yielded %d module(s): %s.",
         #names, table.concat(names, ", "))
     if held > 0 then
         summary = summary .. string.format(
-            " %d held for the player who owned the Pal, who is not online; they are delivered "
-            .. "when that player next plays.", held)
+            " %d held because the player they belong to is not online, or could not be "
+            .. "identified while more than one player is; held modules are delivered when "
+            .. "that is resolved.", held)
     end
     if spilled > 0 then
         summary = summary .. string.format(
@@ -257,33 +266,34 @@ end
 -- of those already tracked, and resolves entries that have left the queue.
 --
 -- actor is read from the model in the pass that needs it rather than cached, so
--- two conveyors cannot answer each other's authority check or drop location.
+-- two conveyors cannot answer each other's authority check.
 local function pass(model)
     local rates = read_process_rates(model)
+    local bucket = bucket_for(model)
 
     -- The container walk happens only for a key not already tracked.
     local queued
     for key, rate in pairs(rates) do
-        if tracked[key] == nil then
+        if bucket[key] == nil then
             queued = queued or read_queued_passives(model)
             local snapshot = queued[key]
             if snapshot ~= nil then
                 -- read_queued_passives builds a fresh table per key, so it is
                 -- kept rather than copied.
                 snapshot.rate = rate
-                tracked[key] = snapshot
+                bucket[key] = snapshot
             end
         else
-            tracked[key].rate = rate
+            bucket[key].rate = rate
         end
     end
 
-    -- Gone from the queue: consumed at or above COMPLETE_RATE, withdrawn below
-    -- it. A withdrawal owes nothing and logs nothing.
+    -- Gone from this model's queue: consumed at or above COMPLETE_RATE,
+    -- withdrawn below it. A withdrawal owes nothing and logs nothing.
     local actor
-    for key, entry in pairs(tracked) do
+    for key, entry in pairs(bucket) do
         if rates[key] == nil then
-            tracked[key] = nil
+            bucket[key] = nil
             if entry.rate >= COMPLETE_RATE then
                 actor = actor or unwrap(method(model, "GetActor"))
                 on_consumed(entry, actor)

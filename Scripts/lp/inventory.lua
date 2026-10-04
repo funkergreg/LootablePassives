@@ -62,6 +62,24 @@ local function find_player_state(request_player_id)
     return nil
 end
 
+-- The PlayerId of the locally controlled player, or nil when no character reads
+-- as locally controlled or its PlayerState cannot be read. A dedicated server
+-- has no local player.
+local function local_player_id()
+    for _, character in ipairs(find_all("PalPlayerCharacter")) do
+        if is_valid(character) and method(character, "IsLocallyControlled") == true then
+            local controller = unwrap(method(character, "GetPalPlayerController"))
+            if is_valid(controller) then
+                local state = unwrap(field(controller, "PlayerState"))
+                if is_valid(state) then
+                    return player_id_number(field(state, "PlayerId"))
+                end
+            end
+        end
+    end
+    return nil
+end
+
 local function find_inventory(request_player_id)
     local state = find_player_state(request_player_id)
     if not is_valid(state) then
@@ -74,23 +92,11 @@ local function find_inventory(request_player_id)
     return nil
 end
 
--- Squared distance between two FVectors. Passed to pcall by reference.
-local function _squared_distance(a, b)
-    local dx = (unwrap(a.X) or 0) - (unwrap(b.X) or 0)
-    local dy = (unwrap(a.Y) or 0) - (unwrap(b.Y) or 0)
-    local dz = (unwrap(a.Z) or 0) - (unwrap(b.Z) or 0)
-    return dx * dx + dy * dy + dz * dz
-end
-
 -- Every player with a reachable inventory, as
--- { data = <inventory>, uid = <PlayerUId key or nil>, distance = <number>,
---   local_player = <bool> }, sorted local-player-first and then by distance.
+-- { data = <inventory>, uid = <PlayerUId key or nil> }, in FindAllOf order.
 --
--- uid is what lp/ledger.lua matches a debt's recorded owner against. The sort
--- order below is only the fallback it works down when no candidate matches.
---
--- Distances are squared and never rooted: only their order is used.
-local function delivery_candidates(near_location)
+-- uid is what lp/ledger.lua matches a debt's recorded owner against.
+local function delivery_candidates()
     local found = {}
     for _, character in ipairs(find_all("PalPlayerCharacter")) do
         if is_valid(character) then
@@ -106,32 +112,10 @@ local function delivery_candidates(near_location)
                 end
             end
             if is_valid(data) then
-                local local_player = method(character, "IsLocallyControlled") == true
-                local distance = math.huge
-                if near_location ~= nil then
-                    local here = method(character, "K2_GetActorLocation")
-                    if here ~= nil then
-                        local measured, squared = pcall(_squared_distance, here, near_location)
-                        if measured then
-                            distance = squared
-                        end
-                    end
-                end
-                found[#found + 1] = {
-                    data = data,
-                    uid = uid,
-                    distance = distance,
-                    local_player = local_player,
-                }
+                found[#found + 1] = { data = data, uid = uid }
             end
         end
     end
-    table.sort(found, function(a, b)
-        if a.local_player ~= b.local_player then
-            return a.local_player -- the local player outranks distance
-        end
-        return a.distance < b.distance
-    end)
     return found
 end
 
@@ -214,11 +198,8 @@ local function add_implant(data, item_id)
     return add_modules(data, item_id, 1)
 end
 
--- RemovePassiveSkill(FName), verified by COUNT rather than by list length.
---
--- The call filters the list by name and removes every copy, so on a Pal holding
--- two copies the length falls by two. Returns true when the count of skill_id
--- fell.
+-- RemovePassiveSkill(FName). Returns true when the count of skill_id in the
+-- passive list fell.
 local function remove_skill(parameter, skill_id)
     local before = get_skill_ids(parameter)
     if before == nil then
@@ -274,6 +255,7 @@ return {
     add_modules = add_modules,
     find_inventory = find_inventory,
     delivery_candidates = delivery_candidates,
+    local_player_id = local_player_id,
     player_id_number = player_id_number,
     remove_skill = remove_skill,
     restore_replaced_passive = restore_replaced_passive,

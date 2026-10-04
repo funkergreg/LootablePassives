@@ -146,7 +146,7 @@ function attempt_flush()
     local authoritative = has_authority(util.find_first("PalPlayerCharacter"))
 
     if authoritative then
-        local delivered, owed = ledger.flush(nil)
+        local delivered, owed = ledger.flush()
         if delivered > 0 then
             log(string.format("Delivered %d module(s) owed from an earlier session; %d still owed.",
                 delivered, owed))

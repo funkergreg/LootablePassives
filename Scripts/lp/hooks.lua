@@ -61,7 +61,18 @@ local function in_world()
     return find_first("PalPlayerCharacter") ~= nil
 end
 
+-- Schedules entry.retry, unless one is already scheduled. entry.pending is what
+-- keeps a registration to one retry chain however often map load re-arms it.
+local function schedule_retry(entry)
+    if entry.pending then
+        return
+    end
+    entry.pending = true
+    ExecuteWithDelay(RETRY_DELAY_MS, entry.retry)
+end
+
 local function attempt(entry)
+    entry.pending = false
     if entry.registered then
         return
     end
@@ -72,7 +83,7 @@ local function attempt(entry)
         entry.registered = true
         announce_if_complete()
     elseif entry.attempts < ATTEMPT_LIMIT then
-        ExecuteWithDelay(RETRY_DELAY_MS, entry.retry)
+        schedule_retry(entry)
     elseif not entry.warned and in_world() then
         -- Once per session, and only from a world: the budget re-arms on every
         -- map load, so exhausting it at a menu is not a fault.
@@ -96,6 +107,7 @@ local function register(path, callback, label, note)
         note = note,
         attempts = 0,
         registered = false,
+        pending = false,
         warned = false,
     }
     entry.retry = function() attempt(entry) end
@@ -104,13 +116,14 @@ local function register(path, callback, label, note)
 end
 
 -- Called from main.lua's RegisterLoadMapPostHook: resets the budget of every
--- registration that has not taken yet and schedules another round.
+-- registration that has not taken yet and schedules another round. A chain
+-- already running keeps running on the fresh budget rather than gaining a second.
 local function rearm_on_map_load()
     for _, entry in ipairs(entries) do
         if not entry.registered then
             -- The budget resets; entry.warned does not.
             entry.attempts = 0
-            ExecuteWithDelay(RETRY_DELAY_MS, entry.retry)
+            schedule_retry(entry)
         end
     end
 end

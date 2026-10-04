@@ -257,8 +257,20 @@ local function remove_file(path)
     return (pcall(os.remove, path))
 end
 
+-- file:write and file:flush report an I/O failure by returning nil and a
+-- message, not by raising; assert turns that into a raise for the pcall below.
+local function _write_all(handle, lines)
+    for _, line in ipairs(lines) do
+        assert(handle:write(line, "\n"))
+    end
+    assert(handle:flush())
+end
+
 -- Writes one line per entry, newline-terminated, and returns whether the whole
--- write succeeded. label names the file in the two warnings.
+-- write succeeded, close included. label names the file in the warnings.
+--
+-- Opening "w" truncates the file, so a false return can leave it empty or
+-- partial rather than as it was.
 local function write_lines(path, lines, label)
     if io == nil or type(io.open) ~= "function" then
         log("WARNING: Lua file I/O unavailable; cannot write " .. label .. ".")
@@ -269,14 +281,18 @@ local function write_lines(path, lines, label)
         log("WARNING: could not open " .. label .. " for writing.")
         return false
     end
-    local wrote = pcall(function()
-        for _, line in ipairs(lines) do
-            handle:write(line, "\n")
-        end
-        handle:flush()
-        handle:close()
-    end)
-    return wrote
+    local wrote, write_error = pcall(_write_all, handle, lines)
+    local close_ok, closed, close_error = pcall(handle.close, handle)
+    if not wrote then
+        log("WARNING: could not write " .. label .. ": " .. tostring(write_error))
+        return false
+    end
+    if not close_ok or not closed then
+        log("WARNING: could not close " .. label .. ": "
+            .. tostring(close_ok and close_error or closed))
+        return false
+    end
+    return true
 end
 
 return {

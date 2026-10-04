@@ -80,30 +80,38 @@ check("unowned row uses the sentinel",
 ledger = fresh_ledger()
 check("total owed after reload", ledger.total_owed(), 8)
 
--- 2. A row with a known owner goes to that owner and to nobody else.
+-- 2. A row with a known owner goes to that owner and to nobody else. An
+-- unowned row has no owner to match, so with two players online it is held.
 GRANTS = {}
 CANDIDATES = {
-    { data = { name = "host" },  uid = BOB,   local_player = true },
-    { data = { name = "alice" }, uid = ALICE, local_player = false },
+    { data = { name = "host" },  uid = BOB },
+    { data = { name = "alice" }, uid = ALICE },
 }
-local delivered, owed, spilled, held = ledger.flush(nil)
-check("delivered everything", delivered, 8)
-check("nothing left owed", owed, 0)
+local delivered, owed, spilled, held = ledger.flush()
+check("delivered the owned rows", delivered, 4)
+check("unowned row still owed", owed, 4)
 check("nothing spilled", spilled, 0)
-check("nothing held", held, 0)
+check("unowned row held", held, 4)
 local by_item = {}
 for _, grant in ipairs(GRANTS) do by_item[grant.item_id] = grant.who end
 check("alice's modules went to alice", by_item["LP_Implant_Stamina_Up_1"], "alice")
 check("bob's modules went to the host", by_item["LP_Implant_Rare"], "host")
-check("unowned modules went to the local player", by_item["LP_Implant_Legend"], "host")
+check("unowned modules went to nobody", by_item["LP_Implant_Legend"], nil)
+
+-- ...and goes to the one player once only one is online.
+GRANTS = {}
+CANDIDATES = { { data = { name = "host" }, uid = BOB } }
+delivered = ledger.flush()
+check("unowned row, lone player: delivered", delivered, 4)
+check("unowned row, lone player: recipient", GRANTS[1] and GRANTS[1].who, "host")
 check("ledger file removed when empty", read_file(path), nil)
 
 -- 3. An owner who is not online has the row HELD, not paid to someone else.
 ledger = fresh_ledger()
 ledger.owe(ALICE, { "LP_Implant_Rare", "LP_Implant_Rare", "LP_Implant_Rare" })
 GRANTS = {}
-CANDIDATES = { { data = { name = "host" }, uid = BOB, local_player = true } }
-delivered, owed, spilled, held = ledger.flush(nil)
+CANDIDATES = { { data = { name = "host" }, uid = BOB } }
+delivered, owed, spilled, held = ledger.flush()
 check("held for an absent owner: delivered", delivered, 0)
 check("held for an absent owner: still owed", owed, 3)
 check("held for an absent owner: held count", held, 3)
@@ -111,21 +119,31 @@ check("held for an absent owner: no grants", #GRANTS, 0)
 
 -- ...and is delivered once that owner turns up.
 CANDIDATES = {
-    { data = { name = "host" },  uid = BOB,   local_player = true },
-    { data = { name = "alice" }, uid = ALICE, local_player = false },
+    { data = { name = "host" },  uid = BOB },
+    { data = { name = "alice" }, uid = ALICE },
 }
-delivered, owed, spilled, held = ledger.flush(nil)
+delivered, owed, spilled, held = ledger.flush()
 check("owner returns: delivered", delivered, 3)
 check("owner returns: recipient", GRANTS[1] and GRANTS[1].who, "alice")
 
--- 4. No readable uid anywhere is OUR fault, so it pays out rather than holding.
+-- 4. No readable uid anywhere: the row cannot be matched, so it is held while
+-- two players are online and goes to the one player otherwise.
 ledger = fresh_ledger()
 ledger.owe(ALICE, { "LP_Implant_Rare" })
 GRANTS = {}
-CANDIDATES = { { data = { name = "host" }, uid = nil, local_player = true } }
-delivered, owed, spilled, held = ledger.flush(nil)
-check("unreadable uid falls back: delivered", delivered, 1)
-check("unreadable uid falls back: recipient", GRANTS[1] and GRANTS[1].who, "host")
+CANDIDATES = {
+    { data = { name = "host" },  uid = nil },
+    { data = { name = "alice" }, uid = nil },
+}
+delivered, owed, spilled, held = ledger.flush()
+check("unreadable uid, two players: delivered", delivered, 0)
+check("unreadable uid, two players: still owed", owed, 1)
+check("unreadable uid, two players: nothing spilled", spilled, 0)
+check("unreadable uid, two players: held", held, 1)
+CANDIDATES = { { data = { name = "host" }, uid = nil } }
+delivered = ledger.flush()
+check("unreadable uid, lone player: delivered", delivered, 1)
+check("unreadable uid, lone player: recipient", GRANTS[1] and GRANTS[1].who, "host")
 
 -- 5. An LPL1 ledger from an older build is read, not discarded.
 os.remove(path)
@@ -136,9 +154,9 @@ handle:close()
 ledger = fresh_ledger()
 check("LPL1 rows are read", ledger.total_owed(), 2)
 GRANTS = {}
-CANDIDATES = { { data = { name = "host" }, uid = BOB, local_player = true } }
-delivered = ledger.flush(nil)
-check("LPL1 rows pay out to anyone", delivered, 2)
+CANDIDATES = { { data = { name = "host" }, uid = BOB } }
+delivered = ledger.flush()
+check("LPL1 rows pay out to a lone player", delivered, 2)
 os.remove(path)
 
 print(failures == 0 and "\nALL PASS" or string.format("\n%d FAILURE(S)", failures))
