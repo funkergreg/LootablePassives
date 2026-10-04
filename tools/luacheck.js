@@ -4,9 +4,9 @@
 //   node tools/luacheck.js                 # checks Scripts/**/*.lua
 //   node tools/luacheck.js path/to/one.lua
 //
-// Needs luaparse. It is not vendored, so install it wherever is convenient:
-//   npm install --save-dev luaparse       (in this repo)
-//   npm install -g luaparse
+// Needs luaparse, which package.json declares as a dev dependency:
+//   npm install                           (in the repo root)
+// A global install (npm install -g luaparse) is found as well.
 //
 // This is a PARSE check only. It catches typos and unbalanced blocks; it says
 // nothing about whether a UFunction call has the right arity, which is the
@@ -27,7 +27,7 @@ try {
       .trim();
     luaparse = require(path.join(root, 'luaparse'));
   } catch {
-    console.error('luaparse not found. Run:  npm install --no-save luaparse');
+    console.error('luaparse not found. Run:  npm install  (in the repo root)');
     process.exit(2);
   }
 }

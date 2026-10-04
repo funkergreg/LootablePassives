@@ -17,9 +17,11 @@ SCRIPT_DIRECTORY = SCRIPT_DIRECTORY:gsub("([\\/])[Ll][Pp][\\/]$", "%1")
 
 -- Where the mod's runtime files go: the UE4SS root, not Scripts\.
 --
--- Scripts\ is inside the tree the mod loader replaces on a Version change, so a
--- file written there does not survive an update. Falls back to SCRIPT_DIRECTORY
--- if the path does not contain a UE4SS folder.
+-- Scripts\ is one of the directories the official mod loader installs this mod
+-- into. The loader reinstalls them when Info.json's Version changes, and at
+-- every launch when Info.json sets DebugMode. The UE4SS root is not one of
+-- them. Falls back to SCRIPT_DIRECTORY if the path does not contain a UE4SS
+-- folder.
 --
 -- Derived once, here, because the journal and the ledger must agree on it.
 local UE4SS_ROOT = SCRIPT_DIRECTORY:match("^(.*[\\/]UE4SS[\\/])") or SCRIPT_DIRECTORY

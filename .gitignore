@@ -1,20 +1,15 @@
 # Runtime artifacts the mod writes at play time. Game output, not source.
 #
-# The recovery journal lives OUTSIDE the mod folder, at the UE4SS root, so the
-# official loader cannot sweep it when it reinstalls the mod on a version
-# change. Listed here in case anyone runs the game from a checkout.
+# The recovery journal is written to the UE4SS root, outside the directories
+# the official mod loader reinstalls this mod into. Listed here in case anyone
+# runs the game from a checkout.
 LootablePassives_journal.tsv
 # Same for the conveyor pending-grant ledger, which tools/ledger_test.lua also
 # writes and removes beside Scripts/ when it runs from a checkout.
 LootablePassives_pending.tsv
 
-# Ignore screenshots used in dev
-docs/*.png
-# Ensure we keep the thumbnail image
-!thumbnail.png
-
-# tools/luacheck.js needs luaparse. Installed on demand, never vendored:
-#   npm install --no-save luaparse
+# tools/luacheck.js needs luaparse, which package.json declares. `npm install`
+# in the repo root fetches it; never vendored.
 node_modules/
 package-lock.json
 
@@ -30,10 +25,6 @@ desktop.ini
 *.bak
 *.bak-*
 
-# Steam publish bookkeeping. Written by PalworldModUploader and holds the
-# PublishedFileId; it should not be committed before a first publish exists.
+# Palworld Mod Uploader's file. It lives in the Workshop item folder, holds the
+# Published ID and last uploaded Version, and is never copied into the repo.
 .workshop.json
-
-# Python bytecode from tools/
-__pycache__/
-*.pyc

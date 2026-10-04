@@ -13,8 +13,8 @@ local remove_file = util.remove_file
 local write_lines = util.write_lines
 local module_for = passives.module_for
 
--- At util.UE4SS_ROOT, outside the folder the mod loader replaces on a Version
--- change. The name carries the mod prefix because the folder no longer does.
+-- At util.UE4SS_ROOT, outside the directories the mod loader reinstalls this
+-- mod into. The name carries the mod prefix because the folder does not.
 local JOURNAL_PATH = util.UE4SS_ROOT .. "LootablePassives_journal.tsv"
 
 --------------------------------------------------------------------------------

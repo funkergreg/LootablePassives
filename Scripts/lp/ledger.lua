@@ -10,8 +10,8 @@
 -- The owner column is what lets a row be delivered to the player whose Pal it
 -- came from; see ordered_for.
 --
--- The file sits at util.UE4SS_ROOT, outside the folder the mod loader replaces on
--- a version change, as does the recovery journal.
+-- The file sits at util.UE4SS_ROOT, outside the directories the mod loader
+-- reinstalls this mod into, as does the recovery journal.
 --
 -- This file is not the answer to a full inventory: add_modules reports a spill as
 -- a success and the item still exists. What is left for it is having nobody to

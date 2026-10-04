@@ -11,7 +11,7 @@ Read `CLAUDE.md` in full first. The points that bear directly on this list:
 - **Per-frame paths must not allocate closures.** `pcall(function() ... end)` or a fresh callback per firing on a hook that fires at frame rate crashes UE4SS (`Ref was not function`, then `EXCEPTION_ACCESS_VIOLATION`). Use argument-form `pcall` against module-level helpers, and build every hook callback once, at load.
 - **`pcall` does not catch native access violations.** A wrong-arity UFunction call or a call on a bad object takes the game down. Check arity against the header dumps (`Pal.hpp`, `WBP_*.hpp`, `CommonUI.hpp`, `Engine.hpp`) before adding any engine call.
 - **Log immediately before each new engine call** when probing, so the last line of `UE4SS.log` names the call if the game dies.
-- **The dev loop** is: edit in the repo, `node tools\luacheck.js`, `luacheck Scripts` (baseline 0 warnings / 0 errors), `lua tools\ledger_test.lua` after any `lp/ledger.lua` edit, `.\tools\install.ps1`, restart Palworld, read `UE4SS.log` filtered on `[LootablePassives]`. Hot reload is off.
+- **The dev loop** is: edit in the repo, `node tools\luacheck.js`, `luacheck Scripts` (baseline 0 warnings / 0 errors), `lua tools\ledger_test.lua` after any `lp/ledger.lua` edit, `.\tools\stage.ps1` (dev build: patch + 1, DebugMode on; `-Publish` for a release: minor + 1, patch 0, DebugMode off), Upload To Steam, restart Palworld on the host and the subscribed second machine, read `UE4SS.log` filtered on `[LootablePassives]`. Hot reload is off.
 - **Startup must still read** `Loaded 115 extractable passives, 2 extraction operations, 54 insert routes.` plus the `All N hooks installed: ...` line. Item 1 changes N.
 
 The per-frame hooks, for judging whether a change touches a hot path:
@@ -203,4 +203,4 @@ Recorded so a later review does not re-raise them:
 - `main.lua` repeats util's script-directory computation. It must run before `require` works, because it sets `package.path`. The same applies in `tools/ledger_test.lua`.
 - `tools/ledger_test.lua` uses raw `io` rather than util's file helpers. This is on purpose: it checks the file the ledger wrote without going through the code that wrote it.
 - The bucket get-or-create pattern in `conveyor.bucket_for` and `ledger.bucket_for`, `ui.current_page` against `ui.current_screen`, and the two `find_first("PalPlayerCharacter")` calls in `main.lua` and `lp/hooks.lua` are each too small for a shared helper.
-- In `tools/install.ps1` and `tools/stage.ps1`, the `$stale +=` accumulation is quadratic and `Copy-Item` copies the whole payload on every run. Both run over about a hundred files, so neither is worth changing.
+- In `tools/stage.ps1`, the `$stale +=` accumulation is quadratic and `Copy-Item` copies the whole payload on every run. It runs over about a hundred files, so neither is worth changing.

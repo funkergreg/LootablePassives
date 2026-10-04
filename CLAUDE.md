@@ -2,9 +2,9 @@
 
 Guidance for Claude Code working in this repository.
 
-- This `CLAUDE.md` file is **durable** repo setup and development processes, plus things that will help an agent.  DO NOT add ephemeral details of planning or findings based on the current repo state to this document.
+- This `CLAUDE.md` file is **durable** repo setup and development processes, plus things that will help an agent. DO NOT add ephemeral details of planning or findings based on the current repo state to this document.
 - Two documents describe the mod, for two different readers, and neither is duplicated here:
-  - `README.md` is the GitHub page for this **development repo**. It describes the mod and how to develop, install and publish it from source. It does **not** ship. Update it whenever you change user-facing game functionality, the dev tools, or the publishing cycle.
+  - `README.md` is the GitHub page for this **development repo**. It describes the mod and how to set it up, develop, stage and publish it from source. It does **not** ship. Update it whenever you change user-facing game functionality, the dev tools, or the publishing cycle.
   - `.docs/workshop-description.txt` is the Steam Workshop page text, in Steam's BBCode. It does **not** ship either: it is pasted into the Workshop page by hand at publish time, and that step is not automatable. Update it whenever you change user-facing game functionality, and keep its player-facing content in step with `README.md`'s.
 - DO NOT TRUST COMMENTS IN CODE -- TREAT THESE AS GUESSES OR HOPES; COMMENTS MAY ALSO BE OUTDATED LEFTOVER FROM PREVIOUS CODE WHICH CAN LEAD ASTRAY IF NOT VERIFIED.
 
@@ -20,7 +20,8 @@ This repo contains a Palworld mod.
 | --- | --- | --- |
 | Scripts/ | Lua runtime (main.lua, settings.lua, lp/*.lua) | ships |
 | PalSchemaMods/LootablePassives/ | JSON data patches: items, DataTable rows, English strings | ships |
-| tools/ | install.ps1, stage.ps1, mirror.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
+| tools/ | stage.ps1, stage_test.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
+| package.json | declares luaparse for tools/luacheck.js | dev only-do not ship |
 | CLAUDE.md | Agent guidance | dev only-do not ship |
 | README.md | GitHub page for the development repo | dev only-do not ship |
 | .docs/workshop-description.txt | Steam Workshop page text, pasted by hand | dev only-do not ship |
@@ -28,9 +29,13 @@ This repo contains a Palworld mod.
 | Info.json | Steam Workshop package manifest | ships |
 | thumbnail.png | Workshop thumbnail | ships |
 
-- **How `InstallRule.Targets` actually installs, observed from an `InstallManifest.json` the official loader wrote.** The loader appends **`{PackageName}`** to the directory for the `Type`, and *then* copies each `Targets` folder in under its own leaf name. So `Lua` + `./Scripts` lands at `Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts`, and `PalSchema` + `./PalSchemaMods/LootablePassives/raw` lands at `Mods\NativeMods\UE4SS\Mods\PalSchema\mods\LootablePassives\raw`. `04-Tech.md` states the package-name level in prose — "the Package Name is used as the folder name" — and omits it from its per-type table, which is how it got read the wrong way round.
-  - **A `Targets` leaf equal to the `PackageName` is therefore a bug**, not the way to control the installed name: it doubles, as `PalSchema\mods\LootablePassives\LootablePassives\`, and PalSchema then loads the folder and finds nothing. `tools/stage.ps1` refuses that shape and prints the computed install path for every rule.
-  - The repo's `PalSchemaMods/LootablePassives/` wrapper is consequently just a container, not load-bearing; `Info.json` names the three folders **inside** it. Add a fourth kind of PalSchema data and it must be added to `Targets` too — `stage.ps1` fails the stage if anything shipped is not covered by some `Targets` path.
+- **What ships is decided by `Info.json`.** `stage.ps1` stages `Info.json`, the `Thumbnail` file, `LICENSE` when present, and every `InstallRule` `Targets` path, and nothing else. A new shipped folder is added by adding it to `Targets`; there is no list in the tools.
+
+- **How `InstallRule.Targets` installs.** The authority is `Mods\ManagedMods\<PackageName>\InstallManifest.json`, which the loader writes on every install and which lists every file and directory it placed. Read it rather than inferring a layout. The manifests on the dev machine record these rules:
+  - **Type directory and package-name folder.** `Lua` → `Mods\NativeMods\UE4SS\Mods\<PackageName>\`, and `PalSchema` → `Mods\NativeMods\UE4SS\Mods\PalSchema\mods\<PackageName>\`; both add the package-name folder. `UE4SS` → `Mods\NativeMods\UE4SS\` and `LogicMods` → `Pal\Content\Paks\LogicMods\` do **not**. `Paks` → `Pal\Content\Paks\~WorkshopMods\` is not yet recorded. `04-Tech.md`'s table shows `{PackageName}` for `Lua` only, and its prose ("the Package Name is used as the folder name") does not hold for `UE4SS` or `LogicMods`.
+  - **Trailing slash.** A target with no trailing `/` (`./Scripts`) is copied as a folder under its own leaf name. A target ending in `/` (`./LogicMods/`), or `.`, has its **contents** copied. The uploader's template uses the trailing-slash form (`./PalSchema/`, `./Paks/`, `./LogicMods/`) and the folder form for `./Scripts`.
+  - **A folder target whose leaf equals the `PackageName` is a bug under `Lua` or `PalSchema`**: the name doubles, as `PalSchema\mods\LootablePassives\LootablePassives\`, and PalSchema loads an empty folder without an error. `tools/stage.ps1` refuses that shape and prints the computed install path for every rule.
+  - This repo names its three PalSchema folders individually, without a trailing slash, so the `PalSchemaMods/LootablePassives/` wrapper is a container and not load-bearing. A fourth kind of PalSchema data must be added to `Targets` too, or it neither ships nor installs.
 - **DO NOT** Reference dev-only artifacts on things that ship as this creates a broken reference in shipped items. `README.md` and `.docs/` are dev-only for this purpose, so shipped Lua must not point at them either.
 
 ### `PalSchemaMods/LootablePassives/`
@@ -43,7 +48,7 @@ This repo contains a Palworld mod.
   - `LootablePassivesInsertRoutes.json` — the 54 alias routes, plus the 54 inert alias passives that let those rows render. Every row needs a matching key in `lp/ids.lua`'s `IMPLANT_TARGET`; the two are maintained together in current implementation. A row with no key installs an inert alias and leaves it on the Pal; a key with no row is a dead list entry.
 - `translations/en/` — display strings by text id.
 
-### Naming and Publishing
+### Naming
 
 `LP` is the self-reference prefix for **Lootable Passives** throughout this mod and repo:
 
@@ -62,9 +67,23 @@ This repo contains a Palworld mod.
 
 ## Development
 
+### Where the mod lives
+
+Three places, and only the loader writes the game:
+
+| Place | Path | Written by |
+| --- | --- | --- |
+| Repo (working copy, source of truth) | this folder | edits, and `stage.ps1` (`Info.json` `Version`/`DebugMode`) |
+| Workshop item folder | `<WorkshopRootDir>\<item id>\` | `stage.ps1`; the uploader writes `.workshop.json`, and `Info.json` on **Save Info.json** |
+| Game install | `<Palworld>\Mods\NativeMods\UE4SS\...`, plus `Mods\ManagedMods\<PackageName>\` | the official mod loader, at launch |
+
+- **The item folder comes first.** It is made by Palworld Mod Uploader's **Create New Mod**, which registers a Workshop item at once and names the folder with its id. Its template `Info.json` has `PackageName` `MyAwesomeMod`, one `InstallRule` per type ticked (Lua, Paks, LogicMods, PalSchema), and one folder per type. The full first-time setup is `README.md`'s `Starting a mod` section; keep it current.
+- **The repo's `Info.json` is the only one to edit.** The uploader's fields (Mod Name, Package Name, Version, MinRevision, Author, and the others) read and write the item folder's `Info.json`, and every stage overwrites that file with the repo's.
+- **Never write the game folders directly**, by script or by hand. The loader reinstalls them at launch, which overwrites a second writer's files, and its uninstall works from its manifest, which does not list them.
+
 ### Development Process
 
-There is no build step in development mode, but there is an install step to move files from the repo directories to the game directories. **This repo is the working copy.** The general development process is : edit here, run the checks, deploy to the game, restart and run through actions in the game, read the log. (Note that none of this applies for a mod downloaded from the Steam Workshop -- the production flow.)
+There is no build step and no local-only test build. **Every tested change is uploaded.** `stage.ps1` sets a new version and `DebugMode`, then copies the repo into the mod's Workshop item folder. The user uploads that folder to the Workshop, then tests it on two machines in multiplayer: the host, which installs from the item folder at launch, and a second machine subscribed to the mod, which installs the upload once Steam downloads it. Both must run the same version. **This repo is the working copy.** The general process is: edit here, run the checks, stage, upload, restart the game on both machines, run through actions in it, read the log.
 
 The human-facing version of this process, including publishing, is the `Development` section of `README.md`. Change the tools or the loop and update both.
 
@@ -73,55 +92,64 @@ The human-facing version of this process, including publishing, is the `Developm
 node tools\luacheck.js            # Lua parse check
 luacheck Scripts                  # static analysis
 lua tools\ledger_test.lua         # after any lp/ledger.lua edit
-.\tools\install.ps1               # repo -> game install
-# ... restart Palworld, read the log ...
+.\tools\stage_test.ps1            # after any tools/stage.ps1 edit
+.\tools\stage.ps1                 # dev build: patch + 1, DebugMode true
+.\tools\stage.ps1 -Publish        # release: minor + 1, patch 0, DebugMode false
+# ... Upload To Steam, restart Palworld on both machines, read the log ...
 ```
 
-- Deploying is not optional and it is not automatic: the game loads only what is under `<Palworld>\Mods\NativeMods\UE4SS\Mods`, so an untested repo edit is just an untested repo edit. `install.ps1 -DryRun` first if you want to see what moves.
-- **A file the repo does not have stops the install.** The install is a mirror, and the check that makes it one runs before anything is copied: a file in either destination with no counterpart in the repo is listed and the run exits 1 with nothing changed. That file would still be loaded by the game, so a run that ignored it would be testing something other than the repo. `-Force` deletes those files, and any directory left empty, instead of stopping. Delete a Lua module or a JSON patch from the repo and the next install is `-Force`.
-- Log reading filters reads of `UE4SS.log` on...
-  - `[LootablePassives]` gives mod-specific log messages, helps trace code paths reached
-  - `PalSchema` gives verification on item loads from JSON
-  - errors and warnings to find things explicitly failing
-- In the event of chrashes, read/seach/filter: `%LOCALAPPDATA%/Pal/Saved/Crashes/`
-- **NOTE:** UE4SS hot reload is disabled, so a running game will not pick up chanes without a restart.
-- **NOTE:** A dev install made by `install.ps1` is not managed by the in-game mod manager; only a Workshop install is.
+- Staging is not optional and it is not automatic: the game loads only what the loader copied out of the item folder, so an unstaged repo edit is just an untested repo edit. `stage.ps1 -DryRun` first if you want to see what moves and the next version.
+- **Uploading is the user's step, done by hand in Palworld Mod Uploader.** An agent stages; it does not upload or claim a stage has been uploaded.
+- **A file the stage does not have stops the run.** The stage is a mirror, and the check that makes it one runs before anything is copied: a file in the item folder with no counterpart in the staged set is listed, and the run exits 1 with nothing changed (exit 0 under `-DryRun`). `-Force` deletes those files, and any directory left empty, instead of stopping. Delete a Lua module or a JSON patch from the repo and the next stage is `-Force`.
+- Read `UE4SS.log` filtered on:
+  - `[LootablePassives]` for the mod's own messages, which trace the code paths reached
+  - `PalSchema` for confirmation that the JSON loaded
+  - errors and warnings, for anything failing outright
+- After a crash, read, search or filter `%LOCALAPPDATA%/Pal/Saved/Crashes/`.
+- **NOTE:** UE4SS hot reload is disabled, and the loader installs only at launch, so a running game will not pick up changes without a restart.
 
 ### Dev Commands
 
 - node tools\luacheck.js is a Lua syntax check. Run after ANY Lua edit.
-- luacheck Scripts are the real static analyzer. Baseline is 0 errors.
-- lua tools\ledger_test.lua is the one automated test. Run after ANY lp/ledger.lua edit.
+- luacheck Scripts is the real static analyzer. Baseline is 0 warnings / 0 errors.
+- lua tools\ledger_test.lua tests the mod. Run after ANY lp/ledger.lua edit.
   - `ledger_test.lua` is a behaviour test for one insertion, not a data verifier: it stubs `lp.inventory` and asserts the ledger's TSV round-trip and which candidate a row is delivered to. It exists because that logic is the only part of the mod with no engine call in it.
-- .\tools\install.ps1 is the repo -> game install. The normal direction; run before every functional runtime test. Takes `-DryRun`, and `-Force` to delete files the repo no longer has.
-- .\tools\stage.ps1 is the repo -> Workshop item-folder copy, for publishing only. An allowlist (`Info.json`, `thumbnail.png`, `LICENSE`, `Scripts\`, `PalSchemaMods\LootablePassives\` — not `README.md`), the same mirror rule and `-DryRun`/`-Force` as install.ps1, plus four checks on `Info.json` that the uploader itself does not make. It never touches `.workshop.json`, which holds the Published ID.
-  - Usage: `.\tools\stage.ps1 -ItemId <numbered item folder> -DryRun`, then again without `-DryRun`; `-Destination` takes the full item folder instead of `-ItemId`.
+- .\tools\stage_test.ps1 tests the stage script. Run after ANY tools/stage.ps1 edit, and add a case for any behaviour you add. It runs a copy of `stage.ps1` against throwaway folders in `%TEMP%` and never touches the real game or Workshop folders.
+- .\tools\stage.ps1 is the only repo -> game path. Run it before every functional runtime test, and only when the result is going to be uploaded. Its header documents every check and option; the rules an agent must keep:
+  - Every run that stages rewrites `Version` and `DebugMode` **in the repo's `Info.json`**: no flag is a dev build (patch + 1, `DebugMode` true); `-Publish` is a release (minor + 1, patch 0, `DebugMode` false). Commit the rewritten `Info.json` with the change it carries.
+  - **Patch 0 means a release.** A nonzero patch with `DebugMode` true is a dev build.
+  - `-DryRun`, a failed check, and a stop on stale files all write nothing.
+  - It holds nothing specific to this mod, so it can be copied unchanged into another mod's repo. Keep it that way: mod-specific facts belong in `Info.json`.
   - The Workshop page description is not part of the stage. After uploading, paste `.docs/workshop-description.txt` into the Workshop page by hand if it changed.
-- tools\mirror.ps1 holds the mirror rule both scripts share: `Get-RelativePaths`, `Stop-OnStale` and `Remove-EmptyDirectories`. It is dot-sourced, never run. A change to how either script mirrors goes here, not into one script.
-  - `Stop-OnStale` ends the calling script itself (`exit 0` under `-DryRun`, `exit 1` otherwise), so nothing after the call runs when files are stale.
 
-...via Scoop, installed to user profile, no admin needed
+#### Local tooling
+
+Lua and luacheck are installed with Scoop, into the user profile, with no admin rights. luaparse comes from `npm install` in the repo root.
 
 - Lua 5.5 (lua, luac on PATH) — for quick local sanity checks
-- luacheck 1.2.0 — a real static analyzer (undefined globals, unused vars, shadowing), stronger than this repo's tools/luacheck.js, which by its own comment is parse-only
-- .luacheckrc — declares UE4SS's injected globals (RegisterHook, ExecuteInGameThread, FindAllOf, etc.) so luacheck stops flagging the mod's own API as "undefined"
-- .luarc.json — same global list for LuaLS, so the in-editor LSP and the CLI checker agree `luacheck Scripts` from the repo root, alongside `node tools\luacheck.js`, in the normal edit/check/install loop. Without `.luacheckrc` it reports ~53 false positives from the unrecognised UE4SS globals; with it, only real findings.
+- luacheck 1.2.0 — a real static analyzer (undefined globals, unused vars, shadowing), stronger than this repo's tools/luacheck.js, which is parse-only
+- luaparse — the parser `tools/luacheck.js` uses, declared in `package.json`
+- .luacheckrc — declares UE4SS's injected globals (RegisterHook, ExecuteInGameThread, FindAllOf, etc.) so luacheck stops flagging the mod's own API as "undefined". Without it `luacheck Scripts` reports dozens of false positives; with it, only real findings.
+- .luarc.json — the same global list for LuaLS, so the in-editor language server and the CLI checker agree.
 
-#### What `install.ps1` mirrors, and where
+### How a staged build reaches the game
 
-```test
-Scripts\                         ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\
-PalSchemaMods\LootablePassives\  ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\PalSchema\mods\LootablePassives\
+```text
+repo --stage.ps1--> <Workshop content>\1623730\<item id>\ --loader, at launch--> Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\
+                                                                                 Mods\NativeMods\UE4SS\Mods\PalSchema\mods\LootablePassives\{items,raw,translations}\
 ```
 
-- Those two destinations are the only thing the stale check examines, and the only thing `-Force` deletes from. Files the game folder holds elsewhere are not touched — including `LootablePassives\enabled.txt`, which is not ours and which UE4SS reads as a second way to start a Lua mod.
-- The script also adds `LootablePassives : 1` to UE4SS's `mods.txt`, which is what actually starts the
-Lua half. PalSchema needs no registration — it loads any folder under its `mods/` directory.  This split control CAN lead to unexpected states.
-- **Do not disable this mod by setting `LootablePassives : 0` in `mods.txt`.** That line controls only the Lua half. The PalSchema half has no such switch — it loads whenever its folder is on disk — so the mod's operations stay in the Surgery Table list with nothing behind them. Removing the folders is the only safe way off.
+- At launch, the loader enables each `ActiveModList` entry in `Mods\PalModSettings.ini` by finding the folder under `WorkshopRootDir` whose `Info.json` has that PackageName. It compares that `Info.json`'s `Version` with the installed copy in `Mods\ManagedMods\<PackageName>\Info.json`, as plain strings. When they differ, or `DebugMode` is true, it removes what `Mods\ManagedMods\<PackageName>\InstallManifest.json` lists and copies the `InstallRule` targets in again. Otherwise it changes nothing. On the host the item folder is the one `stage.ps1` writes; on a subscribed machine it is Steam's download of the upload. That is why every stage raises the version: the version change is what makes both machines reinstall.
+- **Stage only what will be uploaded.** The host's next launch installs whatever is staged, uploaded or not, which leaves a subscribed machine behind the host.
+- **Nothing but the loader writes the two game folders.** A second writer would be overwritten by the next reinstall, and a file it added is not in the loader's manifest, so the loader's uninstall does not account for it.
+- **For a `Lua`-type rule the loader writes UE4SS's `mods.txt` entry** (`<PackageName> : 1`), which is what starts the Lua half. PalSchema needs no registration; it loads any folder under its `mods/` directory.
+- **Do not disable this mod by setting `LootablePassives : 0` in `mods.txt`.** That line controls only the Lua half. The PalSchema half has no such switch, because it loads whenever its folder is on disk, so the mod's operations stay in the Surgery Table list with nothing behind them. Disable it under **Options → Mod Management**, which uninstalls both halves.
+- **Keep one folder per PackageName under `WorkshopRootDir`.** With several, the loader enables one of them, and which one is not defined.
+- **Do not subscribe to this mod on the host machine** — the one that stages. Steam downloads a subscribed item into the same numbered folder, over the staged files, and the uploader makes subscribed items view-only.
 
 ### Errors and warnings
 
-The baseline is **0 errors**. Treat any *error* or warning as something to fix rather than to note.
+The baseline is **0 warnings / 0 errors**. Treat any error or warning as something to fix rather than to note.
 
 ### The JSON is the source of truth
 
@@ -131,7 +159,7 @@ The mod's data half is the JSON under `PalSchemaMods/LootablePassives/` and `Scr
 
 ### Uninstall Note
 
-Uninstall is not needed during DEV; may be needed if transitioning to Steam Workshop installs.  Delete **both** destination folders, then remove the `mods.txt` line. Disposable implant items defined by the mod already in a save become unknown items; passives already implanted are real passives and stay put.
+Disable the mod under **Options → Mod Management** and the loader removes what it installed. Disposable implant items defined by the mod already in a save become unknown items; passives already implanted are real passives and stay put.
 
 ---
 
