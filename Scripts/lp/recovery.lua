@@ -12,28 +12,27 @@ local passives = require("lp.passives")
 local inventory = require("lp.inventory")
 
 local log = util.log
+local run_later = util.run_later
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local clear_journal = journal.clear_journal
 local read_journal = journal.read_journal
-local count_id = passives.count_id
-local get_skill_ids = passives.get_skill_ids
 local pal_key = passives.pal_key
 local snapshot_all = passives.snapshot_all
 local remove_skill = inventory.remove_skill
-local restore_replaced_passive = inventory.restore_replaced_passive
+local undo_swap = inventory.undo_swap
 
 --------------------------------------------------------------------------------
 -- Crash recovery
 --------------------------------------------------------------------------------
 
--- Does the list hold one of our markers?
-local function has_marker(skill_ids)
+-- The first of our markers in the list, or nil.
+local function first_marker(skill_ids)
     for _, id in ipairs(skill_ids or {}) do
         if EXTRACTION_MODES[id] ~= nil then
-            return true
+            return id
         end
     end
-    return false
+    return nil
 end
 
 -- Every Pal carrying one of our markers, as { parameter = ..., lock = <id> },
@@ -42,13 +41,9 @@ end
 local function marked_parameters(skip_key)
     local marked = {}
     for _, snapshot in ipairs(snapshot_all()) do
-        for _, id in ipairs(snapshot.before_ids) do
-            if EXTRACTION_MODES[id] ~= nil then
-                if skip_key == nil or pal_key(snapshot.parameter) ~= skip_key then
-                    marked[#marked + 1] = { parameter = snapshot.parameter, lock = id }
-                end
-                break
-            end
+        local lock = first_marker(snapshot.before_ids)
+        if lock ~= nil and (skip_key == nil or pal_key(snapshot.parameter) ~= skip_key) then
+            marked[#marked + 1] = { parameter = snapshot.parameter, lock = lock }
         end
     end
     return marked
@@ -58,48 +53,31 @@ end
 -- taken from the Pal, not from the journal: read_journal returns no lock column.
 -- Returns whether the replay succeeded.
 local function replay(record, parameter, lock)
-    if record.phase == "implant" then
-        -- The alias is on the Pal and the module is already spent; completing
-        -- the swap is what the row is for.
-        return restore_replaced_passive(parameter, record.passive_id, lock)
-    elseif record.phase == "stranded" then
-        -- Restore the passive if the row names one; otherwise only the marker
-        -- has to come off.
-        if record.passive_id ~= nil then
-            return restore_replaced_passive(parameter, record.passive_id, lock)
-        end
-        return remove_skill(parameter, lock)
-    elseif record.phase == "marker" and record.state == "prepared" then
-        -- Nothing was granted: put the passive back.
-        return restore_replaced_passive(parameter, record.passive_id, lock)
-    elseif record.phase == "marker" and record.state == "granted" then
-        -- The module exists; removing the marker completes the exchange.
-        return remove_skill(parameter, lock)
-    elseif record.phase == "loop" and record.state == "granted" then
-        -- The module exists. Its passive is usually still attached, but this row
-        -- also stands while the extract-all sweep moves to the next passive, so
-        -- the passive may already be off. remove_skill reports a count that did
-        -- not fall as a failure, so what is gone is not asked for again; the
-        -- marker's removal is what decides the outcome.
-        local attached = count_id(get_skill_ids(parameter) or {}, record.passive_id) > 0
-        return (not attached or remove_skill(parameter, record.passive_id))
+    if record.state == "granted" then
+        -- The module exists. A marker row completes by removing the marker. A
+        -- loop row also removes its passive first, which may already be off:
+        -- this row stands while the extract-all sweep moves to the next passive,
+        -- and remove_skill reports an absent id as removed.
+        return (record.phase ~= "loop" or remove_skill(parameter, record.passive_id))
             and remove_skill(parameter, lock)
     end
-    -- phase "loop", state "prepared": nothing granted, passive intact, so only
-    -- the marker is removed.
-    return remove_skill(parameter, lock)
+    if record.phase == "loop" then
+        -- Prepared: nothing granted, passive intact, so only the marker is
+        -- removed.
+        return remove_skill(parameter, lock)
+    end
+    -- Prepared implant, marker or stranded row: put the named passive back in
+    -- the marker's place, or only remove the marker when a stranded row names
+    -- none. For an implant the passive is the alias's target and the module is
+    -- already spent; completing the swap is what the row is for.
+    return undo_swap(parameter, record.passive_id, lock)
 end
 
 -- Replays one journal row against the single marked Pal, then clears the
 -- journal if the replay succeeded.
 local function recover_interrupted_extraction(reason)
-    local record, discard = read_journal()
+    local record = read_journal()
     if record == nil then
-        -- read_journal has already logged why. Removing the file stops the same
-        -- warning on every subsequent load.
-        if discard then
-            clear_journal()
-        end
         return
     end
     local marked = marked_parameters(nil)
@@ -132,11 +110,8 @@ end
 -- Pals carry one. Returns false only when the replay ran and failed, keeping the
 -- row.
 local function settle_before_exchange(parameter, before_ids)
-    local record, discard = read_journal()
+    local record = read_journal()
     if record == nil then
-        if discard then
-            clear_journal()
-        end
         return true
     end
     local described = string.format("%s (%s/%s)",
@@ -144,7 +119,7 @@ local function settle_before_exchange(parameter, before_ids)
 
     local current = pal_key(parameter)
     local marked = nil
-    if current ~= nil and not has_marker(before_ids) then
+    if current ~= nil and first_marker(before_ids) == nil then
         marked = marked_parameters(current)
     end
     if marked == nil or #marked > 1 then
@@ -175,11 +150,7 @@ end
 
 -- Runs one recovery pass 5 s from now, on the game thread.
 local function schedule_recovery(reason)
-    ExecuteWithDelay(5000, function()
-        ExecuteInGameThread(function()
-            recover_interrupted_extraction(reason)
-        end)
-    end)
+    run_later(5000, recover_interrupted_extraction, reason)
 end
 
 return {

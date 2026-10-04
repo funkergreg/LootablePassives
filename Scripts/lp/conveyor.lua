@@ -58,6 +58,7 @@ local log = util.log
 local method = util.method
 local unwrap = util.unwrap
 local get_skill_ids = passives.get_skill_ids
+local instance_key = passives.instance_key
 local is_extractable = passives.is_extractable
 local module_for = passives.module_for
 local owner_key = passives.owner_key
@@ -69,20 +70,6 @@ local CONTAINER_HOOK =
 
 -- GUESS: ConvertProgressRate at or above this counts the Pal as consumed; below it, as withdrawn.
 local COMPLETE_RATE = 0.999
-
---------------------------------------------------------------------------------
--- Identity
---------------------------------------------------------------------------------
-
--- A Pal's InstanceId GUID as a comparable string. Property reads only, through
--- util.guid_key, which the player-state side of the owner comparison also uses.
-local function instance_key(instance_id)
-    instance_id = unwrap(instance_id)
-    if instance_id == nil then
-        return nil
-    end
-    return guid_key(field(instance_id, "InstanceId"))
-end
 
 --------------------------------------------------------------------------------
 -- Reading the queue
@@ -103,7 +90,7 @@ local function read_process_rates(model)
         if entry ~= nil then
             local key = instance_key(field(entry, "IndividualId"))
             if key ~= nil then
-                rates[key] = tonumber(unwrap(field(entry, "ConvertProgressRate"))) or 0.0
+                rates[key] = tonumber(field(entry, "ConvertProgressRate")) or 0.0
             end
         end
     end
@@ -121,24 +108,24 @@ end
 -- observer, which fires for every container in the world.
 local function read_queued_passives(model)
     local found = {}
-    local container_module = unwrap(method(model, "GetCharacterContainerModule"))
+    local container_module = method(model, "GetCharacterContainerModule")
     if not is_valid(container_module) then
         return found
     end
-    local container = unwrap(method(container_module, "GetContainer"))
+    local container = method(container_module, "GetContainer")
     if not is_valid(container) then
         return found
     end
 
-    local slot_count = unwrap(method(container, "Num")) or 0
+    local slot_count = method(container, "Num") or 0
     for index = 0, slot_count - 1 do
         local got, slot = pcall(_call_get, container, index)
         slot = got and unwrap(slot) or nil
         if is_valid(slot) then
-            local handle = unwrap(method(slot, "GetHandle"))
+            local handle = method(slot, "GetHandle")
             if is_valid(handle) then
                 local key = instance_key(field(handle, "ID"))
-                local parameter = unwrap(method(handle, "TryGetIndividualParameter"))
+                local parameter = method(handle, "TryGetIndividualParameter")
                 if key ~= nil and is_valid(parameter) then
                     local extractable = {}
                     for _, passive_id in ipairs(get_skill_ids(parameter) or {}) do
@@ -282,13 +269,18 @@ local function pass(model)
         if rates[key] == nil then
             bucket[key] = nil
             if entry.rate >= COMPLETE_RATE then
-                actor = actor or unwrap(method(model, "GetActor"))
+                actor = actor or method(model, "GetActor")
                 on_consumed(entry, actor)
             end
         end
     end
 end
 
+-- Both hook callbacks below are built once, at load, and handed to
+-- hooks.register by reference; neither captures per-call state.
+--
+-- The container hook is zero-parameter, so its context argument is the model
+-- and this is its callback as is.
 local function pass_if_valid(model_param)
     local model = unwrap(model_param)
     if is_valid(model) then
@@ -296,20 +288,14 @@ local function pass_if_valid(model_param)
     end
 end
 
--- Both callbacks are built once, at load, and handed to hooks.register by
--- reference; neither captures per-call state.
+-- The proceed hook's model is its first parameter, after the context.
 local function on_proceed(_, model_param)
     pass_if_valid(model_param)
 end
 
--- Zero-parameter hook: the context argument is the model.
-local function on_container_update(context)
-    pass_if_valid(context)
-end
-
 local function install()
     hooks.register(PROCEED_HOOK, on_proceed, "the conveyor progress watcher")
-    hooks.register(CONTAINER_HOOK, on_container_update, "the conveyor arrival/departure watcher")
+    hooks.register(CONTAINER_HOOK, pass_if_valid, "the conveyor arrival/departure watcher")
 end
 
 return {

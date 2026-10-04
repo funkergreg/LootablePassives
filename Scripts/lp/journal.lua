@@ -6,6 +6,7 @@
 local util = require("lp.util")
 local passives = require("lp.passives")
 
+local is_writable = util.is_writable
 local log = util.log
 local read_lines = util.read_lines
 local remove_file = util.remove_file
@@ -51,44 +52,23 @@ local function write_journal(state, phase, passive_id, item_id, passive_name)
     }, "recovery journal")
 end
 
--- Can the journal be written at all? Answered once and cached, and reported by
--- main.lua at load. Extraction refuses when this is false.
-local journal_writable = nil
-
+-- Can the journal be written at all? Reported by main.lua at load.
 local function journal_is_writable()
-    if journal_writable ~= nil then
-        return journal_writable
-    end
-    journal_writable = false
-    if io ~= nil and type(io.open) == "function" then
-        local opened, handle = pcall(io.open, JOURNAL_PATH, "a")
-        if opened and handle ~= nil then
-            -- Opening "a" creates the file, so its size is measured while the
-            -- handle is open and a zero-byte file -- one this probe created --
-            -- is removed again.
-            local sized, size = pcall(handle.seek, handle, "end")
-            pcall(handle.close, handle)
-            journal_writable = true
-            if sized and size == 0 then
-                remove_file(JOURNAL_PATH)
-            end
-        end
-    end
-    return journal_writable
+    return is_writable(JOURNAL_PATH)
 end
 
--- The journal row as a table, or nil. The second return is true when the file
--- should be deleted: it is unparseable, stamped for another build, or internally
--- inconsistent, and every one of those cases has already been logged.
-local function read_journal()
+-- The journal row as a table, or nil. A row that is unparseable, stamped for
+-- another build, or internally inconsistent is logged, its file deleted, and nil
+-- returned.
+local function parse_journal()
     -- The first line is the whole journal; there is never a second exchange in
     -- flight.
     local line = (read_lines(JOURNAL_PATH) or {})[1]
     if line == nil then
         return nil
     end
-    local version, state, phase, passive_id, item_id, passive_name =
-        line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+    local version, state, phase, passive_id, item_id =
+        line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t[^\t]*$")
     if version == nil then
         log("WARNING: ignored and discarded a malformed recovery journal.")
         return nil, true
@@ -117,8 +97,15 @@ local function read_journal()
         phase = phase,
         passive_id = passive_id ~= "" and passive_id or nil,
         item_id = item_id ~= "" and item_id or nil,
-        passive_name = passive_name,
     }
+end
+
+local function read_journal()
+    local record, discard = parse_journal()
+    if discard then
+        remove_file(JOURNAL_PATH)
+    end
+    return record
 end
 
 local function clear_journal()

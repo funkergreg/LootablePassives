@@ -8,7 +8,6 @@
 -- This module must NOT require lp.transaction. transaction requires this one, and
 -- keeping that edge one-directional is what stops the pair forming a cycle.
 
-local SETTINGS = require("settings")
 local util = require("lp.util")
 local ids = require("lp.ids")
 local passives = require("lp.passives")
@@ -18,12 +17,10 @@ local is_valid = util.is_valid
 local log = util.log
 local method = util.method
 local name_to_string = util.name_to_string
-local unwrap = util.unwrap
 local IMPLANT_TARGET = ids.IMPLANT_TARGET
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local is_extract_mode = ids.is_extract_mode
-local count_id = passives.count_id
-local get_skill_ids = passives.get_skill_ids
+local has_skill = passives.has_skill
 local is_extractable = passives.is_extractable
 
 -- The tab page's four passive cards, indexed by CachedPassiveSlotIndex + 1.
@@ -45,35 +42,34 @@ end
 -- Surgery widget access
 --------------------------------------------------------------------------------
 
--- The passive id on the card at the selected slot, and that slot's index.
--- Returns nil, nil for an invalid widget, a negative or out-of-range index, or
--- an invalid card. An empty slot reads as "None" and is returned as nil, index.
+-- The passive id on the card at the selected slot. Returns nil for a negative or
+-- out-of-range index, an invalid card, or an empty slot, which reads as "None".
+--
+-- Takes a widget its caller has already validated -- current_page() or
+-- visible_extraction_widget() -- and does not validate it again.
 local function selected_passive(widget)
-    if not is_valid(widget) then
-        return nil, nil
-    end
-    local index = unwrap(field(widget, "CachedPassiveSlotIndex"))
+    local index = field(widget, "CachedPassiveSlotIndex")
     if type(index) ~= "number" or index < 0 then
-        return nil, nil
+        return nil
     end
     local property_name = PASSIVE_CARD_PROPERTIES[index + 1]
     if property_name == nil then
-        return nil, nil
+        return nil
     end
-    local card = unwrap(field(widget, property_name))
+    local card = field(widget, property_name)
     if not is_valid(card) then
-        return nil, nil
+        return nil
     end
     local passive_id = name_to_string(field(card, "BindedPassiveSkillName"))
     if passive_id == "None" then
-        passive_id = nil
+        return nil
     end
-    return passive_id, index
+    return passive_id
 end
 
 -- The tab page's selected Pal, as its PalIndividualCharacterParameter.
 local function selected_parameter(page)
-    return unwrap(field(page, "CachedCharacter"))
+    return field(page, "CachedCharacter")
 end
 
 -- The tab page's CurrentPassiveId and its EXTRACTION_MODES entry. The mode is
@@ -148,25 +144,25 @@ local function current_screen()
     return nil
 end
 
--- The recorded tab page and its CurrentPassiveId, if that id is one of ours.
+-- The recorded tab page, if its CurrentPassiveId is one of ours.
 --
 -- A FAILED IsVisible call is treated as visible here, which is the opposite of
--- is_open below. This result feeds the transaction path, so an unanswerable
--- visibility question does not veto it; is_open guards writes instead.
+-- open_recorded below. This result feeds the transaction path, so an
+-- unanswerable visibility question does not veto it; open_recorded guards
+-- writes instead.
 local function visible_extraction_widget()
     local page = current_page()
     if page == nil then
-        return nil, nil
+        return nil
     end
     local visible_ok, visible = pcall(_call_is_visible, page)
     if visible_ok and visible ~= true then
-        return nil, nil
+        return nil
     end
-    local pending, mode = pending_operation(page)
-    if mode ~= nil then
-        return page, pending
+    if select(2, pending_operation(page)) ~= nil then
+        return page
     end
-    return nil, nil
+    return nil
 end
 
 -- Built once and passed to pcall by reference, like _call_is_visible above.
@@ -177,11 +173,11 @@ end
 -- The tab page's inner CommonButtonBase, the one the interaction flag lives on,
 -- or nil.
 local function edit_button(widget)
-    local button = unwrap(field(widget, "WBP_CommonButton"))
+    local button = field(widget, "WBP_CommonButton")
     if not is_valid(button) then
         return nil
     end
-    local inner = unwrap(field(button, "WBP_PalInvisibleButton"))
+    local inner = field(button, "WBP_PalInvisibleButton")
     if is_valid(inner) then
         return inner
     end
@@ -241,14 +237,7 @@ end
 -- rather than against the alias id, which never matches anything in the list.
 local function alias_target_already_present(page, pending)
     local target = IMPLANT_TARGET[pending]
-    if target == nil then
-        return false
-    end
-    local skill_ids = get_skill_ids(selected_parameter(page))
-    if skill_ids == nil then
-        return false
-    end
-    return count_id(skill_ids, target) > 0
+    return target ~= nil and has_skill(selected_parameter(page), target)
 end
 
 -- Blocks or releases the Edit button for the recorded tab page.
@@ -262,11 +251,9 @@ end
 -- alias_target_already_present is true.
 --
 -- Takes no arguments so main.lua can hand it to ExecuteInGameThread by
--- reference; see the note on coalescer() in main.lua.
+-- reference; see the note on coalescer() in main.lua. main.lua does not schedule
+-- it at all when surgery_ui_gate is false in settings.lua.
 local function enforce_extraction_gate()
-    if SETTINGS.surgery_ui_gate == false then
-        return
-    end
     local page = current_page()
     if page == nil then
         return
@@ -291,19 +278,16 @@ end
 -- card are not called from anywhere; refresh_surgery_ui resets the panel
 -- instead.
 
--- Positive visibility, for the write path. The inverse of the rule in
--- visible_extraction_widget: a failed IsVisible call counts as not open.
-local function is_open(widget)
+-- The recorded widget if it is valid and IsVisible reads true, else nil. Does
+-- not scan for another. Positive visibility, for the write path: the inverse of
+-- the rule in visible_extraction_widget, so a failed IsVisible call counts as
+-- not open.
+local function open_recorded(widget)
     if not is_valid(widget) then
-        return false
+        return nil
     end
     local visible_ok, visible = pcall(_call_is_visible, widget)
-    return visible_ok and visible == true
-end
-
--- The recorded widget if it is open, else nil. Does not scan for another.
-local function open_recorded(widget)
-    if widget ~= nil and is_open(widget) then
+    if visible_ok and visible == true then
         return widget
     end
     return nil
@@ -313,6 +297,20 @@ end
 -- operation list from it, so the rebuild below is skipped when this is false.
 local function has_selected_pal(screen)
     return is_valid(field(screen, "CurrentHandle"))
+end
+
+-- The three writes refresh_surgery_ui makes with an argument, built once and
+-- passed to pcall by reference like _call_is_visible above.
+local function _set_slot_index(page, index)
+    page.CachedPassiveSlotIndex = index
+end
+
+local function _call_update_consume_item(page, item_name)
+    page:UpdateCurrentConsumeItem(item_name)
+end
+
+local function _set_consume_item_id(screen, item_name)
+    screen.CachedConsumeItemId = item_name
 end
 
 -- Set once, the first time a refresh finds no open page.
@@ -351,8 +349,8 @@ local function refresh_surgery_ui(reset_panel, rebuild_list)
         -- it is indexed rather than dotted. UpdateCurrentConsumeItem takes one
         -- FName and has no out-parameter (same header, line 92); it clears the
         -- quantity readout, which "Set Passive Empty Item" leaves alone.
-        pcall(function() page.CachedPassiveSlotIndex = -1 end)
-        pcall(function() page:UpdateCurrentConsumeItem(FName("None")) end)
+        pcall(_set_slot_index, page, -1)
+        pcall(_call_update_consume_item, page, FName("None"))
         method(page, "Set Passive Empty Item")
         method(page, "ReflectPassiveChange")
         method(page, "RefreshCurrentPassiveItem")
@@ -363,7 +361,7 @@ local function refresh_surgery_ui(reset_panel, rebuild_list)
         -- back to the page on refresh, so the page-level clear above is not
         -- sufficient on its own.
         if reset_panel then
-            pcall(function() screen.CachedConsumeItemId = FName("None") end)
+            pcall(_set_consume_item_id, screen, FName("None"))
         end
         -- SetupPassiveChangeItem takes no arguments (WBP_OperatingTable.hpp:47).
         -- Entry validity is decided when each entry is created, which is why a
@@ -380,22 +378,23 @@ end
 -- Armed by on_transaction_complete below, consumed by whichever of two paths
 -- reaches it first: main.lua's OnPassiveUpdate hook, or the 500 ms timer that
 -- function starts. Consuming it clears it, so the refresh runs once per arming.
-local pending_refresh = nil
+-- nil when unarmed; otherwise the reset_panel value to refresh with.
+local pending_reset = nil
 
 local function consume_pending_refresh()
-    local pending = pending_refresh
-    if pending == nil then
+    local reset_panel = pending_reset
+    if reset_panel == nil then
         return
     end
-    pending_refresh = nil
-    refresh_surgery_ui(pending.reset_panel, true)
+    pending_reset = nil
+    refresh_surgery_ui(reset_panel, true)
 end
 
--- An accessor, not an exported variable: main.lua reads pending_refresh, and
+-- An accessor, not an exported variable: main.lua reads pending_reset, and
 -- exporting it in the return table below would export its value at load time --
 -- a permanent nil for every consumer.
 local function refresh_pending()
-    return pending_refresh ~= nil
+    return pending_reset ~= nil
 end
 
 -- The three callbacks the timers below take are built once, at load, and passed
@@ -422,7 +421,7 @@ end
 -- refresh_surgery_ui above.
 local function on_transaction_complete(mode)
     local reset_panel = mode ~= "implant"
-    pending_refresh = { reset_panel = reset_panel }
+    pending_reset = reset_panel
 
     -- Second path to the same armed refresh, for when the OnPassiveUpdate hook
     -- does not reach it. consume_pending_refresh runs at most once per arming.

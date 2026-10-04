@@ -46,9 +46,6 @@ local function announce_if_complete()
         end
         installed[#installed + 1] = entry.label
     end
-    if #installed == 0 then
-        return
-    end
     announced = true
     log(string.format("All %d hooks installed: %s.", #installed, table.concat(installed, ", ")))
 end
@@ -103,7 +100,7 @@ local function register(path, callback, label, note)
     local entry = {
         path = path,
         callback = callback,
-        label = label or path,
+        label = label,
         note = note,
         attempts = 0,
         registered = false,

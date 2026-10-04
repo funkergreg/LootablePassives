@@ -75,11 +75,7 @@ $stale = @()
 foreach ($t in $targets) {
     $source = @{}
     foreach ($rel in (Get-RelativePaths $t.From)) { $source[$rel] = $true }
-    foreach ($rel in (Get-RelativePaths $t.To)) {
-        if (-not $source.ContainsKey($rel)) {
-            $stale += [pscustomobject]@{ To = $t.To; Rel = $rel; Path = (Join-Path $t.To $rel) }
-        }
-    }
+    $stale += @(Get-StaleFiles -Destination $t.To -Keep $source)
 }
 
 if ($stale.Count -gt 0 -and -not $Force) {
@@ -92,14 +88,8 @@ if ($stale.Count -gt 0 -and -not $Force) {
 foreach ($t in $targets) {
     Write-Host "  $($t.From)"
     Write-Host "    -> $($t.To)"
-    foreach ($s in ($stale | Where-Object { $_.To -eq $t.To })) {
-        Write-Host "    delete $($s.Rel)"
-        if (-not $DryRun) { Remove-Item -LiteralPath $s.Path -Force }
-    }
-    if (-not $DryRun) {
-        New-Item -ItemType Directory -Force -Path $t.To | Out-Null
-        Copy-Item -Path (Join-Path $t.From '*') -Destination $t.To -Recurse -Force
-    }
+    Remove-StaleFiles -Stale @($stale | Where-Object { $_.To -eq $t.To }) -DryRun:$DryRun
+    if (-not $DryRun) { Copy-DirectoryContents -From $t.From -To $t.To }
     Remove-EmptyDirectories $t.To -DryRun:$DryRun
 }
 

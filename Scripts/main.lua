@@ -94,19 +94,22 @@ local function coalescer(work, delay)
     end
 end
 
+local gate_on = SETTINGS.surgery_ui_gate ~= false
 local schedule_gate_pass = coalescer(enforce_extraction_gate, 0)
 
 -- One callback, and it is the PRE-callback.
 --
 -- UE4SS does not run a post-callback for a Blueprint function hook, so the gate
--- work is deferred a frame from here.
+-- work is deferred a frame from here, and not scheduled at all with the gate off.
 --
 -- The context argument is the tab page: Update Button State is a method on
 -- WBP_OperatingTable_TabPage_C. Recorded on every firing, including those where
 -- a pass is already queued.
 local function on_update_button_state(context)
     note_live_page(unwrap(context))
-    schedule_gate_pass()
+    if gate_on then
+        schedule_gate_pass()
+    end
 end
 
 local schedule_refresh = coalescer(consume_pending_refresh, 0)
@@ -196,8 +199,8 @@ if conveyor_on then
 end
 schedule_recovery("mod startup")
 
--- Reported at load rather than found mid-transaction: extraction refuses
--- without a writable journal.
+-- Reported at load rather than found mid-transaction: every exchange refuses
+-- when its first journal write fails.
 if not journal_is_writable() then
     log(string.format(
         "WARNING: the recovery journal at %s is NOT writable, so extraction will refuse. "
@@ -220,5 +223,5 @@ log(string.format(
     .. "Conveyor extraction %s. Surgery Edit-button gate %s.",
     passives.MODULE_COUNT, extract_operations, insert_routes,
     conveyor_on and "on" or "off (conveyor_extraction = false in settings.lua)",
-    SETTINGS.surgery_ui_gate == false and "off (surgery_ui_gate = false in settings.lua)" or "on"
+    gate_on and "on" or "off (surgery_ui_gate = false in settings.lua)"
 ))

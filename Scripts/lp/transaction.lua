@@ -1,6 +1,6 @@
 -- Lootable Passives -- The exchange: capture, resolve, grant, remove.
 --
--- Call order in the extraction path: begin_journal("prepared"), add_implant,
+-- Call order in the extraction path: begin_journal (a "prepared" row), add_implant,
 -- write_journal("granted"), remove_skill, clear_journal. The module is created
 -- before the passive is removed. begin_journal settles any earlier row still on
 -- disk before writing over it.
@@ -14,6 +14,7 @@ local recovery = require("lp.recovery")
 local ui = require("lp.ui")
 local is_valid = util.is_valid
 local log = util.log
+local run_later = util.run_later
 local IMPLANT_TARGET = ids.IMPLANT_TARGET
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local clear_journal = journal.clear_journal
@@ -23,6 +24,7 @@ local counts = passives.counts
 local detect_added_lock = passives.detect_added_lock
 local detect_replaced_passive = passives.detect_replaced_passive
 local get_skill_ids = passives.get_skill_ids
+local has_skill = passives.has_skill
 local is_extractable = passives.is_extractable
 local module_for = passives.module_for
 local snapshot_all = passives.snapshot_all
@@ -33,6 +35,7 @@ local player_id_number = inventory.player_id_number
 local player_uid = inventory.player_uid
 local remove_skill = inventory.remove_skill
 local restore_replaced_passive = inventory.restore_replaced_passive
+local undo_swap = inventory.undo_swap
 local settle_before_exchange = recovery.settle_before_exchange
 local current_page = ui.current_page
 local on_transaction_complete = ui.on_transaction_complete
@@ -116,35 +119,68 @@ end
 -- request goes straight to the snapshot, and its record carries remote = true,
 -- which is what keeps finish off the local player's Surgery panel.
 local function capture_record(request_player_id)
-    if is_remote_request(request_player_id) then
-        local fallback_ok, fallback = pcall(snapshot_server_parameters, request_player_id)
-        if not fallback_ok or fallback == nil then
+    local remote = is_remote_request(request_player_id)
+    if not remote then
+        local succeeded, record = pcall(capture_targeted_record, request_player_id)
+        if succeeded and record ~= nil then
+            return record
+        end
+        if current_page() ~= nil then
             return nil
         end
-        fallback.remote = true
-        return fallback
-    end
-    local succeeded, record = pcall(capture_targeted_record, request_player_id)
-    if succeeded and record ~= nil then
-        return record
-    end
-    if current_page() ~= nil then
-        return nil
     end
     local fallback_ok, fallback = pcall(snapshot_server_parameters, request_player_id)
-    return fallback_ok and fallback or nil
+    if not fallback_ok or fallback == nil then
+        return nil
+    end
+    fallback.remote = remote or nil
+    return fallback
+end
+
+-- How a passive list neither detector matched has moved since the snapshot:
+-- "marker" when any marker's count rose, "vanilla" when the list differs in any
+-- other way, nil when it is unchanged or does not read. Compared element by
+-- element first, so an unchanged list builds no tables.
+local function unmatched_change(before_ids, after_ids)
+    if after_ids == nil then
+        return nil
+    end
+    if #before_ids == #after_ids then
+        local same = true
+        for index = 1, #before_ids do
+            if before_ids[index] ~= after_ids[index] then
+                same = false
+                break
+            end
+        end
+        if same then
+            return nil
+        end
+    end
+    local before = counts(before_ids)
+    for id, count in pairs(counts(after_ids)) do
+        if EXTRACTION_MODES[id] ~= nil and count > (before[id] or 0) then
+            return "marker"
+        end
+    end
+    return "vanilla"
 end
 
 -- Re-reads each snapshot's passive list and looks for one of two shapes: a
 -- passive replaced by a marker (detect_replaced_passive) or a marker added with
 -- nothing removed (detect_added_lock, recorded as stray). Returns the single
 -- candidate, or nil if none or more than one matched.
+--
+-- The second return is true when nothing matched, at least one list changed,
+-- and no marker's count rose in any of them: a vanilla operation that has
+-- already happened, so retrying cannot turn it into one of ours.
 local function resolve_record(record)
     if record == nil or record.snapshots == nil then
-        return nil
+        return nil, false
     end
 
     local resolved = nil
+    local vanilla_seen, marker_seen = false, false
     for _, snapshot in ipairs(record.snapshots) do
         if is_valid(snapshot.parameter) then
             local after_ids = get_skill_ids(snapshot.parameter)
@@ -163,10 +199,14 @@ local function resolve_record(record)
                 stray = lock ~= nil
             end
 
-            if lock ~= nil then
+            if lock == nil then
+                local change = unmatched_change(snapshot.before_ids, after_ids)
+                marker_seen = marker_seen or change == "marker"
+                vanilla_seen = vanilla_seen or change == "vanilla"
+            else
                 -- A second candidate is a refusal, not a choice.
                 if resolved ~= nil then
-                    return nil
+                    return nil, false
                 end
                 resolved = {
                     parameter = snapshot.parameter,
@@ -183,7 +223,7 @@ local function resolve_record(record)
             end
         end
     end
-    return resolved
+    return resolved, resolved == nil and vanilla_seen and not marker_seen
 end
 
 -- Narrower question than resolve_record: does any snapshot's passive list now
@@ -218,54 +258,71 @@ local function stranded_marker(record)
 end
 
 -- Logs the outcome. The panel refresh that follows it is
--- ui.on_transaction_complete, which reads mode and owns every timing decision
--- in it. Not called for a remote record: the panel is the local player's, and
--- the exchange was not.
-local function finish(record, message, mode)
+-- ui.on_transaction_complete, which reads record.mode and owns every timing
+-- decision in it. Not called for a remote record: the panel is the local
+-- player's, and the exchange was not.
+local function finish(record, message)
     log(message)
     if not record.remote then
-        on_transaction_complete(mode)
+        on_transaction_complete(record.mode)
     end
 end
 
--- The first row of an exchange. write_journal replaces whatever row is on disk,
--- so recovery.settle_before_exchange runs first, against the exchange's Pal and
--- its passive list before the swap. False when either refuses.
-local function begin_journal(parameter, before_ids, state, phase, passive_id, item_id, lock)
+-- The first row of an exchange, always "prepared". write_journal replaces
+-- whatever row is on disk, so recovery.settle_before_exchange runs first,
+-- against the exchange's Pal and its passive list before the swap. False when
+-- either refuses.
+local function begin_journal(parameter, before_ids, phase, passive_id, item_id, lock)
     return settle_before_exchange(parameter, before_ids)
-        and write_journal(state, phase, passive_id, item_id, lock)
+        and write_journal("prepared", phase, passive_id, item_id, lock)
 end
 
--- Is the marker still on the Pal?
-local function marker_attached(parameter, lock)
-    return count_id(get_skill_ids(parameter), lock) > 0
+-- The journal after an abort's undo, for both the extraction and the implant
+-- abort. undone is the undo's result.
+--
+-- on_disk says what this exchange has journalled:
+--   "keep"     its row is on disk and stays if the marker is still attached
+--   "replace"  its row is on disk and is rewritten as a stranded row if the
+--              marker is still attached; write_journal alone, since the row
+--              being replaced is this exchange's
+--   "write"    nothing is on disk and a stranded row may be written, through
+--              begin_journal, which settles an earlier row first
+--   "none"     the journal is unavailable
+-- The stranded row names record.passive_id, so recovery's replay finishes the
+-- undo.
+--
+-- Returns "off" when the undo succeeded or the marker is gone anyway, having
+-- cleared any row this exchange has on disk; "journalled" when the marker is
+-- still attached and a row stands for recovery; "unjournalled" when it is
+-- still attached and no row could stand.
+local function journal_after_undo(record, undone, on_disk)
+    if undone or not has_skill(record.parameter, record.lock) then
+        if on_disk == "keep" or on_disk == "replace" then
+            clear_journal()
+        end
+        return "off"
+    end
+    local journalled = on_disk == "keep"
+        or (on_disk == "replace"
+            and write_journal("prepared", "stranded", record.passive_id, nil, record.lock))
+        or (on_disk == "write" and begin_journal(record.parameter, record.before_ids,
+            "stranded", record.passive_id, nil, record.lock))
+    return journalled and "journalled" or "unjournalled"
 end
 
 -- Restores the passive the swap replaced, on an extraction abort, and reports
--- what happened for the log.
---
--- journal_row says what is on disk for this exchange: "own" when its
--- prepared/marker row is, "write" when nothing is and one may be written, "none"
--- when the journal is unavailable. If the restore fails while the marker is
--- still attached, that row is kept or a stranded row naming the passive is
--- written, so recovery retries the restore. Anything this exchange journalled is
--- cleared otherwise.
-local function restore_on_abort(record, journal_row)
-    if restore_replaced_passive(record.parameter, record.passive_id, record.lock) then
-        if journal_row == "own" then
-            clear_journal()
-        end
+-- what happened for the log. on_disk is as journal_after_undo takes it: "keep"
+-- for this exchange's prepared/marker row, whose replay is the restore.
+local function restore_on_abort(record, on_disk)
+    local restored = restore_replaced_passive(record.parameter, record.passive_id, record.lock)
+    local outcome = journal_after_undo(record, restored, on_disk)
+    if restored then
         return string.format("%s was restored", record.passive_id)
     end
-    if not marker_attached(record.parameter, record.lock) then
-        if journal_row == "own" then
-            clear_journal()
-        end
+    if outcome == "off" then
         return string.format("%s could NOT be restored and is lost", record.passive_id)
     end
-    if journal_row == "own" or (journal_row == "write" and begin_journal(record.parameter,
-            record.before_ids, "prepared", "stranded", record.passive_id, nil, record.lock))
-    then
+    if outcome == "journalled" then
         return string.format("%s could not be restored yet; journalled so the restore is retried "
             .. "on the next map load", record.passive_id)
     end
@@ -343,6 +400,87 @@ local function extract_all_remaining(record, bag)
     return extracted, skipped, false
 end
 
+--------------------------------------------------------------------------------
+-- Implant insertion
+--------------------------------------------------------------------------------
+
+-- Takes the alias off -- putting back the passive it overwrote, when it went
+-- into a filled slot -- and grants one module for target back. Returns whether
+-- the Pal is back as it was, and whether the module was refunded. Every abort in
+-- finalize_implant calls this.
+local function unwind_alias(record, target)
+    local undone = undo_swap(record.parameter, record.passive_id, record.lock)
+    local bag = find_inventory(record.request_player_id)
+    if not is_valid(bag) then
+        return undone, false
+    end
+    return undone, (add_implant(bag, module_for(target)))
+end
+
+-- A resolved record whose marker is an alias: replaces the alias with
+-- IMPLANT_TARGET[record.lock], or unwinds and refunds.
+local function finalize_implant(record)
+    local target = IMPLANT_TARGET[record.lock]
+    if target == nil then
+        remove_skill(record.parameter, record.lock)
+        -- No refund on this path. unwind_alias needs module_for(target) to name
+        -- the module, and target == nil is the definition of this branch.
+        -- Reachable only from a JSON route row with no IMPLANT_TARGET entry in
+        -- lp/ids.lua.
+        finish(record, string.format(
+            "ERROR: no target passive configured for alias %s; alias removed. The module "
+            .. "was spent and CANNOT be refunded -- nothing records which module it was. "
+            .. "This is a data fault: that route has no IMPLANT_TARGET entry.",
+            tostring(record.lock)))
+        return
+    end
+
+    -- Journalled as "prepared": the alias is on the Pal and the module is
+    -- already spent, so this is the entry recovery completes the swap from.
+    if not begin_journal(record.parameter, record.before_ids, "implant",
+            target, module_for(target), record.lock)
+    then
+        local undone, refunded = unwind_alias(record, target)
+        finish(record, string.format(
+            "ERROR: the recovery journal could not be written, so %s was not implanted. "
+            .. "Alias undone=%s, module refunded=%s.",
+            target, tostring(undone), tostring(refunded)))
+        return
+    end
+
+    -- Re-checked here rather than relying on the UI gate.
+    if count_id(record.before_ids, target) > 0 then
+        local undone, refunded = unwind_alias(record, target)
+        -- The prepared/implant row on disk replays by installing target, which
+        -- here is the duplicate, so it is never kept.
+        journal_after_undo(record, undone, "replace")
+        finish(record, string.format(
+            "Blocked a duplicate %s: this Pal already has it. Alias undone=%s, module refunded=%s.",
+            target, tostring(undone), tostring(refunded)))
+        return
+    end
+
+    if restore_replaced_passive(record.parameter, target, record.lock) then
+        clear_journal()
+        finish(record, string.format("Implanted %s from a disposable module for player %s (%s).",
+            target, tostring(player_id_number(record.request_player_id)), record.mode_source))
+    else
+        local undone, refunded = unwind_alias(record, target)
+        -- A module that was not refunded is still paid for, so the
+        -- prepared/implant row stays for recovery to retry the insert;
+        -- otherwise it is replaced by one that finishes the unwind.
+        journal_after_undo(record, undone, refunded and "replace" or "keep")
+        finish(record, string.format(
+            "ERROR: could not install %s from its module; alias undone=%s, module refunded=%s. "
+            .. "The gold was spent.",
+            target, tostring(undone), tostring(refunded)))
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Finalize
+--------------------------------------------------------------------------------
+
 -- 12 attempts at 250 ms. Each retry allocates one closure pair; see the note on
 -- coalescer() in main.lua before raising either number.
 local RESOLVE_ATTEMPTS = 12
@@ -352,17 +490,18 @@ local finalize_extraction
 
 -- Runs finalize_extraction(record, attempt) on the game thread after delay_ms.
 local function schedule_finalize(record, attempt, delay_ms)
-    ExecuteWithDelay(delay_ms, function()
-        ExecuteInGameThread(function()
-            finalize_extraction(record, attempt)
-        end)
-    end)
+    run_later(delay_ms, finalize_extraction, record, attempt)
 end
 
 function finalize_extraction(record, attempt)
-    local resolved = resolve_record(record)
+    local resolved, vanilla = resolve_record(record)
     if resolved == nil then
-        if attempt < RESOLVE_ATTEMPTS then
+        if vanilla then
+            -- The same outcome as running out of attempts with no marker, on
+            -- the first attempt that sees the change.
+            finish(record, "A passive list changed with no marker, so this was not one of our "
+                .. "operations; nothing was changed.")
+        elseif attempt < RESOLVE_ATTEMPTS then
             schedule_finalize(record, attempt + 1, RESOLVE_INTERVAL_MS)
         else
             -- Out of attempts. Nothing has been journalled for this exchange,
@@ -375,7 +514,7 @@ function finalize_extraction(record, attempt)
                     .. "nothing was changed.")
             else
                 local journalled = begin_journal(snapshot.parameter, snapshot.before_ids,
-                    "prepared", "stranded", snapshot.expect_passive_id, nil, lock)
+                    "stranded", snapshot.expect_passive_id, nil, lock)
                 finish(record, string.format(
                     "WARNING: the exchange could not be resolved and marker %s is stranded on "
                     .. "this Pal. Journalled=%s; if true it is cleaned up on the next map load.",
@@ -390,91 +529,7 @@ function finalize_extraction(record, attempt)
     -- stray test would match an alias in an empty slot, and is_extractable does
     -- not apply to an insert.
     if record.mode == "implant" then
-        local target = IMPLANT_TARGET[record.lock]
-        if target == nil then
-            remove_skill(record.parameter, record.lock)
-            -- No refund on this path. unwind_alias below needs
-            -- module_for(target) to name the module, and target == nil is the
-            -- definition of this branch. Reachable only from a JSON route row
-            -- with no IMPLANT_TARGET entry in lp/ids.lua.
-            finish(record, string.format(
-                "ERROR: no target passive configured for alias %s; alias removed. The module "
-                .. "was spent and CANNOT be refunded -- nothing records which module it was. "
-                .. "This is a data fault: that route has no IMPLANT_TARGET entry.",
-                tostring(record.lock)), record.mode)
-            return
-        end
-
-        -- Takes the alias off -- putting back the passive it overwrote, when it
-        -- went into a filled slot -- and grants one module back. Returns whether
-        -- the Pal is back as it was, and whether the module was refunded. Every
-        -- abort below calls this.
-        local function unwind_alias()
-            local undone
-            if record.passive_id ~= nil then
-                undone = restore_replaced_passive(record.parameter, record.passive_id, record.lock)
-            else
-                undone = remove_skill(record.parameter, record.lock)
-            end
-            local bag = find_inventory(record.request_player_id)
-            if not is_valid(bag) then
-                return undone, false
-            end
-            return undone, (add_implant(bag, module_for(target)))
-        end
-
-        -- After unwind_alias, on an abort made with this exchange's
-        -- prepared/implant row on disk, which recovery replays by installing
-        -- target. Cleared once the alias is off. With the alias still attached,
-        -- the row is kept when keep_insert is true, and otherwise rewritten as a
-        -- stranded row, which recovery replays by finishing the unwind.
-        local function settle_unwound(undone, keep_insert)
-            if undone or not marker_attached(record.parameter, record.lock) then
-                clear_journal()
-            elseif not keep_insert then
-                write_journal("prepared", "stranded", record.passive_id, nil, record.lock)
-            end
-        end
-
-        -- Journalled as "prepared": the alias is on the Pal and the module is
-        -- already spent, so this is the entry recovery completes the swap from.
-        if not begin_journal(record.parameter, record.before_ids, "prepared", "implant",
-                target, module_for(target), record.lock)
-        then
-            local undone, refunded = unwind_alias()
-            finish(record, string.format(
-                "ERROR: the recovery journal could not be written, so %s was not implanted. "
-                .. "Alias undone=%s, module refunded=%s.",
-                target, tostring(undone), tostring(refunded)), record.mode)
-            return
-        end
-
-        -- Re-checked here rather than relying on the UI gate.
-        if count_id(record.before_ids, target) > 0 then
-            local undone, refunded = unwind_alias()
-            -- Never keep_insert: installing target is the duplicate.
-            settle_unwound(undone, false)
-            finish(record, string.format(
-                "Blocked a duplicate %s: this Pal already has it. Alias undone=%s, module refunded=%s.",
-                target, tostring(undone), tostring(refunded)), record.mode)
-            return
-        end
-
-        if restore_replaced_passive(record.parameter, target, record.lock) then
-            clear_journal()
-            finish(record, string.format("Implanted %s from a disposable module for player %s (%s).",
-                    target, tostring(player_id_number(record.request_player_id)), record.mode_source),
-                record.mode)
-        else
-            local undone, refunded = unwind_alias()
-            -- A module that was not refunded is still paid for, so the insert
-            -- stays journalled for recovery to retry.
-            settle_unwound(undone, not refunded)
-            finish(record, string.format(
-                "ERROR: could not install %s from its module; alias undone=%s, module refunded=%s. "
-                .. "The gold was spent.",
-                target, tostring(undone), tostring(refunded)), record.mode)
-        end
+        finalize_implant(record)
         return
     end
 
@@ -484,7 +539,7 @@ function finalize_extraction(record, attempt)
             finish(record, "Nothing extracted: an empty slot was selected, so the marker was removed again.")
         else
             local journalled = begin_journal(record.parameter, record.before_ids,
-                "prepared", "stranded", nil, nil, record.lock)
+                "stranded", nil, nil, record.lock)
             finish(record, string.format(
                 "ERROR: an empty slot was selected and marker %s could not be removed. "
                 .. "Journalled=%s; if true it is cleared on the next map load.",
@@ -510,7 +565,7 @@ function finalize_extraction(record, attempt)
     --
     -- The begin_journal result is checked and a failure aborts before
     -- add_implant, so nothing is granted without an entry recording it.
-    if not begin_journal(record.parameter, record.before_ids, "prepared", "marker",
+    if not begin_journal(record.parameter, record.before_ids, "marker",
             record.passive_id, record.item_id, record.lock)
     then
         finish(record, string.format(
@@ -521,7 +576,7 @@ function finalize_extraction(record, attempt)
     local granted, reason = add_implant(bag, record.item_id)
     if not granted then
         finish(record, string.format("ERROR: implant grant failed for %s (%s); %s.",
-            record.passive_id, tostring(reason), restore_on_abort(record, "own")))
+            record.passive_id, tostring(reason), restore_on_abort(record, "keep")))
         return
     end
     if not write_journal("granted", "marker", record.passive_id, record.item_id, record.lock) then

@@ -29,12 +29,9 @@ local is_module_id = passives.is_module_id
 
 local LEDGER_PATH = util.UE4SS_ROOT .. "LootablePassives_pending.tsv"
 
--- Column layout stamp, per row. Bump when the columns change.
---
--- LPL2: version, owner, item id, count.
--- LPL1: version, item id, count. Still read, as ANY_OWNER rows.
+-- Column layout stamp, per row: version, owner, item id, count. Bump when the
+-- columns change.
 local LEDGER_VERSION = "LPL2"
-local LEDGER_VERSION_LEGACY = "LPL1"
 
 -- Per-row ceiling. A count is saturated here and the excess is logged and
 -- dropped.
@@ -42,8 +39,8 @@ local MAX_STACK = 9999
 
 -- owner UId key -> item id -> count owed.
 --
--- ANY_OWNER is the bucket for a Pal with no OwnerPlayerUId and for LPL1 rows.
--- ordered_for sends those to any candidate.
+-- ANY_OWNER is the bucket for a Pal with no OwnerPlayerUId. ordered_for sends
+-- those to any candidate.
 local ANY_OWNER = "*"
 local pending = {}
 local loaded = false
@@ -61,6 +58,13 @@ local function bucket_for(owner)
     return bucket
 end
 
+local function row_order(a, b)
+    if a.owner ~= b.owner then
+        return a.owner < b.owner
+    end
+    return a.item_id < b.item_id
+end
+
 -- Flattens pending into { owner, item_id, count } rows, sorted by owner then
 -- item id so the file is byte-stable between writes.
 local function pending_rows()
@@ -72,12 +76,7 @@ local function pending_rows()
             end
         end
     end
-    table.sort(rows, function(a, b)
-        if a.owner ~= b.owner then
-            return a.owner < b.owner
-        end
-        return a.item_id < b.item_id
-    end)
+    table.sort(rows, row_order)
     return rows
 end
 
@@ -97,9 +96,10 @@ local function total_owed()
     return total
 end
 
--- Writes every row, or removes the file when there are none.
-local function persist()
-    local rows = pending_rows()
+-- Writes rows, which must be what pending_rows() would return for pending now,
+-- or removes the file when there are none. Taken as an argument so a caller that
+-- already holds the sorted rows does not sort them again.
+local function persist(rows)
     if #rows == 0 then
         remove_file(LEDGER_PATH)
         return true
@@ -112,9 +112,10 @@ local function persist()
     return write_lines(LEDGER_PATH, lines, "pending-grant ledger")
 end
 
--- Reads the file once per session. A row is discarded if its stamp is neither
--- version, its count is not a positive number, or its item id is not one this
--- build defines -- is_module_id -- since such a row could never be delivered.
+-- Reads the file once per session. A row is discarded if its stamp is not
+-- LEDGER_VERSION, its count is not a positive number, or its item id is not one
+-- this build defines -- is_module_id -- since such a row could never be
+-- delivered.
 load = function()
     if loaded then
         return
@@ -128,20 +129,8 @@ load = function()
     for _, line in ipairs(lines) do
         local version, owner, item_id, count =
             line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
-        if version == nil then
-            -- Three columns: an LPL1 row, read as owned by nobody.
-            local legacy_version, legacy_item, legacy_count =
-                line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)$")
-            if legacy_version == LEDGER_VERSION_LEGACY then
-                version, owner, item_id, count =
-                    LEDGER_VERSION, ANY_OWNER, legacy_item, legacy_count
-            end
-        end
-        if owner == nil or owner == "" then
-            owner = ANY_OWNER
-        end
         local number = tonumber(count)
-        if version ~= LEDGER_VERSION or item_id == nil or number == nil or number <= 0
+        if version ~= LEDGER_VERSION or number == nil or number <= 0
             or not is_module_id(item_id)
         then
             discarded = discarded + 1
@@ -186,7 +175,7 @@ local function owe(owner, item_ids)
             "WARNING: pending %s is capped at %d; %d module(s) could not be recorded and are lost.",
             item_id, MAX_STACK, dropped))
     end
-    local written = persist()
+    local written = persist(pending_rows())
     disk_stale = not written
     if not written then
         -- In memory but not on disk: a restart loses it, so it is reported
@@ -241,11 +230,12 @@ local function ordered_for(owner, candidates)
     return {}
 end
 
--- Rewrites the file after a flush changed pending, or retries a rewrite that
--- failed earlier. A failure leaves delivered rows on disk, which load() would
--- read back and deliver again next session, so it is logged on every attempt.
-local function sync_after_flush()
-    disk_stale = not persist()
+-- Rewrites the file as rows after a flush changed pending, or retries a rewrite
+-- that failed earlier. rows is as persist takes it. A failure leaves delivered
+-- rows on disk, which load() would read back and deliver again next session, so
+-- it is logged on every attempt.
+local function sync_after_flush(rows)
+    disk_stale = not persist(rows)
     if disk_stale then
         log(string.format(
             "WARNING: could not rewrite the pending-grant ledger at %s after a delivery. It may "
@@ -262,23 +252,24 @@ end
 local function flush()
     load()
     local rows = pending_rows()
+    if disk_stale then
+        sync_after_flush(rows)
+    end
     if #rows == 0 then
-        if disk_stale then
-            sync_after_flush()
-        end
         return 0, 0, 0, 0
     end
     local candidates = inventory.delivery_candidates()
     if #candidates == 0 then
-        if disk_stale then
-            sync_after_flush()
-        end
         -- Distinct from every candidate failing, so it gets its own line.
-        log(string.format("No player inventory available; %d module(s) stay owed.", total_owed()))
-        return 0, total_owed(), 0, 0
+        local owed = total_owed()
+        log(string.format("No player inventory available; %d module(s) stay owed.", owed))
+        return 0, owed, 0, 0
     end
 
-    local delivered, spilled, held, changed = 0, 0, 0, false
+    local delivered, spilled, held = 0, 0, 0
+    -- The rows not delivered, in the order pending_rows sorted them, which is
+    -- what persist takes; built here so the rewrite below does not sort again.
+    local remaining = {}
     -- ordered_for's answer is memoised per owner: pending_rows sorts by owner,
     -- so a player with many owed item types partitions the candidate list once.
     local by_owner = {}
@@ -289,6 +280,7 @@ local function flush()
             by_owner[row.owner] = recipients
         end
         local reason = nil
+        local taken = false
         for _, candidate in ipairs(recipients) do
             local granted, detail = inventory.add_modules(candidate.data, row.item_id, row.count)
             if granted then
@@ -303,11 +295,14 @@ local function flush()
                 if detail == "spilled" then
                     spilled = spilled + row.count
                 end
-                changed = true
+                taken = true
                 reason = nil
                 break
             end
             reason = detail
+        end
+        if not taken then
+            remaining[#remaining + 1] = row
         end
         if #recipients == 0 then
             -- Counted, not logged: the caller reports the total once, where a
@@ -318,8 +313,8 @@ local function flush()
                 row.item_id, row.count, #recipients, tostring(reason)))
         end
     end
-    if changed or disk_stale then
-        sync_after_flush()
+    if #remaining < #rows then
+        sync_after_flush(remaining)
     end
     return delivered, total_owed(), spilled, held
 end

@@ -2,7 +2,7 @@
 --
 --   lua tools\ledger_test.lua
 --
--- The only automated test in this repo, and not a verifier for the JSON data.
+-- An automated test, but not a verifier for the JSON data.
 -- It covers the part of the mod with no engine call in it:
 -- owe/persist/load and ordered_for. lp.inventory is stubbed, so the assertions
 -- are about which candidate was chosen, never about an item existing.
@@ -97,6 +97,8 @@ for _, grant in ipairs(GRANTS) do by_item[grant.item_id] = grant.who end
 check("alice's modules went to alice", by_item["LP_Implant_Stamina_Up_1"], "alice")
 check("bob's modules went to the host", by_item["LP_Implant_Rare"], "host")
 check("unowned modules went to nobody", by_item["LP_Implant_Legend"], nil)
+check("file rewritten to the undelivered row only", read_file(path),
+    "LPL2\t*\tLP_Implant_Legend\t4\n")
 
 -- ...and goes to the one player once only one is online.
 GRANTS = {}
@@ -144,19 +146,6 @@ CANDIDATES = { { data = { name = "host" }, uid = nil } }
 delivered = ledger.flush()
 check("unreadable uid, lone player: delivered", delivered, 1)
 check("unreadable uid, lone player: recipient", GRANTS[1] and GRANTS[1].who, "host")
-
--- 5. An LPL1 ledger from an older build is read, not discarded.
-os.remove(path)
-local handle = assert(io.open(path, "w"))
-handle:write("LPL1\tLP_Implant_Rare\t2\n")
-handle:write("LPL1\tLP_Implant_NotAnItem\t9\n") -- unknown item: still discarded
-handle:close()
-ledger = fresh_ledger()
-check("LPL1 rows are read", ledger.total_owed(), 2)
-GRANTS = {}
-CANDIDATES = { { data = { name = "host" }, uid = BOB } }
-delivered = ledger.flush()
-check("LPL1 rows pay out to a lone player", delivered, 2)
 os.remove(path)
 
 print(failures == 0 and "\nALL PASS" or string.format("\n%d FAILURE(S)", failures))

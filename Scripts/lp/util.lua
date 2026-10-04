@@ -5,9 +5,8 @@
 -- reference, never `pcall(function() ... end)`. field() and method() are the
 -- general form.
 
-local SETTINGS = require("settings")
-
-local MOD_NAME = SETTINGS.mod_name
+-- The tag on every log line, and the filter the dev process reads UE4SS.log by.
+local MOD_NAME = "LootablePassives"
 
 -- The mod's Scripts\ folder, not this file's folder: the trailing lp\ is
 -- stripped. The separator is matched and put back, so a parent folder whose name
@@ -61,33 +60,6 @@ local function _call_key(object, key)
     return object[key](object)
 end
 
--- Read one property off an engine object, or call one of its zero-argument
--- methods. A read or call that raises returns nil. Neither unwraps the result.
---
--- method() IS FOR ZERO-ARGUMENT CALLS ONLY. Anything taking arguments stays
--- written out at its call site, where its arity is visible next to it.
-local function field(object, key)
-    if object == nil then
-        return nil
-    end
-    local succeeded, value = pcall(_index_key, object, key)
-    if not succeeded then
-        return nil
-    end
-    return value
-end
-
-local function method(object, key)
-    if object == nil then
-        return nil
-    end
-    local succeeded, value = pcall(_call_key, object, key)
-    if not succeeded then
-        return nil
-    end
-    return value
-end
-
 -- Calls :get() on a UE4SS parameter wrapper and returns the result; returns the
 -- value unchanged if it has no getter.
 local function unwrap(value)
@@ -102,6 +74,34 @@ local function unwrap(value)
         end
     end
     return value
+end
+
+-- Read one property off an engine object, or call one of its zero-argument
+-- methods, and return the result through unwrap. A read or call that raises
+-- returns nil, as does a nil object.
+--
+-- method() IS FOR ZERO-ARGUMENT CALLS ONLY. Anything taking arguments stays
+-- written out at its call site, where its arity is visible next to it.
+local function field(object, key)
+    if object == nil then
+        return nil
+    end
+    local succeeded, value = pcall(_index_key, object, key)
+    if not succeeded then
+        return nil
+    end
+    return unwrap(value)
+end
+
+local function method(object, key)
+    if object == nil then
+        return nil
+    end
+    local succeeded, value = pcall(_call_key, object, key)
+    if not succeeded then
+        return nil
+    end
+    return unwrap(value)
 end
 
 -- UE4SS's own IsValid(), through unwrap. False for nil and for a call that
@@ -129,8 +129,11 @@ local function name_to_string(value)
 end
 
 -- An FGuid as a comparable string, from its four int32s. Property reads only.
+-- Takes the GUID as field() returns it, already unwrapped; every caller reads it
+-- that way.
 --
--- Returns nil for the null GUID, so two unresolved GUIDs never compare equal.
+-- Returns nil for the null GUID and for nil, so two unresolved GUIDs never
+-- compare equal.
 --
 -- Lives here because the two GUIDs it is used on come from different places --
 -- OwnerPlayerUId on a Pal's SaveParameter, PlayerUId on APalPlayerState -- and
@@ -140,7 +143,6 @@ local function _guid_parts(guid)
 end
 
 local function guid_key(guid)
-    guid = unwrap(guid)
     if guid == nil then
         return nil
     end
@@ -221,11 +223,28 @@ local function has_authority(actor)
 end
 
 --------------------------------------------------------------------------------
+-- Scheduling
+--------------------------------------------------------------------------------
+
+-- Runs fn(a, b) on the game thread after delay_ms, through ExecuteWithDelay and
+-- then ExecuteInGameThread.
+--
+-- ALLOCATES TWO CLOSURES PER CALL, so it is for one-off work, never a per-frame
+-- path; that is main.lua's coalescer().
+local function run_later(delay_ms, fn, a, b)
+    ExecuteWithDelay(delay_ms, function()
+        ExecuteInGameThread(function()
+            fn(a, b)
+        end)
+    end)
+end
+
+--------------------------------------------------------------------------------
 -- Files
 --------------------------------------------------------------------------------
 --
 -- io and os are guarded on every use here, and every read, write and delete in
--- the mod goes through these three functions. Parsing stays with whoever owns
+-- the mod goes through these four functions. Parsing stays with whoever owns
 -- the format.
 
 -- Every line of a file, or nil if it could not be opened. An empty file returns
@@ -255,6 +274,25 @@ local function remove_file(path)
         return false
     end
     return (pcall(os.remove, path))
+end
+
+-- Opens path for append, which creates it, and returns whether that worked. A
+-- zero-byte file -- one this probe created -- is removed again; its size is
+-- measured while the handle is still open.
+local function is_writable(path)
+    if io == nil or type(io.open) ~= "function" then
+        return false
+    end
+    local opened, handle = pcall(io.open, path, "a")
+    if not opened or handle == nil then
+        return false
+    end
+    local sized, size = pcall(handle.seek, handle, "end")
+    pcall(handle.close, handle)
+    if sized and size == 0 then
+        remove_file(path)
+    end
+    return true
 end
 
 -- file:write and file:flush report an I/O failure by returning nil and a
@@ -304,11 +342,13 @@ return {
     guid_key = guid_key,
     has_authority = has_authority,
     is_valid = is_valid,
+    is_writable = is_writable,
     log = log,
     method = method,
     name_to_string = name_to_string,
     read_lines = read_lines,
     remove_file = remove_file,
+    run_later = run_later,
     unwrap = unwrap,
     write_lines = write_lines,
 }

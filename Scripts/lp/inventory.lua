@@ -42,13 +42,10 @@ local function find_player_state(request_player_id)
         if is_valid(state) then
             state_count = state_count + 1
             only_state = state
-            -- The pcall wraps the COMPARISON, not just the read, so an
-            -- unreadable PlayerId cannot compare equal to an absent wanted id.
-            local matched = false
-            pcall(function()
-                matched = player_id_number(state.PlayerId) == wanted
-            end)
-            if matched then
+            -- An unreadable PlayerId reads as nil and never matches, including
+            -- an absent wanted id.
+            local id = player_id_number(field(state, "PlayerId"))
+            if id ~= nil and id == wanted then
                 return state
             end
         end
@@ -62,18 +59,29 @@ local function find_player_state(request_player_id)
     return nil
 end
 
+-- The character's PalPlayerState, through GetPalPlayerController() and the
+-- controller's PlayerState property, or nil when either does not read as valid.
+local function player_state_of(character)
+    local controller = method(character, "GetPalPlayerController")
+    if not is_valid(controller) then
+        return nil
+    end
+    local state = field(controller, "PlayerState")
+    if is_valid(state) then
+        return state
+    end
+    return nil
+end
+
 -- The PlayerId of the locally controlled player, or nil when no character reads
 -- as locally controlled or its PlayerState cannot be read. A dedicated server
 -- has no local player.
 local function local_player_id()
     for _, character in ipairs(find_all("PalPlayerCharacter")) do
         if is_valid(character) and method(character, "IsLocallyControlled") == true then
-            local controller = unwrap(method(character, "GetPalPlayerController"))
-            if is_valid(controller) then
-                local state = unwrap(field(controller, "PlayerState"))
-                if is_valid(state) then
-                    return player_id_number(field(state, "PlayerId"))
-                end
+            local state = player_state_of(character)
+            if state ~= nil then
+                return player_id_number(field(state, "PlayerId"))
             end
         end
     end
@@ -85,7 +93,7 @@ local function find_inventory(request_player_id)
     if not is_valid(state) then
         return nil
     end
-    local bag = unwrap(method(state, "GetInventoryData"))
+    local bag = method(state, "GetInventoryData")
     if is_valid(bag) then
         return bag
     end
@@ -111,20 +119,13 @@ end
 local function delivery_candidates()
     local found = {}
     for _, character in ipairs(find_all("PalPlayerCharacter")) do
-        if is_valid(character) then
-            local data, uid = nil, nil
-            local controller = unwrap(method(character, "GetPalPlayerController"))
-            if is_valid(controller) then
-                local state = unwrap(field(controller, "PlayerState"))
-                if is_valid(state) then
-                    data = unwrap(method(state, "GetInventoryData"))
-                    -- Property read on APalPlayerState (Pal.hpp: FGuid
-                    -- PlayerUId at 0x0598), not a call.
-                    uid = guid_key(field(state, "PlayerUId"))
-                end
-            end
+        local state = is_valid(character) and player_state_of(character) or nil
+        if state ~= nil then
+            local data = method(state, "GetInventoryData")
             if is_valid(data) then
-                found[#found + 1] = { data = data, uid = uid }
+                -- Property read on APalPlayerState (Pal.hpp: FGuid PlayerUId at
+                -- 0x0598), not a call.
+                found[#found + 1] = { data = data, uid = guid_key(field(state, "PlayerUId")) }
             end
         end
     end
@@ -169,6 +170,20 @@ local function item_count(data, name)
     return -1
 end
 
+-- Built once and passed to pcall by reference, like the accessors in
+-- lp/util.lua.
+local function _call_add_item(data, name, count)
+    return data:AddItem_ServerInternal(name, count, false, 0.0, true)
+end
+
+local function _call_remove_passive(parameter, name)
+    parameter:RemovePassiveSkill(name)
+end
+
+local function _call_add_passive(parameter, add_name, override_name)
+    parameter:AddPassiveSkill(add_name, override_name)
+end
+
 -- The only item-creation call in the mod. Returns ok, detail.
 --
 -- AddItem_ServerInternal(FName, Count, bool, float, bool). The count is honoured
@@ -187,9 +202,7 @@ local function add_modules(data, item_id, count)
     -- One FName for all three calls: constructing it is a name-table lookup.
     local name = FName(item_id)
     local before = item_count(data, name)
-    local succeeded, result = pcall(function()
-        return data:AddItem_ServerInternal(name, count, false, 0.0, true)
-    end)
+    local succeeded, result = pcall(_call_add_item, data, name, count)
     if not succeeded then
         return false, "call raised an error"
     end
@@ -210,20 +223,16 @@ local function add_implant(data, item_id)
     return add_modules(data, item_id, 1)
 end
 
--- RemovePassiveSkill(FName). Returns true when the count of skill_id in the
--- passive list fell.
+-- RemovePassiveSkill(FName). Returns true when the call did not raise and
+-- skill_id is absent from the passive list afterwards, including when it was
+-- absent before.
 local function remove_skill(parameter, skill_id)
-    local before = get_skill_ids(parameter)
-    if before == nil then
+    if not is_valid(parameter) then
         return false
     end
-    local succeeded = pcall(function()
-        parameter:RemovePassiveSkill(FName(skill_id))
-    end)
+    local succeeded = pcall(_call_remove_passive, parameter, FName(skill_id))
     local after = get_skill_ids(parameter)
-    return succeeded
-        and after ~= nil
-        and count_id(after, skill_id) < count_id(before, skill_id)
+    return succeeded and after ~= nil and count_id(after, skill_id) == 0
 end
 
 -- Replaces one of our markers with a passive.
@@ -240,10 +249,9 @@ local function restore_replaced_passive(parameter, passive_id, extraction_mode)
     if before == nil then
         return false
     end
-    pcall(function() parameter:RemovePassiveSkill(FName(extraction_mode)) end)
-    local succeeded = pcall(function()
-        parameter:AddPassiveSkill(FName(passive_id), FName(extraction_mode))
-    end)
+    local marker = FName(extraction_mode)
+    pcall(_call_remove_passive, parameter, marker)
+    local succeeded = pcall(_call_add_passive, parameter, FName(passive_id), marker)
     local after = get_skill_ids(parameter)
 
     local restored = succeeded
@@ -262,6 +270,16 @@ local function restore_replaced_passive(parameter, passive_id, extraction_mode)
     return restored
 end
 
+-- Takes the marker lock off the Pal: restore_replaced_passive when passive_id
+-- names the passive it replaced, remove_skill when it is nil. Returns that call's
+-- result.
+local function undo_swap(parameter, passive_id, lock)
+    if passive_id ~= nil then
+        return restore_replaced_passive(parameter, passive_id, lock)
+    end
+    return remove_skill(parameter, lock)
+end
+
 return {
     add_implant = add_implant,
     add_modules = add_modules,
@@ -272,4 +290,5 @@ return {
     player_uid = player_uid,
     remove_skill = remove_skill,
     restore_replaced_passive = restore_replaced_passive,
+    undo_swap = undo_swap,
 }

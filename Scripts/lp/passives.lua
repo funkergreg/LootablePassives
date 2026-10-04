@@ -14,7 +14,6 @@ local guid_key = util.guid_key
 local is_valid = util.is_valid
 local method = util.method
 local name_to_string = util.name_to_string
-local unwrap = util.unwrap
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 
 --------------------------------------------------------------------------------
@@ -63,15 +62,17 @@ local function get_skill_ids(parameter)
     return skill_ids
 end
 
--- The Pal's IndividualId.InstanceId as a comparable string, or nil when it does
--- not read. Property reads only (Pal.hpp: FPalInstanceID IndividualId at 0x0320
--- on UPalIndividualCharacterParameter), through util.guid_key.
+-- An FPalInstanceID, as field() returns it, turned into its InstanceId GUID as a
+-- comparable string, or nil when either does not read. Property reads only,
+-- through util.guid_key.
+local function instance_key(instance_id)
+    return guid_key(field(instance_id, "InstanceId"))
+end
+
+-- The Pal's IndividualId as instance_key reads it (Pal.hpp: FPalInstanceID
+-- IndividualId at 0x0320 on UPalIndividualCharacterParameter).
 local function pal_key(parameter)
-    local individual = unwrap(field(parameter, "IndividualId"))
-    if individual == nil then
-        return nil
-    end
-    return guid_key(field(individual, "InstanceId"))
+    return instance_key(field(parameter, "IndividualId"))
 end
 
 -- The Pal's OwnerPlayerUId as a comparable string, or nil when it reads as the
@@ -81,11 +82,7 @@ end
 -- property reads. GetSaveParameter() returns the struct by value and is not
 -- called.
 local function owner_key(parameter)
-    local save = unwrap(field(parameter, "SaveParameter"))
-    if save == nil then
-        return nil
-    end
-    return guid_key(field(save, "OwnerPlayerUId"))
+    return guid_key(field(field(parameter, "SaveParameter"), "OwnerPlayerUId"))
 end
 
 -- Every PalIndividualCharacterParameter in the world, as
@@ -129,6 +126,26 @@ local function count_id(skill_ids, wanted)
     return total
 end
 
+-- Does the parameter's passive list hold id? False when the list does not read.
+-- Walks GetPassiveSkillList() in place rather than through get_skill_ids, so it
+-- builds no table: the Surgery gate asks this every frame while an implant is
+-- pending.
+local function has_skill(parameter, id)
+    if not is_valid(parameter) then
+        return false
+    end
+    local skills = method(parameter, "GetPassiveSkillList")
+    if skills == nil then
+        return false
+    end
+    for index = 1, array_count(skills) do
+        if name_to_string(skills[index]) == id then
+            return true
+        end
+    end
+    return false
+end
+
 -- True when the id is a real passive -- not nil, not "None", not one of this
 -- mod's markers or aliases -- and has an entry in passive_items.lua.
 --
@@ -148,28 +165,11 @@ end
 -- from an ordinary surgery.
 local function gained_lock(before, after)
     local gained
-    local function examine(id)
-        if EXTRACTION_MODES[id] == nil then
-            return true
-        end
+    for id in pairs(EXTRACTION_MODES) do
         local delta = (after[id] or 0) - (before[id] or 0)
-        if delta == 1 then
-            if gained ~= nil then
-                return false
-            end
+        if delta == 1 and gained == nil then
             gained = id
         elseif delta ~= 0 then
-            return false
-        end
-        return true
-    end
-    for id in pairs(after) do
-        if not examine(id) then
-            return nil
-        end
-    end
-    for id in pairs(before) do
-        if after[id] == nil and not examine(id) then
             return nil
         end
     end
@@ -256,6 +256,8 @@ return {
     detect_added_lock = detect_added_lock,
     detect_replaced_passive = detect_replaced_passive,
     get_skill_ids = get_skill_ids,
+    has_skill = has_skill,
+    instance_key = instance_key,
     is_extractable = is_extractable,
     is_module_id = is_module_id,
     module_for = module_for,

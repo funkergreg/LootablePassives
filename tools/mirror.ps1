@@ -5,7 +5,10 @@
 
 .DESCRIPTION
     Get-RelativePaths       paths under a root, relative to that root
+    Get-StaleFiles          destination files with no counterpart in a kept set
     Stop-OnStale            lists stale files and ends the calling script
+    Remove-StaleFiles       deletes what Get-StaleFiles returned
+    Copy-DirectoryContents  copies one directory's contents into another
     Remove-EmptyDirectories deletes directories left holding nothing
 #>
 
@@ -25,6 +28,26 @@ function Get-RelativePaths {
         Get-ChildItem -LiteralPath $Root -Recurse -File -Force
     }
     return @($items | ForEach-Object { $_.FullName.Substring($prefix.Length) })
+}
+
+# Every file under $Destination whose relative path $Keep does not contain, as
+# objects with To ($Destination), Rel and Path. $Keep is anything with a
+# Contains method -- a hashtable or a HashSet. Relative paths in $Exclude are
+# skipped.
+function Get-StaleFiles {
+    param(
+        [string] $Destination,
+        $Keep,
+        [string[]] $Exclude = @()
+    )
+    $stale = @()
+    foreach ($rel in (Get-RelativePaths $Destination)) {
+        if ($Exclude -contains $rel) { continue }
+        if (-not $Keep.Contains($rel)) {
+            $stale += [pscustomobject]@{ To = $Destination; Rel = $rel; Path = (Join-Path $Destination $rel) }
+        }
+    }
+    return $stale
 }
 
 # Prints $Heading as a warning, one line per entry of $Listing, then $Message,
@@ -48,6 +71,29 @@ function Stop-OnStale {
         exit 0
     }
     exit 1
+}
+
+# Prints and deletes each entry of $Stale, as Get-StaleFiles returns them. Under
+# -DryRun it prints and deletes nothing.
+function Remove-StaleFiles {
+    param(
+        [object[]] $Stale,
+        [switch] $DryRun
+    )
+    foreach ($s in $Stale) {
+        Write-Host "    delete $($s.Rel)"
+        if (-not $DryRun) { Remove-Item -LiteralPath $s.Path -Force }
+    }
+}
+
+# Creates $To if needed and copies everything under $From into it, overwriting.
+function Copy-DirectoryContents {
+    param(
+        [string] $From,
+        [string] $To
+    )
+    New-Item -ItemType Directory -Force -Path $To | Out-Null
+    Copy-Item -Path (Join-Path $From '*') -Destination $To -Recurse -Force
 }
 
 # Deletes directories under $Root that hold nothing, deepest first, so that a

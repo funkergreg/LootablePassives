@@ -5,8 +5,6 @@
 -- Prices are not here either and are not configurable.
 
 return {
-    mod_name = "LootablePassives",
-
     -- Pal Disassembly Conveyor extraction: on or off.
     --
     -- False stops lp/conveyor.lua's hooks being registered at all. Read in one
@@ -21,9 +19,9 @@ return {
     -- A KILL SWITCH, kept because this is the only part of the mod that writes
     -- to a UI widget while the player is looking at it, on a hook that fires
     -- for as long as the screen is open. If the Surgery screen ever misbehaves
-    -- on someone's install, this is the first thing to turn off. False makes
-    -- enforce_extraction_gate return immediately, which removes that writing
-    -- without changing anything else: the tab page is still recorded, so
+    -- on someone's install, this is the first thing to turn off. False stops
+    -- main.lua scheduling enforce_extraction_gate at all, which removes that
+    -- writing without changing anything else: the tab page is still recorded, so
     -- extraction, insertion and the panel repaint are unaffected.
     --
     -- What is lost is the gate's refusal of a click that cannot succeed -- an

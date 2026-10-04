@@ -271,13 +271,7 @@ else {
 # Mirror
 #-------------------------------------------------------------------------------
 
-$stale = @()
-foreach ($relative in (Get-RelativePaths $Destination)) {
-    if ($UPLOADER_OWNED -contains $relative) { continue }
-    if (-not $stagedRelative.Contains($relative)) {
-        $stale += [pscustomobject]@{ Rel = $relative; Path = (Join-Path $Destination $relative) }
-    }
-}
+$stale = @(Get-StaleFiles -Destination $Destination -Keep $stagedRelative -Exclude $UPLOADER_OWNED)
 
 if ($stale.Count -gt 0 -and -not $Force) {
     Stop-OnStale -DryRun:$DryRun `
@@ -311,10 +305,7 @@ foreach ($rule in @($info.InstallRule)) {
 }
 Write-Host ""
 
-foreach ($s in $stale) {
-    Write-Host "    delete $($s.Rel)"
-    if (-not $DryRun) { Remove-Item -LiteralPath $s.Path -Force }
-}
+Remove-StaleFiles -Stale $stale -DryRun:$DryRun
 
 foreach ($entry in $ALLOWLIST) {
     $source = Join-Path $repo $entry
@@ -322,8 +313,7 @@ foreach ($entry in $ALLOWLIST) {
     Write-Host "    stage  $entry"
     if ($DryRun) { continue }
     if (Test-Path $source -PathType Container) {
-        New-Item -ItemType Directory -Force -Path $target | Out-Null
-        Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
+        Copy-DirectoryContents -From $source -To $target
     }
     else {
         $parent = Split-Path -Parent $target
