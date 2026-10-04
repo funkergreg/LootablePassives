@@ -72,7 +72,7 @@ local text = read_file(path)
 check("row count on disk", select(2, text:gsub("\n", "\n")), 3)
 check("alice row present",
     text:find("LPL2\t1%-2%-3%-4\tLP_Implant_Stamina_Up_1\t3") ~= nil, true)
-check("unowned row uses the sentinel",
+check("unowned row uses the lock",
     text:find("LPL2\t%*\tLP_Implant_Legend\t4") ~= nil, true)
 
 -- Loading is LAZY and no longer a public step: nothing is read off disk until

@@ -74,19 +74,35 @@ local function pal_key(parameter)
     return guid_key(field(individual, "InstanceId"))
 end
 
--- Every PalIndividualCharacterParameter in the world, as
--- { parameter = ..., before_ids = { id, ... } }.
+-- The Pal's OwnerPlayerUId as a comparable string, or nil when it reads as the
+-- null GUID.
 --
--- One walk of the object pool, shared by the dedicated-server capture in
+-- OwnerPlayerUId is on the individual's SaveParameter struct, so this is two
+-- property reads. GetSaveParameter() returns the struct by value and is not
+-- called.
+local function owner_key(parameter)
+    local save = unwrap(field(parameter, "SaveParameter"))
+    if save == nil then
+        return nil
+    end
+    return guid_key(field(save, "OwnerPlayerUId"))
+end
+
+-- Every PalIndividualCharacterParameter in the world, as
+-- { parameter = ..., before_ids = { id, ... } }. With owner, only those whose
+-- owner_key equals it; a Pal whose owner does not read is left out.
+--
+-- One walk of the object pool, shared by the owner-filtered capture in
 -- lp/transaction.lua and the sweep in lp/recovery.lua. It is the most expensive
--- engine call in the mod; both callers run it only on a path where something has
--- already failed. get_skill_ids does its own is_valid.
-local function snapshot_all()
+-- engine call in the mod. get_skill_ids does its own is_valid.
+local function snapshot_all(owner)
     local found = {}
     for _, parameter in ipairs(find_all("PalIndividualCharacterParameter")) do
-        local skill_ids = get_skill_ids(parameter)
-        if skill_ids ~= nil then
-            found[#found + 1] = { parameter = parameter, before_ids = skill_ids }
+        if owner == nil or owner_key(parameter) == owner then
+            local skill_ids = get_skill_ids(parameter)
+            if skill_ids ~= nil then
+                found[#found + 1] = { parameter = parameter, before_ids = skill_ids }
+            end
         end
     end
     return found
@@ -243,6 +259,7 @@ return {
     is_extractable = is_extractable,
     is_module_id = is_module_id,
     module_for = module_for,
+    owner_key = owner_key,
     pal_key = pal_key,
     snapshot_all = snapshot_all,
 }

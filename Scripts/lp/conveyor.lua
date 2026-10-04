@@ -60,6 +60,7 @@ local unwrap = util.unwrap
 local get_skill_ids = passives.get_skill_ids
 local is_extractable = passives.is_extractable
 local module_for = passives.module_for
+local owner_key = passives.owner_key
 
 local PROCEED_HOOK =
 "/Script/Pal.PalBuildObjectConvertCharacterToItem:OnProceedConvertProcess_ServerInternal"
@@ -81,20 +82,6 @@ local function instance_key(instance_id)
         return nil
     end
     return guid_key(field(instance_id, "InstanceId"))
-end
-
--- The Pal's OwnerPlayerUId as a comparable string, or nil when it reads as the
--- null GUID.
---
--- OwnerPlayerUId is on the individual's SaveParameter struct, so this is two
--- property reads. GetSaveParameter() returns the struct by value and is not
--- called.
-local function owner_key(parameter)
-    local save = unwrap(field(parameter, "SaveParameter"))
-    if save == nil then
-        return nil
-    end
-    return guid_key(field(save, "OwnerPlayerUId"))
 end
 
 --------------------------------------------------------------------------------

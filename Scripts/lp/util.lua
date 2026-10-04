@@ -134,7 +134,7 @@ end
 --
 -- Lives here because the two GUIDs it is used on come from different places --
 -- OwnerPlayerUId on a Pal's SaveParameter, PlayerUId on APalPlayerState -- and
--- lp/ledger.lua compares them against each other.
+-- lp/ledger.lua and passives.snapshot_all compare them against each other.
 local function _guid_parts(guid)
     return unwrap(guid.A), unwrap(guid.B), unwrap(guid.C), unwrap(guid.D)
 end

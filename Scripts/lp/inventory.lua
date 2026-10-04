@@ -92,6 +92,18 @@ local function find_inventory(request_player_id)
     return nil
 end
 
+-- The requester's PlayerUId as a comparable string, from the PalPlayerState
+-- find_player_state picks, or nil when no state is picked or its PlayerUId reads
+-- as the null GUID. Property read (Pal.hpp: FGuid PlayerUId at 0x0598 on
+-- APalPlayerState), not a call.
+local function player_uid(request_player_id)
+    local state = find_player_state(request_player_id)
+    if not is_valid(state) then
+        return nil
+    end
+    return guid_key(field(state, "PlayerUId"))
+end
+
 -- Every player with a reachable inventory, as
 -- { data = <inventory>, uid = <PlayerUId key or nil> }, in FindAllOf order.
 --
@@ -257,6 +269,7 @@ return {
     delivery_candidates = delivery_candidates,
     local_player_id = local_player_id,
     player_id_number = player_id_number,
+    player_uid = player_uid,
     remove_skill = remove_skill,
     restore_replaced_passive = restore_replaced_passive,
 }

@@ -30,6 +30,7 @@ local add_implant = inventory.add_implant
 local find_inventory = inventory.find_inventory
 local local_player_id = inventory.local_player_id
 local player_id_number = inventory.player_id_number
+local player_uid = inventory.player_uid
 local remove_skill = inventory.remove_skill
 local restore_replaced_passive = inventory.restore_replaced_passive
 local settle_before_exchange = recovery.settle_before_exchange
@@ -78,13 +79,25 @@ local function capture_targeted_record(request_player_id)
     }
 end
 
--- Snapshots every PalIndividualCharacterParameter in the world, via
--- passives.snapshot_all, which crash recovery also calls.
+-- Snapshots every PalIndividualCharacterParameter in the world whose
+-- OwnerPlayerUId is the requester's PlayerUId, via passives.snapshot_all, which
+-- crash recovery also calls unfiltered. Returns nil, and logs, when the
+-- requester's PlayerUId does not read: an unfiltered snapshot would resolve to a
+-- marker swap on any player's Pal and grant its module to this requester.
 local function snapshot_server_parameters(request_player_id)
+    local owner = player_uid(request_player_id)
+    if owner == nil then
+        log(string.format(
+            "WARNING: could not read the PlayerUId of requesting player %s, so this Surgery Table "
+            .. "request was not tracked. If it was one of this mod's operations, its marker stays on "
+            .. "the Pal and nothing was granted.",
+            tostring(player_id_number(request_player_id))))
+        return nil
+    end
     return {
-        snapshots = snapshot_all(),
+        snapshots = snapshot_all(owner),
         request_player_id = request_player_id,
-        mode_source = "whole-world snapshot",
+        mode_source = "owner snapshot",
     }
 end
 
@@ -98,7 +111,7 @@ local function is_remote_request(request_player_id)
 end
 
 -- For a request from the local player, tries capture_targeted_record first and
--- falls through to the whole-world snapshot only when there is no tab page at
+-- falls through to the owner snapshot only when there is no tab page at
 -- all; a page that is present and yielded nothing returns nil instead. A remote
 -- request goes straight to the snapshot, and its record carries remote = true,
 -- which is what keeps finish off the local player's Surgery panel.

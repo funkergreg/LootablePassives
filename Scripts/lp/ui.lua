@@ -111,8 +111,8 @@ local function note_live_page(widget)
     if not context_warning_reported then
         context_warning_reported = true
         log("WARNING: the Update Button State hook did not hand us a usable tab page. The "
-            .. "Edit-button gate cannot run, and extraction falls back to the whole-world "
-            .. "snapshot to work out what was swapped. The transaction enforces every rule the "
+            .. "Edit-button gate cannot run, and extraction falls back to a snapshot "
+            .. "of the requester's Pals to work out what was swapped. The transaction enforces every rule the "
             .. "gate does either way, so operations still behave; the click is simply not "
             .. "refused at the button, and the gold is spent before the refusal.")
     end
