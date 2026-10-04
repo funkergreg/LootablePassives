@@ -1,10 +1,10 @@
 {
   "ModName": "Lootable Passives",
   "PackageName": "LootablePassives",
-  "Version": "1.0.2",
-  "DebugMode": false,
+  "Version": "1.0.3",
+  "DebugMode": true,
   "MinRevision": 102999,
-  "Author": "funkergreg",
+  "Author": "FunkerGreg",
   "Thumbnail": "thumbnail.png",
   "Dependencies": ["UE4SSExperimentalPW", "PalSchema"],
   "Tags": ["PalSchema", "UE4SS", "Gameplay", "Utilities"],

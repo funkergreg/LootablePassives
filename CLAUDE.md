@@ -20,7 +20,7 @@ This repo contains a Palworld mod.
 | --- | --- | --- |
 | Scripts/ | Lua runtime (main.lua, settings.lua, lp/*.lua) | ships |
 | PalSchemaMods/LootablePassives/ | JSON data patches: items, DataTable rows, English strings | ships |
-| tools/ | stage.ps1, stage_test.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
+| tools/ | stage.ps1, test_staging.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
 | package.json | declares luaparse for tools/luacheck.js | dev only-do not ship |
 | CLAUDE.md | Agent guidance | dev only-do not ship |
 | README.md | GitHub page for the development repo | dev only-do not ship |
@@ -92,7 +92,7 @@ The human-facing version of this process, including publishing, is the `Developm
 node tools\luacheck.js            # Lua parse check
 luacheck Scripts                  # static analysis
 lua tools\ledger_test.lua         # after any lp/ledger.lua edit
-.\tools\stage_test.ps1            # after any tools/stage.ps1 edit
+.\tools\test_staging.ps1            # after any tools/stage.ps1 edit
 .\tools\stage.ps1                 # dev build: patch + 1, DebugMode true
 .\tools\stage.ps1 -Publish        # release: minor + 1, patch 0, DebugMode false
 # ... Upload To Steam, restart Palworld on both machines, read the log ...
@@ -114,7 +114,7 @@ lua tools\ledger_test.lua         # after any lp/ledger.lua edit
 - luacheck Scripts is the real static analyzer. Baseline is 0 warnings / 0 errors.
 - lua tools\ledger_test.lua tests the mod. Run after ANY lp/ledger.lua edit.
   - `ledger_test.lua` is a behaviour test for one insertion, not a data verifier: it stubs `lp.inventory` and asserts the ledger's TSV round-trip and which candidate a row is delivered to. It exists because that logic is the only part of the mod with no engine call in it.
-- .\tools\stage_test.ps1 tests the stage script. Run after ANY tools/stage.ps1 edit, and add a case for any behaviour you add. It runs a copy of `stage.ps1` against throwaway folders in `%TEMP%` and never touches the real game or Workshop folders.
+- .\tools\test_staging.ps1 tests the stage script. Run after ANY tools/stage.ps1 edit, and add a case for any behaviour you add. It runs a copy of `stage.ps1` against throwaway folders in `%TEMP%` and never touches the real game or Workshop folders.
 - .\tools\stage.ps1 is the only repo -> game path. Run it before every functional runtime test, and only when the result is going to be uploaded. Its header documents every check and option; the rules an agent must keep:
   - Every run that stages rewrites `Version` and `DebugMode` **in the repo's `Info.json`**: no flag is a dev build (patch + 1, `DebugMode` true); `-Publish` is a release (minor + 1, patch 0, `DebugMode` false). Commit the rewritten `Info.json` with the change it carries.
   - **Patch 0 means a release.** A nonzero patch with `DebugMode` true is a dev build.

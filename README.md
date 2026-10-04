@@ -25,7 +25,7 @@ This repository is the mod's source, not the shipped mod. The mod is distributed
 | `LICENSE`, `thumbnail.png` | Package metadata | yes |
 | `README.md` | This page: the development repo's documentation | no |
 | `.docs\workshop-description.txt` | The Steam Workshop page text, in Steam's BBCode | no |
-| `tools\` | `stage.ps1`, `stage_test.ps1`, `luacheck.js`, `ledger_test.lua` | no |
+| `tools\` | `stage.ps1`, `test_staging.ps1`, `luacheck.js`, `ledger_test.lua` | no |
 | `package.json` | Declares `luaparse` for `tools\luacheck.js` | no |
 | `.luacheckrc`, `.luarc.json` | Declare UE4SS's injected globals for luacheck and the Lua language server | no |
 
@@ -43,7 +43,7 @@ The Workshop item folder comes first, and the repository second. Palworld only i
    - One folder per ticked type: `Scripts\` (with an example `main.lua`), `Paks\`, `LogicMods\`, `PalSchema\`.
    - `.workshop.json`, the uploader's own file: the Published ID and the last uploaded `Version`.
 4. In the uploader, select the folder and set **Package Name**, letters and digits only, then **Save Info.json**. The **Mod Name**, **Package Name**, **Version**, **MinRevision** and **Author** fields are the item folder's `Info.json`; nothing else stores them.
-5. Copy that `Info.json` into the repository, together with `tools\stage.ps1` and `tools\stage_test.ps1` from this repository; neither holds anything specific to this mod. Treat the repository's `Info.json` as the only one from then on. `stage.ps1` overwrites the item folder's `Info.json` on every run, so an edit made in the uploader afterwards is lost unless it is made in the repository too. Once `InstallRule` has been edited by hand, as this mod's has, the uploader shows the install types as read-only.
+5. Copy that `Info.json` into the repository, together with `tools\stage.ps1` and `tools\test_staging.ps1` from this repository; neither holds anything specific to this mod. Treat the repository's `Info.json` as the only one from then on. `stage.ps1` overwrites the item folder's `Info.json` on every run, so an edit made in the uploader afterwards is lost unless it is made in the repository too. Once `InstallRule` has been edited by hand, as this mod's has, the uploader shows the install types as read-only.
 6. Fill in the rest of `Info.json` in the repository:
    - `Dependencies`: the `PackageName` of each mod this one needs, read from that mod's own `Info.json` in its numbered Workshop folder. For this mod they are `UE4SSExperimentalPW` and `PalSchema`.
    - `Tags`: only `PalSchema`, `UE4SS`, `Model Replacement`, `Utilities`, `Gameplay`, `User Interface`.
@@ -99,7 +99,7 @@ There is no build step, and there is no local-only test build. The repository is
 node tools\luacheck.js          # Lua parse check
 luacheck Scripts                # static analysis; the baseline is 0 warnings / 0 errors
 lua tools\ledger_test.lua       # after any change to Scripts\lp\ledger.lua
-.\tools\stage_test.ps1          # after any change to tools\stage.ps1
+.\tools\test_staging.ps1          # after any change to tools\stage.ps1
 .\tools\stage.ps1               # dev build: patch + 1, DebugMode on; add -DryRun to preview
 .\tools\stage.ps1 -Publish      # release: minor + 1, patch 0, DebugMode off
 # Upload To Steam from Palworld Mod Uploader
@@ -160,7 +160,7 @@ After a crash, look in `%LOCALAPPDATA%\Pal\Saved\Crashes\`.
 | `luacheck Scripts` | Static analysis: undefined globals, unused variables, shadowing. Uses `.luacheckrc`. |
 | `lua tools\ledger_test.lua` | Test of the mod: the pending-delivery ledger's file format and who it delivers to, with the engine stubbed out. |
 | `.\tools\stage.ps1` | Checks `Info.json`, sets its version and `DebugMode` (dev build by default, release with `-Publish`), then mirrors what `Info.json` names into the Workshop item folder, ready to upload. Takes `-Publish`, `-DryRun`, `-Force`, `-GameRoot` and `-WorkshopRoot`. |
-| `.\tools\stage_test.ps1` | Test of `stage.ps1`: runs a copy against throwaway repo, Workshop and game folders in `%TEMP%` and checks versions, checks, item-folder detection, the stale stop, `-Force` and `-DryRun`. Never touches the real game or Workshop folders. `-Keep` leaves the temp folders for inspection. |
+| `.\tools\test_staging.ps1` | Test of `stage.ps1`: runs a copy against throwaway repo, Workshop and game folders in `%TEMP%` and checks versions, checks, item-folder detection, the stale stop, `-Force` and `-DryRun`. Never touches the real game or Workshop folders. `-Keep` leaves the temp folders for inspection. |
 
 The player-facing sections at the top of this README and `.docs\workshop-description.txt` describe the same mod for two audiences, so a change to how the mod plays goes into both.
 

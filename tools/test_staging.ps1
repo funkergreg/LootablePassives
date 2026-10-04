@@ -17,7 +17,7 @@
     Leave the temp folders in place and print where they are.
 
 .EXAMPLE
-    .\tools\stage_test.ps1
+    .\tools\test_staging.ps1
 #>
 [CmdletBinding()]
 param([switch] $Keep)
@@ -26,7 +26,7 @@ $ErrorActionPreference = 'Stop'
 
 $STAGE = Join-Path $PSScriptRoot 'stage.ps1'
 $PWSH = (Get-Process -Id $PID).Path
-$TEMP_ROOT = Join-Path ([System.IO.Path]::GetTempPath()) ("stage_test_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$TEMP_ROOT = Join-Path ([System.IO.Path]::GetTempPath()) ("test_staging_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $script:failures = 0
 
 #-------------------------------------------------------------------------------
@@ -98,7 +98,7 @@ function New-Fixture {
     }
 
     $settings = @('[PalModSettings]', 'bGlobalEnableMod=True', "WorkshopRootDir=$workshop") +
-        @($Active | ForEach-Object { "ActiveModList=$_" })
+    @($Active | ForEach-Object { "ActiveModList=$_" })
     Write-File (Join-Path $game 'Mods\PalModSettings.ini') ($settings -join "`r`n")
 
     return [pscustomobject]@{
