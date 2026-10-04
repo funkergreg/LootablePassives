@@ -179,6 +179,43 @@ foreach ($rule in @($info.InstallRule)) {
     }
 }
 
+# The loader appends {PackageName} to the type's directory and THEN copies each
+# Targets folder in under its own name. A target whose leaf is the package name
+# therefore installs as PackageName\PackageName\..., which loads as nothing and
+# reports nothing. This is not hypothetical: it shipped once.
+foreach ($rule in @($info.InstallRule)) {
+    foreach ($target in @($rule.Targets)) {
+        $leaf = Split-Path -Leaf (([string]$target) -replace '/', '\')
+        if ($leaf -eq $info.PackageName) {
+            $problems += "InstallRule Targets '$target' ends in the package name, so it installs as '$($info.PackageName)\$($info.PackageName)'. Name the folders INSIDE it instead."
+        }
+    }
+}
+
+# Anything staged that no Targets path covers is shipped and never installed.
+# Package metadata is read from the item folder itself and is not installed.
+$METADATA = @('Info.json', 'thumbnail.png', 'README.md', 'LICENSE')
+$targetPrefixes = @()
+foreach ($rule in @($info.InstallRule)) {
+    foreach ($target in @($rule.Targets)) {
+        $targetPrefixes += ((([string]$target) -replace '^\./', '') -replace '/', '\')
+    }
+}
+foreach ($relative in $stagedRelative) {
+    if ($METADATA -contains $relative) { continue }
+    if (Test-Path (Join-Path $repo $relative) -PathType Container) { continue }
+    $covered = $false
+    foreach ($prefix in $targetPrefixes) {
+        if ($relative -eq $prefix -or $relative.StartsWith($prefix + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            $covered = $true
+            break
+        }
+    }
+    if (-not $covered) {
+        $problems += "'$relative' is staged but no InstallRule Targets path covers it, so it ships and is never installed."
+    }
+}
+
 $thumbnail = [string]$info.Thumbnail
 if ([string]::IsNullOrWhiteSpace($thumbnail)) {
     $problems += "Thumbnail is empty."
@@ -260,6 +297,29 @@ if ($stale.Count -gt 0 -and -not $Force) {
 
 Write-Host "  $repo"
 Write-Host "    -> $Destination"
+
+# Printed because getting this wrong is silent in game: the mod appears in the
+# manager, installs, and does nothing. Lua is from the uploader docs; PalSchema
+# is from reading an InstallManifest the loader wrote. The other three types
+# have not been observed here, so their package-name level is not asserted.
+Write-Host ""
+Write-Host "  Installs as:"
+foreach ($rule in @($info.InstallRule)) {
+    if ($rule.IsServer) { continue }
+    $base = switch ([string]$rule.Type) {
+        'Lua'       { "Mods\NativeMods\UE4SS\Mods\$($info.PackageName)" }
+        'PalSchema' { "Mods\NativeMods\UE4SS\Mods\PalSchema\mods\$($info.PackageName)" }
+        'UE4SS'     { "Mods\NativeMods\UE4SS  (package-name level unverified)" }
+        'LogicMods' { "Pal\Content\Paks\LogicMods  (package-name level unverified)" }
+        'Paks'      { "Pal\Content\Paks\~WorkshopMods  (package-name level unverified)" }
+        default     { "<unknown type>" }
+    }
+    foreach ($target in @($rule.Targets)) {
+        $leaf = Split-Path -Leaf (([string]$target) -replace '/', '\')
+        Write-Host "    $base\$leaf\"
+    }
+}
+Write-Host ""
 
 foreach ($s in $stale) {
     Write-Host "    delete $($s.Rel)"

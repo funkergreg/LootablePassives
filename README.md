@@ -1,94 +1,64 @@
 # Lootable Passives
 
-## What this mod does
+Pull a passive off a Pal and receive a disposable implant.
 
-Passives can be transformed into disposable implants through the Surgery Table or Pal Dissector Conveyor.  The Surgery table contains means for using disposable implants as one-use items to grant a passive to a Pal.
+Vanilla has disposable implants for a handful of passives. This mod defines disposable implants for **all 115** passives, and gives you two ways to get them.
 
-Vanilla has a handful of passives available as single-use disposable implant items. This mod makes item definitions for **all 115**, and gives you two ways to obtain them: extract one or all at the Surgery Table, or let the Pal Disassembly Conveyor recover them from a Pal it consumes.
+## Benefit
 
-### Surgery Table
+One of the main criticisms of the game is that late-game breeding to get the pal you want is too slow.  This takes getting the exact passives you want out of the equation and will speed up the process of getting the ultimate Pal!
 
-- Three new operation types appear in the passive selection list, all costing 1000 gold each:
-  - **Extract Passive** — removes the selected passive and returns one matching disposable implant.
-  - **Extract All Passives** — removes every extractable passive and returns a disposable implant for each.
-  - ***passive name*** — one entry per passive, spending a disposable implant you hold (only for items in your personal or base-accessible inventtory).
-- The screen stays open after extracting, so you can continue operating on a Pal without reopening the UI.
-- Default mechanics like the surgery table's innate recipes and the recipes purchasable from bounties or the arena have not been changed except to standardize the price at 5000 gold per oprtation.
-- As in vanilla, a Pal cannot be given a passive it already has.
-- Extracted disposable implants show in your inventory and in the Surgery list as a purple chip with a quantity
-and the line `Disposable Implant: X`, which keeps them visually distinct from vanilla's reusable
-recipes (a green chip, no quantity, `Implant: X`). Max stack is 9,999.
-- Disposable implants sort as one block, highest rarity first and then by name, so the prizes sit together at the top rather than scattered through your bag. The 21 implants/modules vanilla already defined keep vanilla's own place in the sort.
-- **Surgery Table's prices to Edit a Pal are fixed** and are not configurable (in current design)
-- **A known cosmetic limitation:** for an operation this mod refuses — extracting from an empty passive slot, or inserting a passive the Pal already has — the Edit button stays lit rather than greying out. The click is still refused and no gold is spent; only the colour is wrong. The button's enabled look is owned and continuously recalculated by the game, and a mod that writes it makes the button flicker instead of grey, which is worse.
+## At the Surgery Table
 
-### Pal Disassembly Conveyor
+Three new operations appear in the passive list, each costing 1000 gold:
 
-- Queue a Pal at the conveyor and on disassembly, alongside its normal loot, you get a disposable implant for every extractable passive it had — an automatic extract-all, at no gold cost.
-- Disposable implants extracted by the disassembler conveyor go to inventory, and if that is full arrive at your feet; these do not sipt out the back of the machine.  Vanilla's loot still ejects from the machine normally.
-- You do not have to do anything differently; put simply Pals in the disassembly queue as in vanilla.
-- Expect 0–4 disposable implants given per disassembled Pal; exactly the passives they had on them at time of disassembly.
-- Pals you insert and then take back out again are not charged and yield nothing, which is deliberate rather than incidental: the mod distinguishes a consumed Pal from a withdrawn one by how far the machine actually got, not by whether the Pal is still there.
-- **The disposable implants go to the player who owns the Pal**, not to whoever is standing nearest and not to the host. If that player is not online they are held and delivered the next time they play, so a machine left running while you are away does not hand your disposable implants to someone else.
+- **Extract Passive** — removes the passive you selected and returns one matching disposable implant.
+- **Extract All Passives** — removes every passive on the Pal and returns an implant for each; selecting any yields the same result.
+- **The passive itself** — one entry per passive for which you have a disposable implant; the operation costs a disposable implant and the 1000 gold operation price.
 
-### What the mod does not change
+## At the Pal Disassembly Conveyor
 
-Palworld already has three ways a passive can be put onto a Pal. This mod expands one path and leaves
-the other two alone apart from price. Notably, extracting a passive that came from a recipe gained via purchase of bounty or arena tokens gives you a single-use disposable implant, never the permanent recipe - the token economy stays intact and you don't get un-removable quantities of key item recipes.
+Queue a Pal as you normally would. In addition to the usual loot, you get a disposable implant sent to your inventory for every passive on the Pal — an automatic extract-all, at no gold cost.  Implants that exceed inventory space will drop at the character's feet like world item drops.
 
-| Route | Where the item lives | Consumed? | Cost | What this mod does |
-| --- | --- | --- | --- | --- |
-| Default Surgery Table options | Provided by the workstation | no | 5,000 | price only |
-| Reusable recipe, bought with tokens | Key Items | no | 5,000 | price only |
-| Disposable implant | Inventory | **yes** | 1,000 | **expanded to all 115 passives** |
+## What it does not change
 
-- **Overwriting a passive destroys it.** This is vanilla's behaviour and the mod does not change it — an overwritten passive yields no disposable implant.
+- Extracting a passive that came from a purchased recipe gives you a **single-use implant, never the recipe**. The token economy stays intact.
+- Overwriting a passive with any other still destroys the original and yields nothing. That is vanilla's behavior and this mod leaves it in place.
+- A Pal still cannot be given a passive it already has; duplication prevention like in vanilla.
+- The Surgery Table's existing options are untouched apart from price. Price now follows the operation method: a reusable recipe operation costs 5,000 to implant a passive, inserting a passive via disposable implant is 1,000 — including the disposable implants from vanilla.
 
 ## Requirements
 
-- Palworld 1.0, build revision **102999** or newer — the build this mod is tested on
-- [UE4SS Experimental (Palworld)](https://steamcommunity.com/sharedfiles/filedetails/?id=3625223587) — Workshop id `3625223587`
-- [PalSchema](https://steamcommunity.com/sharedfiles/filedetails/?id=3625280368) — Workshop id `3625280368`
+- Palworld 1.0, build revision **102999** or newer
+- [UE4SS Experimental (Palworld)](https://steamcommunity.com/sharedfiles/filedetails/?id=3625223587) — Workshop id 3625223587
+- [PalSchema](https://steamcommunity.com/sharedfiles/filedetails/?id=3625280368) — Workshop id 3625280368
 
-Subscribe to both in the Workshop first and let the in-game mod manager install them. UE4SS has to
-initialise before this mod's Lua runs, and PalSchema has to apply its data patches before that Lua
-can reference the item ids they create.
+Subscribe to both dependencies as well and enable all three under **Options → Mod Management**.
 
 ## Multiplayer
 
-**Do not enable any mod, including this one, on an official server.** Pocketpair's mod guideline prohibits it outright and says accounts may be suspended for it. The same guideline notes that disruptive mod use on unofficial servers may also be acted on. This mod is for single-player and for servers you or your group run.
+Install it on every player for full functionality. A player without it cannot use the implants, and show as blank entries in shared storage. Tested on two machines with the host modded and the client not: result was stable for both players, extraction and disassembly normal for the host who had the mod.  Has NOT been tested on a client where the host does not have the mod.
 
-**Install it on every player for full functionality.** Without it, a player simply cannot use the disposable implants and they appear as undefined objects in shared inventory; nothing causes catastrophic crashes.
+Not tested: dedicated-server hosting.
 
-Disposable implants from the Pal Disassembly Conveyor go to the player who owned the Pal. The mod cannot ask another player's game whether it has the mod installed — nothing in the modding interfaces exposes that — so if a player without the mod disassembles their own Pal, the disposable implants are created for them and their game shows them as blank entries. That is the deliberate trade: the alternative was the host quietly collecting everyone's disposable implants.
+## Known limitation
 
-The mod only ever creates items on the host or server, never on a joining player's machine.
-
-**Tested:** host has the mod, joining client does not. The game was stable for both players and
-extraction and disassembly worked normally for the host. Items the client's game does not know
-about appear as blank entries in a shared base chest.
-
-**Not yet tested:** a client that *has* the mod installed, and dedicated-server hosting. Both are
-expected to work — the mod only creates items on the authoritative peer — but neither has been run,
-and reports are welcome.
+The Edit button's coloring in the surgery table is wonky on some transactions; exiting the menu and coming back solves the issues with a UI redraw.
 
 ## Install
 
 Subscribe on the Steam Workshop to this mod and to both dependencies above, then start Palworld and enable all three under **Options → Mod Management**. The official loader copies the files in and records what it copied, so the mod manager is also how you turn it off again.
 
-For a dedicated server, mods are configured by editing `Mods\PalModSettings.ini` directly rather than in-game: set `WorkshopRootDir` to the Workshop content directory and add `ActiveModList=LootablePassives` alongside entries for UE4SS and PalSchema.
+## Uninstalling
 
-## Uninstall
+Disable it under **Options → Mod Management** and the loader removes what it installed.
 
-Disable it in **Options → Mod Management**, which removes the files the loader installed.
+What this mod leaves behind is ordinary: passives already implanted are real passives and stay on the Pal, and disposable implants still in an inventory refer to items that no longer exist.
 
-Two things to know before you do, both of them general to Palworld modding rather than specific to this mod. Pocketpair's guidance is that turning a mod off is not always enough and that files left in the game folder can still be loaded — if you have ever installed mods by hand, delete them with File Explorer and verify the game files through Steam. And a save that has been loaded with mods enabled can keep showing problems afterwards, so back up a save you care about before experimenting.
-
-What this mod leaves behind is ordinary: passives already implanted are real passives and stay on the Pal. Disposable implants still sitting in an inventory refer to items that no longer exist once the mod is gone.
+Two things worth knowing first, both general to Palworld modding rather than specific to this mod. Pocketpair's guidance is that turning a mod off is not always enough and that files left in the game folder can still be loaded — if you have ever installed mods by hand, delete those with File Explorer and verify your game files through Steam. And a save that has been loaded with mods enabled can keep showing problems afterwards, so back up a save you care about before experimenting.
 
 ## Credits
 
 - Thanks to the authors of **UE4SS** and **PalSchema**, without which none of this is possible.
-- Inspired by *Surgery Table Passive Extractor - Lucky & Legend* (Workshop id `3786582350`), which
-  showed an outline of extracting passives through the Surgery Table.
+- Inspired by *Surgery Table Passive Extractor - Lucky & Legend* (Workshop id `3786582350`), which showed an outline of extracting passives through the Surgery Table.
 - Not affiliated with or endorsed by Pocketpair. See [LICENSE](LICENSE).

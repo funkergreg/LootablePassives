@@ -1,46 +1,38 @@
 {
   "ModName": "Lootable Passives",
   "PackageName": "LootablePassives",
-  "Version": "1.0.0",
+  "Version": "1.0.2",
   "DebugMode": false,
   "MinRevision": 102999,
   "Author": "funkergreg",
   "Thumbnail": "thumbnail.png",
-  "Dependencies": [
-    "UE4SSExperimentalPW",
-    "PalSchema"
-  ],
-  "Tags": [
-    "PalSchema",
-    "UE4SS",
-    "Gameplay",
-    "Utilities"
-  ],
+  "Dependencies": ["UE4SSExperimentalPW", "PalSchema"],
+  "Tags": ["PalSchema", "UE4SS", "Gameplay", "Utilities"],
   "InstallRule": [
     {
       "Type": "Lua",
-      "Targets": [
-        "./Scripts"
-      ]
+      "Targets": ["./Scripts"]
     },
     {
       "Type": "Lua",
       "IsServer": true,
-      "Targets": [
-        "./Scripts"
-      ]
+      "Targets": ["./Scripts"]
     },
     {
       "Type": "PalSchema",
       "Targets": [
-        "./PalSchemaMods/LootablePassives"
+        "./PalSchemaMods/LootablePassives/items",
+        "./PalSchemaMods/LootablePassives/raw",
+        "./PalSchemaMods/LootablePassives/translations"
       ]
     },
     {
       "Type": "PalSchema",
       "IsServer": true,
       "Targets": [
-        "./PalSchemaMods/LootablePassives"
+        "./PalSchemaMods/LootablePassives/items",
+        "./PalSchemaMods/LootablePassives/raw",
+        "./PalSchemaMods/LootablePassives/translations"
       ]
     }
   ]
