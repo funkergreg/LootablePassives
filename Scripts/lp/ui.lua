@@ -16,6 +16,7 @@ local passives = require("lp.passives")
 local field = util.field
 local is_valid = util.is_valid
 local log = util.log
+local method = util.method
 local name_to_string = util.name_to_string
 local unwrap = util.unwrap
 local IMPLANT_TARGET = ids.IMPLANT_TARGET
@@ -46,12 +47,12 @@ end
 
 -- The passive id on the card at the selected slot, and that slot's index.
 -- Returns nil, nil for an invalid widget, a negative or out-of-range index, or
--- an invalid card.
+-- an invalid card. An empty slot reads as "None" and is returned as nil, index.
 local function selected_passive(widget)
     if not is_valid(widget) then
         return nil, nil
     end
-    local index = unwrap(widget.CachedPassiveSlotIndex)
+    local index = unwrap(field(widget, "CachedPassiveSlotIndex"))
     if type(index) ~= "number" or index < 0 then
         return nil, nil
     end
@@ -59,11 +60,27 @@ local function selected_passive(widget)
     if property_name == nil then
         return nil, nil
     end
-    local card = unwrap(widget[property_name])
+    local card = unwrap(field(widget, property_name))
     if not is_valid(card) then
         return nil, nil
     end
-    return name_to_string(card.BindedPassiveSkillName), index
+    local passive_id = name_to_string(field(card, "BindedPassiveSkillName"))
+    if passive_id == "None" then
+        passive_id = nil
+    end
+    return passive_id, index
+end
+
+-- The tab page's selected Pal, as its PalIndividualCharacterParameter.
+local function selected_parameter(page)
+    return unwrap(field(page, "CachedCharacter"))
+end
+
+-- The tab page's CurrentPassiveId and its EXTRACTION_MODES entry. The mode is
+-- nil when the pending operation is not one of ours.
+local function pending_operation(page)
+    local pending = name_to_string(field(page, "CurrentPassiveId"))
+    return pending, EXTRACTION_MODES[pending]
 end
 
 --------------------------------------------------------------------------------
@@ -140,8 +157,8 @@ local function visible_extraction_widget()
     if visible_ok and visible ~= true then
         return nil, nil
     end
-    local pending = name_to_string(field(page, "CurrentPassiveId"))
-    if pending ~= nil and EXTRACTION_MODES[pending] ~= nil then
+    local pending, mode = pending_operation(page)
+    if mode ~= nil then
         return page, pending
     end
     return nil, nil
@@ -164,11 +181,11 @@ end
 -- reaching for CommonUI's DisabledStyle, and the game does not use that here --
 -- bIsEnabled reads true on both buttons whether the game is refusing or not.
 local function set_edit_interactable(widget, enabled)
-    local button = unwrap(widget.WBP_CommonButton)
+    local button = unwrap(field(widget, "WBP_CommonButton"))
     if not is_valid(button) then
         return
     end
-    local inner = unwrap(button.WBP_PalInvisibleButton)
+    local inner = unwrap(field(button, "WBP_PalInvisibleButton"))
     if is_valid(inner) then
         pcall(_call_set_interaction_enabled, inner, enabled)
     end
@@ -182,8 +199,7 @@ end
 -- can only write it after that has happened. On a selection the game judges
 -- usable -- an empty slot with an extract route is one, since vanilla has no
 -- notion of extraction -- the two writes alternate and the button flickers
--- rather than greying. Blocked-and-lit is the accepted behaviour; see the
--- Surgery Table notes in README.md and the entry in docs/PLAN.md.
+-- rather than greying. Blocked-and-lit is the accepted behaviour.
 local function block_edit(widget)
     if edit_disabled_by_mod then
         return -- the interaction flag is not recomputed, so it is written once
@@ -210,7 +226,7 @@ local function alias_target_already_present(page, pending)
     if target == nil then
         return false
     end
-    local skill_ids = get_skill_ids(unwrap(page.CachedCharacter))
+    local skill_ids = get_skill_ids(selected_parameter(page))
     if skill_ids == nil then
         return false
     end
@@ -223,33 +239,26 @@ end
 -- to be reachable from every state, or a block made in one state outlives it.
 --
 -- Blocks when an extract mode is pending and the selected slot does not hold an
--- extractable passive -- selected_passive returns nil or "None" for an empty
--- slot, and is_extractable rejects both -- or when an alias is pending and
+-- extractable passive -- selected_passive returns nil for an empty slot, and
+-- is_extractable rejects it -- or when an alias is pending and
 -- alias_target_already_present is true.
 --
 -- Takes no arguments so main.lua can hand it to ExecuteInGameThread by
--- reference; see the note on closure allocation in lp/hooks.lua.
+-- reference; see the note on coalescer() in main.lua.
 local function enforce_extraction_gate()
     if SETTINGS.surgery_ui_gate == false then
         return
     end
     local page = current_page()
-    if not is_valid(page) then
+    if page == nil then
         return
     end
 
-    local pending = name_to_string(field(page, "CurrentPassiveId"))
-    local is_extraction = pending ~= nil and is_extract_mode(EXTRACTION_MODES[pending])
-    local is_implant = pending ~= nil and EXTRACTION_MODES[pending] == "implant"
+    local pending, mode = pending_operation(page)
+    local blocked = (is_extract_mode(mode) and not is_extractable(selected_passive(page)))
+        or (mode == "implant" and alias_target_already_present(page, pending))
 
-    local passive_id
-    if is_extraction then
-        passive_id = selected_passive(page)
-    end
-
-    local duplicate = is_implant and alias_target_already_present(page, pending)
-
-    if (is_extraction and not is_extractable(passive_id)) or duplicate then
+    if blocked then
         block_edit(page)
     else
         release_edit(page)
@@ -262,7 +271,7 @@ end
 --
 -- This file does not write the passive cards. SetPassiveSkill and Clear on a
 -- card are not called from anywhere; refresh_surgery_ui resets the panel
--- instead. See "Panel repaint: dead ends" in docs/PLAN.md.
+-- instead.
 
 -- Positive visibility, for the write path. The inverse of the rule in
 -- visible_extraction_widget: a failed IsVisible call counts as not open.
@@ -326,9 +335,9 @@ local function refresh_surgery_ui(reset_panel, rebuild_list)
         -- quantity readout, which "Set Passive Empty Item" leaves alone.
         pcall(function() page.CachedPassiveSlotIndex = -1 end)
         pcall(function() page:UpdateCurrentConsumeItem(FName("None")) end)
-        pcall(function() page["Set Passive Empty Item"](page) end)
-        pcall(function() page:ReflectPassiveChange() end)
-        pcall(function() page:RefreshCurrentPassiveItem() end)
+        method(page, "Set Passive Empty Item")
+        method(page, "ReflectPassiveChange")
+        method(page, "RefreshCurrentPassiveItem")
     end
 
     if screen ~= nil then
@@ -342,9 +351,9 @@ local function refresh_surgery_ui(reset_panel, rebuild_list)
         -- Entry validity is decided when each entry is created, which is why a
         -- module count only changes on a rebuild.
         if rebuild_list and has_selected_pal(screen) then
-            pcall(function() screen:SetupPassiveChangeItem() end)
+            method(screen, "SetupPassiveChangeItem")
         end
-        pcall(function() screen:RefreshItemDisplay() end)
+        method(screen, "RefreshItemDisplay")
     end
 
     return true
@@ -364,20 +373,16 @@ local function consume_pending_refresh()
     refresh_surgery_ui(pending.reset_panel, true)
 end
 
--- Accessors, not an exported variable: three modules read or write
--- pending_refresh, and exporting it in the return table below would export its
--- value at load time -- a permanent nil for every consumer.
-local function arm_refresh(reset_panel)
-    pending_refresh = { reset_panel = reset_panel }
-end
-
+-- An accessor, not an exported variable: main.lua reads pending_refresh, and
+-- exporting it in the return table below would export its value at load time --
+-- a permanent nil for every consumer.
 local function refresh_pending()
     return pending_refresh ~= nil
 end
 
 -- The three callbacks the timers below take are built once, at load, and passed
 -- to ExecuteWithDelay and ExecuteInGameThread by reference; see the note on
--- closure allocation in lp/hooks.lua.
+-- coalescer() in main.lua.
 local function reset_panel_now()
     refresh_surgery_ui(true, false)
 end
@@ -399,7 +404,7 @@ end
 -- refresh_surgery_ui above.
 local function on_transaction_complete(mode)
     local reset_panel = mode ~= "implant"
-    arm_refresh(reset_panel)
+    pending_refresh = { reset_panel = reset_panel }
 
     -- Second path to the same armed refresh, for when the OnPassiveUpdate hook
     -- does not reach it. consume_pending_refresh runs at most once per arming.
@@ -420,6 +425,7 @@ return {
     on_transaction_complete = on_transaction_complete,
     refresh_pending = refresh_pending,
     enforce_extraction_gate = enforce_extraction_gate,
+    selected_parameter = selected_parameter,
     selected_passive = selected_passive,
     visible_extraction_widget = visible_extraction_widget,
 }

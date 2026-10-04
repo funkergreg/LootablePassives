@@ -2,7 +2,7 @@
 --
 -- Passive ids, insertion routes and marker names are not here: they live in
 -- lp/ids.lua, where each has to match a row in the PalSchema JSON exactly.
--- Prices are not here either and are not configurable; see docs/PLAN.md.
+-- Prices are not here either and are not configurable.
 
 return {
     mod_name = "LootablePassives",

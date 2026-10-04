@@ -137,9 +137,9 @@ load = function()
             owner = ANY_OWNER
         end
         local number = tonumber(count)
-        if version ~= LEDGER_VERSION or item_id == nil or number == nil or number <= 0 then
-            discarded = discarded + 1
-        elseif not is_module_id(item_id) then
+        if version ~= LEDGER_VERSION or item_id == nil or number == nil or number <= 0
+            or not is_module_id(item_id)
+        then
             discarded = discarded + 1
         else
             local bucket = bucket_for(owner)
@@ -212,17 +212,13 @@ local function ordered_for(owner, candidates)
     if owner == ANY_OWNER then
         return candidates
     end
-    local matched, others, readable = {}, {}, false
+    local matched, readable = {}, false
     for _, candidate in ipairs(candidates) do
         if candidate.uid ~= nil then
             readable = true
             if candidate.uid == owner then
                 matched[#matched + 1] = candidate
-            else
-                others[#others + 1] = candidate
             end
-        else
-            others[#others + 1] = candidate
         end
     end
     if #matched > 0 then
@@ -235,7 +231,8 @@ local function ordered_for(owner, candidates)
                 .. "matched to the player who owned the Pal. Delivering to the nearest player "
                 .. "instead. This is a fault in the mod, not in the save.")
         end
-        return others
+        -- No uid read, so every candidate is an "other": the given order.
+        return candidates
     end
     return {}
 end

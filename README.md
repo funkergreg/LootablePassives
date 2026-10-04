@@ -2,6 +2,8 @@
 
 Pull a passive off a Pal and receive a disposable implant.
 
+This is the mod's development repository. To play, install it from the [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3805554239); see [Development](#development) for working from source.
+
 Vanilla has disposable implants for a handful of passives. This mod defines disposable implants for **all 115** passives, and gives you two ways to get them.
 
 ## Benefit
@@ -56,6 +58,92 @@ Disable it under **Options → Mod Management** and the loader removes what it i
 What this mod leaves behind is ordinary: passives already implanted are real passives and stay on the Pal, and disposable implants still in an inventory refer to items that no longer exist.
 
 Two things worth knowing first, both general to Palworld modding rather than specific to this mod. Pocketpair's guidance is that turning a mod off is not always enough and that files left in the game folder can still be loaded — if you have ever installed mods by hand, delete those with File Explorer and verify your game files through Steam. And a save that has been loaded with mods enabled can keep showing problems afterwards, so back up a save you care about before experimenting.
+
+## Development
+
+This repository is the development source for the mod, not the shipped product. The Workshop package is staged from a subset of it (marked in the layout below), and this README is not part of that package.
+
+### Prerequisites
+
+- Windows with PowerShell 7
+- Palworld with UE4SS Experimental and PalSchema already installed, either at the default Steam location or anywhere you pass with `-GameRoot`
+- Node.js, plus `npm install` in the repository root for the `luaparse` package the parse check needs
+- Lua 5.5 and luacheck 1.2 on `PATH`; Scoop installs both into your user profile without admin rights
+
+### Repository layout
+
+| Path | Purpose | Ships to the Workshop |
+| --- | --- | --- |
+| `Scripts\` | Lua runtime: `main.lua`, `settings.lua`, `lp\*.lua` | yes |
+| `PalSchemaMods\LootablePassives\` | JSON data patches: items, DataTable rows, English strings | yes |
+| `Info.json` | Workshop package manifest | yes |
+| `LICENSE`, `thumbnail.png` | Package metadata | yes |
+| `README.md` | This page: the development repo's documentation | no |
+| `.docs\workshop-description.txt` | The Steam Workshop page text, in Steam's BBCode | no |
+| `tools\` | `install.ps1`, `stage.ps1`, `mirror.ps1`, `luacheck.js`, `ledger_test.lua` | no |
+| `.luacheckrc`, `.luarc.json` | Declare UE4SS's injected globals for luacheck and the Lua language server | no |
+
+### The edit, check, install loop
+
+There is no build step. The repository is the working copy, and the game only loads what is under `<Palworld>\Mods\NativeMods\UE4SS\Mods`, so every change is deployed before it is tested.
+
+```powershell
+# edit the JSON under PalSchemaMods\ or the Lua under Scripts\, then:
+node tools\luacheck.js          # Lua parse check
+luacheck Scripts                # static analysis; the baseline is 0 warnings
+lua tools\ledger_test.lua       # after any change to Scripts\lp\ledger.lua
+.\tools\install.ps1             # repo -> game; add -DryRun to preview
+# restart Palworld, exercise the change, then read the log
+```
+
+UE4SS hot reload is disabled, so a running game does not pick up a change until it restarts.
+
+### Reading the log
+
+The log is `UE4SS.log` in the game's UE4SS folder. Filter it on:
+
+- `[LootablePassives]` for the mod's own messages
+- `PalSchema` for the data half loading
+- `error` and `warning` for anything failing outright
+
+A healthy start logs `Loaded 115 extractable passives, 2 extraction operations, 54 insert routes.` That line counts only the Lua tables, and it prints even when the JSON loaded nothing. The data half is confirmed by PalSchema's own lines: `DT_OperatingTablePassiveSkillDataTable: 54 rows updated, 117 rows added, 0 rows deleted, 0 errors` and `DT_PassiveSkill_Main_Common: 0 rows updated, 56 rows added`.
+
+After a crash, look in `%LOCALAPPDATA%\Pal\Saved\Crashes\`.
+
+### The tools
+
+| Command | What it does |
+| --- | --- |
+| `node tools\luacheck.js` | Parses every Lua file under `Scripts\`. Syntax only. |
+| `luacheck Scripts` | Static analysis: undefined globals, unused variables, shadowing. Uses `.luacheckrc`. |
+| `lua tools\ledger_test.lua` | The one automated test: the pending-delivery ledger's file format and who it delivers to, with the engine stubbed out. |
+| `.\tools\install.ps1` | Mirrors the repo into the game and enables the Lua half in UE4SS's `mods.txt`. Takes `-DryRun`, `-Force` and `-GameRoot`. |
+| `.\tools\stage.ps1` | Mirrors the shippable files into a Workshop item folder and checks `Info.json` first. Takes `-ItemId` or `-Destination`, `-DryRun` and `-Force`. |
+| `tools\mirror.ps1` | Helpers shared by `install.ps1` and `stage.ps1`. Dot-sourced, not run directly. |
+
+### How the install mirrors
+
+`install.ps1` copies two folders:
+
+```text
+Scripts\                         ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\
+PalSchemaMods\LootablePassives\  ->  <Palworld>\Mods\NativeMods\UE4SS\Mods\PalSchema\mods\LootablePassives\
+```
+
+- Before copying anything, it compares both destinations with the repository. A destination file the repository does not have stops the run with nothing changed, because the game would still load it. After you delete a file from the repository, run the next install with `-Force`, which deletes those files and any folder left empty.
+- Nothing outside those two destinations is examined or deleted.
+- It adds `LootablePassives : 1` to `mods.txt`, which is what starts the Lua half. PalSchema needs no registration; it loads any folder under its `mods\` directory.
+- Do not disable a dev install by setting `LootablePassives : 0`. That stops only the Lua half, and the Surgery Table operations stay listed with nothing behind them. To remove a dev install, delete both destination folders and then remove the `mods.txt` line.
+
+### Publishing to the Workshop
+
+1. Bump `Version` in `Info.json`. The loader compares it as a plain string, so an unchanged version is not seen as an update.
+2. Preview the stage: `.\tools\stage.ps1 -ItemId <item id> -DryRun`. The item id is the numbered folder Palworld Mod Uploader's **Create New Mod** made under the Workshop content directory.
+3. Stage it: `.\tools\stage.ps1 -ItemId <item id>`. It copies an allowlist and nothing else, refuses an `Info.json` the uploader would accept but the game would not install, prints where each rule installs, and never touches the uploader's `.workshop.json`.
+4. Upload from Palworld Mod Uploader.
+5. If the player-facing description changed, paste `.docs\workshop-description.txt` into the Workshop page's description by hand. The uploader does not carry it, and the stage does not include it.
+
+The player-facing sections at the top of this README and `.docs\workshop-description.txt` describe the same mod for two audiences, so a change to how the mod plays goes into both.
 
 ## Credits
 

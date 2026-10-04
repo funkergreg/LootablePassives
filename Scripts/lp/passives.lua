@@ -10,6 +10,7 @@ local ids = require("lp.ids")
 local array_count = util.array_count
 local find_all = util.find_all
 local is_valid = util.is_valid
+local method = util.method
 local name_to_string = util.name_to_string
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 
@@ -48,10 +49,8 @@ local function get_skill_ids(parameter)
     if not is_valid(parameter) then
         return nil
     end
-    local succeeded, skills = pcall(function()
-        return parameter:GetPassiveSkillList()
-    end)
-    if not succeeded or skills == nil then
+    local skills = method(parameter, "GetPassiveSkillList")
+    if skills == nil then
         return nil
     end
     local skill_ids = {}

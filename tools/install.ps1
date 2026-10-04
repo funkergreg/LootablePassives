@@ -10,12 +10,6 @@
       Scripts\                        -> Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts
       PalSchemaMods\LootablePassives\ -> Mods\NativeMods\UE4SS\Mods\PalSchema\mods\LootablePassives
 
-    The repo-side folder is nested as PalSchemaMods\LootablePassives rather than
-    a flat PalSchema\ so that Info.json's InstallRule can name it directly: a
-    Workshop Targets entry copies the named folder WITH ITS NAME, so "./PalSchema"
-    would have installed as PalSchema\mods\PalSchema. The folder name on both
-    sides is the PalSchema mod id, and it has to be LootablePassives.
-
     Registration differs between the two by design. The Lua mod is enabled by a
     line in UE4SS's mods.txt; PalSchema needs no registration at all and loads
     any folder it finds under its mods directory.
@@ -60,6 +54,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'mirror.ps1')
+
 $repo = Split-Path -Parent $PSScriptRoot
 $modsDir = Join-Path $GameRoot 'Mods\NativeMods\UE4SS\Mods'
 
@@ -72,38 +68,14 @@ $targets = @(
     @{ From = Join-Path $repo 'PalSchemaMods\LootablePassives'; To = Join-Path $modsDir 'PalSchema\mods\LootablePassives' }
 )
 
-# Paths of every file under $Root, relative to $Root, or @() when $Root is absent.
-function Get-RelativeFiles {
-    param([string] $Root)
-    if (-not (Test-Path $Root)) { return @() }
-    $prefix = (Resolve-Path -LiteralPath $Root).Path.TrimEnd('\') + '\'
-    return @(Get-ChildItem -LiteralPath $Root -Recurse -File -Force |
-        ForEach-Object { $_.FullName.Substring($prefix.Length) })
-}
-
-# Deletes directories under $Root that hold nothing, deepest first, so that a
-# folder emptied by the stale sweep does not survive as an empty shell.
-function Remove-EmptyDirectories {
-    param([string] $Root)
-    if (-not (Test-Path $Root)) { return }
-    Get-ChildItem -LiteralPath $Root -Recurse -Directory -Force |
-        Sort-Object { $_.FullName.Length } -Descending |
-        ForEach-Object {
-            if (-not (Get-ChildItem -LiteralPath $_.FullName -Force)) {
-                Write-Host "    rmdir  $($_.FullName)"
-                if (-not $DryRun) { Remove-Item -LiteralPath $_.FullName -Force }
-            }
-        }
-}
-
 # Every destination file with no counterpart in the repo. Collected across BOTH
 # targets before anything is copied: the check is worth nothing if the first
 # target has already been written when the second one fails it.
 $stale = @()
 foreach ($t in $targets) {
     $source = @{}
-    foreach ($rel in (Get-RelativeFiles $t.From)) { $source[$rel] = $true }
-    foreach ($rel in (Get-RelativeFiles $t.To)) {
+    foreach ($rel in (Get-RelativePaths $t.From)) { $source[$rel] = $true }
+    foreach ($rel in (Get-RelativePaths $t.To)) {
         if (-not $source.ContainsKey($rel)) {
             $stale += [pscustomobject]@{ To = $t.To; Rel = $rel; Path = (Join-Path $t.To $rel) }
         }
@@ -111,19 +83,10 @@ foreach ($t in $targets) {
 }
 
 if ($stale.Count -gt 0 -and -not $Force) {
-    Write-Host ""
-    Write-Warning "$($stale.Count) file(s) in the game folder are not in this repo's payload:"
-    foreach ($s in $stale) { Write-Host "    $($s.Path)" }
-    Write-Host ""
-    $msg = "Install stopped before copying anything. The game loads those files, so this install would not be the repo. Re-run with -Force to delete them, or remove them by hand if they belong to something else."
-    if ($DryRun) {
-        Write-Host $msg
-        Write-Host ""
-        Write-Host "Dry run only. Nothing was changed."
-        return
-    }
-    Write-Host $msg
-    exit 1
+    Stop-OnStale -DryRun:$DryRun `
+        -Heading "$($stale.Count) file(s) in the game folder are not in this repo's payload:" `
+        -Listing @($stale | ForEach-Object { $_.Path }) `
+        -Message "Install stopped before copying anything. The game loads those files, so this install would not be the repo. Re-run with -Force to delete them, or remove them by hand if they belong to something else."
 }
 
 foreach ($t in $targets) {
@@ -137,7 +100,7 @@ foreach ($t in $targets) {
         New-Item -ItemType Directory -Force -Path $t.To | Out-Null
         Copy-Item -Path (Join-Path $t.From '*') -Destination $t.To -Recurse -Force
     }
-    Remove-EmptyDirectories $t.To
+    Remove-EmptyDirectories $t.To -DryRun:$DryRun
 }
 
 # UE4SS reads mods.txt to decide which Lua mods to start. A missing or ": 0"

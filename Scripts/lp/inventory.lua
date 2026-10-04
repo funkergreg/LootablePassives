@@ -6,9 +6,11 @@
 local util = require("lp.util")
 local passives = require("lp.passives")
 
+local field = util.field
 local find_all = util.find_all
 local is_valid = util.is_valid
 local log = util.log
+local method = util.method
 local unwrap = util.unwrap
 local count_id = passives.count_id
 local get_skill_ids = passives.get_skill_ids
@@ -65,11 +67,19 @@ local function find_inventory(request_player_id)
     if not is_valid(state) then
         return nil
     end
-    local bag = unwrap(util.method(state, "GetInventoryData"))
+    local bag = unwrap(method(state, "GetInventoryData"))
     if is_valid(bag) then
         return bag
     end
     return nil
+end
+
+-- Squared distance between two FVectors. Passed to pcall by reference.
+local function _squared_distance(a, b)
+    local dx = (unwrap(a.X) or 0) - (unwrap(b.X) or 0)
+    local dy = (unwrap(a.Y) or 0) - (unwrap(b.Y) or 0)
+    local dz = (unwrap(a.Z) or 0) - (unwrap(b.Z) or 0)
+    return dx * dx + dy * dy + dz * dz
 end
 
 -- Every player with a reachable inventory, as
@@ -85,30 +95,27 @@ local function delivery_candidates(near_location)
     for _, character in ipairs(find_all("PalPlayerCharacter")) do
         if is_valid(character) then
             local data, uid = nil, nil
-            pcall(function()
-                local controller = unwrap(character:GetPalPlayerController())
-                if is_valid(controller) then
-                    local state = unwrap(controller.PlayerState)
-                    if is_valid(state) then
-                        data = unwrap(state:GetInventoryData())
-                        -- Property read on APalPlayerState (Pal.hpp: FGuid
-                        -- PlayerUId at 0x0598), not a call.
-                        uid = guid_key(state.PlayerUId)
-                    end
+            local controller = unwrap(method(character, "GetPalPlayerController"))
+            if is_valid(controller) then
+                local state = unwrap(field(controller, "PlayerState"))
+                if is_valid(state) then
+                    data = unwrap(method(state, "GetInventoryData"))
+                    -- Property read on APalPlayerState (Pal.hpp: FGuid
+                    -- PlayerUId at 0x0598), not a call.
+                    uid = guid_key(field(state, "PlayerUId"))
                 end
-            end)
+            end
             if is_valid(data) then
-                local local_player = false
-                pcall(function() local_player = character:IsLocallyControlled() == true end)
+                local local_player = method(character, "IsLocallyControlled") == true
                 local distance = math.huge
                 if near_location ~= nil then
-                    pcall(function()
-                        local here = character:K2_GetActorLocation()
-                        local dx = (unwrap(here.X) or 0) - (unwrap(near_location.X) or 0)
-                        local dy = (unwrap(here.Y) or 0) - (unwrap(near_location.Y) or 0)
-                        local dz = (unwrap(here.Z) or 0) - (unwrap(near_location.Z) or 0)
-                        distance = dx * dx + dy * dy + dz * dz
-                    end)
+                    local here = method(character, "K2_GetActorLocation")
+                    if here ~= nil then
+                        local measured, squared = pcall(_squared_distance, here, near_location)
+                        if measured then
+                            distance = squared
+                        end
+                    end
                 end
                 found[#found + 1] = {
                     data = data,
@@ -153,6 +160,19 @@ local function operation_result_code(value)
     return nil
 end
 
+local function _call_count_item_num(data, name)
+    return unwrap(data:CountItemNum(name))
+end
+
+-- CountItemNum(FName), or -1 when the call raises or returns nil.
+local function item_count(data, name)
+    local succeeded, count = pcall(_call_count_item_num, data, name)
+    if succeeded and count ~= nil then
+        return count
+    end
+    return -1
+end
+
 -- The only item-creation call in the mod. Returns ok, detail.
 --
 -- AddItem_ServerInternal(FName, Count, bool, float, bool). The count is honoured
@@ -170,8 +190,7 @@ local function add_modules(data, item_id, count)
     end
     -- One FName for all three calls: constructing it is a name-table lookup.
     local name = FName(item_id)
-    local before = -1
-    pcall(function() before = unwrap(data:CountItemNum(name)) or -1 end)
+    local before = item_count(data, name)
     local succeeded, result = pcall(function()
         return data:AddItem_ServerInternal(name, count, false, 0.0, true)
     end)
@@ -179,8 +198,7 @@ local function add_modules(data, item_id, count)
         return false, "call raised an error"
     end
     local code = operation_result_code(result)
-    local after = -1
-    pcall(function() after = unwrap(data:CountItemNum(name)) or -1 end)
+    local after = item_count(data, name)
     if code ~= ITEM_RESULT_SUCCESS then
         return false, "EPalItemOperationResult=" .. tostring(code)
     end
@@ -243,12 +261,10 @@ local function restore_replaced_passive(parameter, passive_id, extraction_mode)
     if not restored then
         -- Both lists in full, uncapped: their shape is what identifies the
         -- failure.
-        local before_text, after_text = "?", "?"
-        pcall(function() before_text = table.concat(before, ",") end)
-        pcall(function() after_text = table.concat(after or {}, ",") end)
         log(string.format(
             "ERROR: could not put %s in place of %s. before=[%s] after=[%s]",
-            tostring(passive_id), tostring(extraction_mode), before_text, after_text))
+            tostring(passive_id), tostring(extraction_mode),
+            table.concat(before, ","), table.concat(after or {}, ",")))
     end
     return restored
 end

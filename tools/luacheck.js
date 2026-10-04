@@ -32,9 +32,8 @@ try {
   }
 }
 
-// RECURSIVE. The runtime lives in Scripts/lp/, and a flat readdir silently
-// skipped all of it -- reporting OK on three files while nine went unchecked,
-// which is worse than not running at all.
+// RECURSIVE. The runtime lives in Scripts/lp/, which a flat readdir would skip
+// while still reporting OK.
 function luaFilesUnder(dir) {
   const found = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

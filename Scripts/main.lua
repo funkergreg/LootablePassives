@@ -32,7 +32,7 @@ local note_live_page = ui.note_live_page
 local note_live_screen = ui.note_live_screen
 local refresh_pending = ui.refresh_pending
 local capture_record = transaction.capture_record
-local finalize_extraction = transaction.finalize_extraction
+local schedule_finalize = transaction.schedule_finalize
 local schedule_recovery = recovery.schedule_recovery
 
 local SERVER_REQUEST =
@@ -66,11 +66,7 @@ RegisterHook(
         local record = pending_record
         pending_record = nil
         if record ~= nil then
-            ExecuteWithDelay(100, function()
-                ExecuteInGameThread(function()
-                    finalize_extraction(record, 1)
-                end)
-            end)
+            schedule_finalize(record, 1, 100)
         end
     end
 )
@@ -102,9 +98,8 @@ local schedule_gate_pass = coalescer(enforce_extraction_gate, 0)
 
 -- One callback, and it is the PRE-callback.
 --
--- UE4SS does not run a post-callback for a Blueprint function hook; the
--- registration ids it logs differ between native and script hooks, "(3, 4)"
--- against "(7, 7)". The gate work is therefore deferred a frame from here.
+-- UE4SS does not run a post-callback for a Blueprint function hook, so the gate
+-- work is deferred a frame from here.
 --
 -- The context argument is the tab page: Update Button State is a method on
 -- WBP_OperatingTable_TabPage_C. Recorded on every firing, including those where

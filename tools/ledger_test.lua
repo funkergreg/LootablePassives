@@ -7,7 +7,7 @@
 -- owe/persist/load and ordered_for. lp.inventory is stubbed, so the assertions
 -- are about which candidate was chosen, never about an item existing.
 --
--- Writes and removes LootablePassives_pending.tsv beside Scripts\ while it
+-- Writes and removes LootablePassives_pending.tsv inside Scripts\ while it
 -- runs, which is where util.UE4SS_ROOT resolves to outside a UE4SS install.
 local TEST_SOURCE = debug.getinfo(1, "S").source:gsub("^@", "")
 local TOOLS_DIRECTORY = TEST_SOURCE:match("^(.*[\\/])") or "./"
@@ -56,10 +56,11 @@ CANDIDATES = {}
 --
 -- owe takes ONE PAL'S WORTH of item ids, so a repeated id in the list is a
 -- repeated debt and the whole list costs a single file write.
+-- The ledger loads lazily, so removing the file after require is still a clean
+-- start.
 local ledger = fresh_ledger()
 local path = ledger.LEDGER_PATH
 os.remove(path)
-ledger = fresh_ledger()
 ledger.owe(ALICE, { "LP_Implant_Stamina_Up_1", "LP_Implant_Stamina_Up_1" })
 ledger.owe(ALICE, { "LP_Implant_Stamina_Up_1" })
 ledger.owe(BOB, { "LP_Implant_Rare" })

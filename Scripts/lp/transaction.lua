@@ -12,7 +12,6 @@ local inventory = require("lp.inventory")
 local ui = require("lp.ui")
 local is_valid = util.is_valid
 local log = util.log
-local unwrap = util.unwrap
 local IMPLANT_TARGET = ids.IMPLANT_TARGET
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local is_extract_mode = ids.is_extract_mode
@@ -33,6 +32,7 @@ local remove_skill = inventory.remove_skill
 local restore_replaced_passive = inventory.restore_replaced_passive
 local current_page = ui.current_page
 local on_transaction_complete = ui.on_transaction_complete
+local selected_parameter = ui.selected_parameter
 local selected_passive = ui.selected_passive
 local visible_extraction_widget = ui.visible_extraction_widget
 
@@ -49,14 +49,12 @@ local function capture_targeted_record(request_player_id)
         return nil
     end
     local passive_id = selected_passive(widget)
-    -- An empty slot returns nil or "None". That is a refusal for the two
-    -- extract modes and is accepted for an implant.
-    if (passive_id == nil or passive_id == "None")
-        and is_extract_mode(EXTRACTION_MODES[lock])
-    then
+    -- An empty slot returns nil. That is a refusal for the two extract modes and
+    -- is accepted for an implant.
+    if passive_id == nil and is_extract_mode(EXTRACTION_MODES[lock]) then
         return nil
     end
-    local parameter = unwrap(widget.CachedCharacter)
+    local parameter = selected_parameter(widget)
     local skill_ids = get_skill_ids(parameter)
     if skill_ids == nil then
         return nil
@@ -95,8 +93,7 @@ local function capture_record(request_player_id)
     if succeeded and record ~= nil then
         return record
     end
-    local page_ok, page = pcall(current_page)
-    if page_ok and is_valid(page) then
+    if current_page() ~= nil then
         return nil
     end
     local fallback_ok, fallback = pcall(snapshot_server_parameters, request_player_id)
@@ -116,50 +113,37 @@ local function resolve_record(record)
     for _, snapshot in ipairs(record.snapshots) do
         if is_valid(snapshot.parameter) then
             local after_ids = get_skill_ids(snapshot.parameter)
-            local candidate = nil
             local removed, lock = detect_replaced_passive(snapshot.before_ids, after_ids)
+            local stray = false
             if removed ~= nil then
-                if snapshot.expect_passive_id ~= nil
-                    and snapshot.expect_passive_id ~= "None"
-                    and removed ~= snapshot.expect_passive_id
-                then
+                if snapshot.expect_passive_id ~= nil and removed ~= snapshot.expect_passive_id then
                     -- Logged, not refused: the passive list decides.
                     log(string.format(
                         "NOTE: the selected slot read as %s but the engine removed %s; "
                         .. "trusting the passive list.",
                         tostring(snapshot.expect_passive_id), tostring(removed)))
                 end
-                candidate = {
+            else
+                lock = detect_added_lock(snapshot.before_ids, after_ids)
+                stray = lock ~= nil
+            end
+
+            if lock ~= nil then
+                -- A second candidate is a refusal, not a choice.
+                if resolved ~= nil then
+                    return nil
+                end
+                resolved = {
                     parameter = snapshot.parameter,
                     passive_id = removed,
-                    item_id = module_for(removed),
+                    item_id = removed and module_for(removed),
                     before_ids = snapshot.before_ids,
                     request_player_id = record.request_player_id,
                     mode_source = record.mode_source,
                     lock = lock,
                     mode = EXTRACTION_MODES[lock],
+                    stray = stray or nil,
                 }
-            else
-                local added = detect_added_lock(snapshot.before_ids, after_ids)
-                if added ~= nil then
-                    candidate = {
-                        parameter = snapshot.parameter,
-                        before_ids = snapshot.before_ids,
-                        request_player_id = record.request_player_id,
-                        mode_source = record.mode_source,
-                        lock = added,
-                        mode = EXTRACTION_MODES[added],
-                        stray = true,
-                    }
-                end
-            end
-
-            if candidate ~= nil then
-                -- A second candidate is a refusal, not a choice.
-                if resolved ~= nil then
-                    return nil
-                end
-                resolved = candidate
             end
         end
     end
@@ -215,7 +199,6 @@ end
 -- iteration overwrites this one's row, and extract_all_remaining's caller writes
 -- the outer row back when the sweep ends.
 local function extract_additional(parameter, passive_id, item_id, bag, lock, copies)
-    copies = copies or 1
     if not write_journal("prepared", "loop", passive_id, item_id, lock) then
         log(string.format(
             "SKIPPED %s: the recovery journal could not be written.", passive_id))
@@ -292,19 +275,26 @@ local function extract_all_remaining(record, bag)
 end
 
 -- 12 attempts at 250 ms. Each retry allocates one closure pair; see the note on
--- registry churn in lp/hooks.lua before raising either number.
+-- coalescer() in main.lua before raising either number.
 local RESOLVE_ATTEMPTS = 12
 local RESOLVE_INTERVAL_MS = 250
 
-local function finalize_extraction(record, attempt)
+local finalize_extraction
+
+-- Runs finalize_extraction(record, attempt) on the game thread after delay_ms.
+local function schedule_finalize(record, attempt, delay_ms)
+    ExecuteWithDelay(delay_ms, function()
+        ExecuteInGameThread(function()
+            finalize_extraction(record, attempt)
+        end)
+    end)
+end
+
+function finalize_extraction(record, attempt)
     local resolved = resolve_record(record)
     if resolved == nil then
         if attempt < RESOLVE_ATTEMPTS then
-            ExecuteWithDelay(RESOLVE_INTERVAL_MS, function()
-                ExecuteInGameThread(function()
-                    finalize_extraction(record, attempt + 1)
-                end)
-            end)
+            schedule_finalize(record, attempt + 1, RESOLVE_INTERVAL_MS)
         else
             -- Out of attempts. The journal is NOT cleared unconditionally here:
             -- if stranded_marker finds a marker, the entry it writes is what
@@ -315,12 +305,8 @@ local function finalize_extraction(record, attempt)
                 finish("No marker appeared, so this was not one of our operations; "
                     .. "nothing was changed.")
             else
-                local passive_id = snapshot.expect_passive_id
-                if passive_id == "None" then
-                    passive_id = nil
-                end
-                local journalled =
-                    write_journal("prepared", "stranded", passive_id, nil, lock)
+                local journalled = write_journal(
+                    "prepared", "stranded", snapshot.expect_passive_id, nil, lock)
                 finish(string.format(
                     "WARNING: the exchange could not be resolved and marker %s is stranded on "
                     .. "this Pal. Journalled=%s; if true it is cleaned up on the next map load.",
@@ -514,5 +500,5 @@ end
 
 return {
     capture_record = capture_record,
-    finalize_extraction = finalize_extraction,
+    schedule_finalize = schedule_finalize,
 }

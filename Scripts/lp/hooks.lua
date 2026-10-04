@@ -1,8 +1,9 @@
 -- Lootable Passives -- One bounded, re-armed hook registrar.
 --
--- Every hook in the mod registers through here: the two widget hooks in main.lua
--- and both conveyor hooks. Coalescing a hook that fires at frame rate is not
--- here; that is main.lua's coalescer().
+-- The two widget hooks in main.lua and both conveyor hooks register through
+-- here. main.lua's SERVER_REQUEST hook calls RegisterHook directly, since it
+-- takes a pre- and a post-callback. Coalescing a hook that fires at frame rate
+-- is not here; that is main.lua's coalescer().
 --
 -- Four properties of the shape below are deliberate:
 --
@@ -100,7 +101,6 @@ local function register(path, callback, label, note)
     entry.retry = function() attempt(entry) end
     entries[#entries + 1] = entry
     attempt(entry)
-    return entry
 end
 
 -- Called from main.lua's RegisterLoadMapPostHook: resets the budget of every

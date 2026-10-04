@@ -3,8 +3,9 @@
 Guidance for Claude Code working in this repository.
 
 - This `CLAUDE.md` file is **durable** repo setup and development processes, plus things that will help an agent.  DO NOT add ephemeral details of planning or findings based on the current repo state to this document.
-- Mod description and use lives in `README.md` and should be maintained there without being duplicated here.  Update the README.md whenever you change the user-facing game functionality or Steam Workshop management cycle.
-- The planning file at `docs/PLAN.md` takes prescedence for intent and implementation work; prefer it to comments in all other docs for direction of edits.
+- Two documents describe the mod, for two different readers, and neither is duplicated here:
+  - `README.md` is the GitHub page for this **development repo**. It describes the mod and how to develop, install and publish it from source. It does **not** ship. Update it whenever you change user-facing game functionality, the dev tools, or the publishing cycle.
+  - `.docs/workshop-description.txt` is the Steam Workshop page text, in Steam's BBCode. It does **not** ship either: it is pasted into the Workshop page by hand at publish time, and that step is not automatable. Update it whenever you change user-facing game functionality, and keep its player-facing content in step with `README.md`'s.
 - DO NOT TRUST COMMENTS IN CODE -- TREAT THESE AS GUESSES OR HOPES; COMMENTS MAY ALSO BE OUTDATED LEFTOVER FROM PREVIOUS CODE WHICH CAN LEAD ASTRAY IF NOT VERIFIED.
 
 ---
@@ -19,17 +20,18 @@ This repo contains a Palworld mod.
 | --- | --- | --- |
 | Scripts/ | Lua runtime (main.lua, settings.lua, lp/*.lua) | ships |
 | PalSchemaMods/LootablePassives/ | JSON data patches: items, DataTable rows, English strings | ships |
-| tools/ | install.ps1, stage.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
-| docs/PLAN.md | the working plan | dev only-do not ship |
+| tools/ | install.ps1, stage.ps1, mirror.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
 | CLAUDE.md | Agent guidance | dev only-do not ship |
-| README.md / LICENSE | the user-facing docs | ships |
+| README.md | GitHub page for the development repo | dev only-do not ship |
+| .docs/workshop-description.txt | Steam Workshop page text, pasted by hand | dev only-do not ship |
+| LICENSE | license | ships |
 | Info.json | Steam Workshop package manifest | ships |
 | thumbnail.png | Workshop thumbnail | ships |
 
 - **How `InstallRule.Targets` actually installs, observed from an `InstallManifest.json` the official loader wrote.** The loader appends **`{PackageName}`** to the directory for the `Type`, and *then* copies each `Targets` folder in under its own leaf name. So `Lua` + `./Scripts` lands at `Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts`, and `PalSchema` + `./PalSchemaMods/LootablePassives/raw` lands at `Mods\NativeMods\UE4SS\Mods\PalSchema\mods\LootablePassives\raw`. `04-Tech.md` states the package-name level in prose — "the Package Name is used as the folder name" — and omits it from its per-type table, which is how it got read the wrong way round.
   - **A `Targets` leaf equal to the `PackageName` is therefore a bug**, not the way to control the installed name: it doubles, as `PalSchema\mods\LootablePassives\LootablePassives\`, and PalSchema then loads the folder and finds nothing. `tools/stage.ps1` refuses that shape and prints the computed install path for every rule.
   - The repo's `PalSchemaMods/LootablePassives/` wrapper is consequently just a container, not load-bearing; `Info.json` names the three folders **inside** it. Add a fourth kind of PalSchema data and it must be added to `Targets` too — `stage.ps1` fails the stage if anything shipped is not covered by some `Targets` path.
-- **DO NOT** Rederence dev-only artifacts on things that ship as this creates a broken reference in shipped items
+- **DO NOT** Reference dev-only artifacts on things that ship as this creates a broken reference in shipped items. `README.md` and `.docs/` are dev-only for this purpose, so shipped Lua must not point at them either.
 
 ### `PalSchemaMods/LootablePassives/`
 
@@ -64,9 +66,13 @@ This repo contains a Palworld mod.
 
 There is no build step in development mode, but there is an install step to move files from the repo directories to the game directories. **This repo is the working copy.** The general development process is : edit here, run the checks, deploy to the game, restart and run through actions in the game, read the log. (Note that none of this applies for a mod downloaded from the Steam Workshop -- the production flow.)
 
+The human-facing version of this process, including publishing, is the `Development` section of `README.md`. Change the tools or the loop and update both.
+
 ```powershell
 # ... edit in the repo: the JSON under PalSchemaMods\, the Lua under Scripts\ ...
 node tools\luacheck.js            # Lua parse check
+luacheck Scripts                  # static analysis
+lua tools\ledger_test.lua         # after any lp/ledger.lua edit
 .\tools\install.ps1               # repo -> game install
 # ... restart Palworld, read the log ...
 ```
@@ -79,7 +85,7 @@ node tools\luacheck.js            # Lua parse check
   - errors and warnings to find things explicitly failing
 - In the event of chrashes, read/seach/filter: `%LOCALAPPDATA%/Pal/Saved/Crashes/`
 - **NOTE:** UE4SS hot reload is disabled, so a running game will not pick up chanes without a restart.
-- **NOTE:** This is not a Workshop item yet, so the in-game mod manager cannot install/manage it.
+- **NOTE:** A dev install made by `install.ps1` is not managed by the in-game mod manager; only a Workshop install is.
 
 ### Dev Commands
 
@@ -88,7 +94,11 @@ node tools\luacheck.js            # Lua parse check
 - lua tools\ledger_test.lua is the one automated test. Run after ANY lp/ledger.lua edit.
   - `ledger_test.lua` is a behaviour test for one insertion, not a data verifier: it stubs `lp.inventory` and asserts the ledger's TSV round-trip and which candidate a row is delivered to. It exists because that logic is the only part of the mod with no engine call in it.
 - .\tools\install.ps1 is the repo -> game install. The normal direction; run before every functional runtime test. Takes `-DryRun`, and `-Force` to delete files the repo no longer has.
-- .\tools\stage.ps1 is the repo -> Workshop item-folder copy, for publishing only. An allowlist, the same mirror rule and `-DryRun`/`-Force` as install.ps1, plus four checks on `Info.json` that the uploader itself does not make. It never touches `.workshop.json`, which holds the Published ID.
+- .\tools\stage.ps1 is the repo -> Workshop item-folder copy, for publishing only. An allowlist (`Info.json`, `thumbnail.png`, `LICENSE`, `Scripts\`, `PalSchemaMods\LootablePassives\` — not `README.md`), the same mirror rule and `-DryRun`/`-Force` as install.ps1, plus four checks on `Info.json` that the uploader itself does not make. It never touches `.workshop.json`, which holds the Published ID.
+  - Usage: `.\tools\stage.ps1 -ItemId <numbered item folder> -DryRun`, then again without `-DryRun`; `-Destination` takes the full item folder instead of `-ItemId`.
+  - The Workshop page description is not part of the stage. After uploading, paste `.docs/workshop-description.txt` into the Workshop page by hand if it changed.
+- tools\mirror.ps1 holds the mirror rule both scripts share: `Get-RelativePaths`, `Stop-OnStale` and `Remove-EmptyDirectories`. It is dot-sourced, never run. A change to how either script mirrors goes here, not into one script.
+  - `Stop-OnStale` ends the calling script itself (`exit 0` under `-DryRun`, `exit 1` otherwise), so nothing after the call runs when files are stale.
 
 ...via Scoop, installed to user profile, no admin needed
 
@@ -130,7 +140,7 @@ Uninstall is not needed during DEV; may be needed if transitioning to Steam Work
 - **Say what the code does**: what it reads, writes, calls, returns, in what order, and what it returns instead on failure.
 - **API facts are allowed where a header dump backs them** --> arity, out-parameters, property versus call, a `WBP_*.hpp` line number. Those are checkable without launching anything.
 - **No evidence in comments.** No log timestamps, session references, screenshot numbers, or "measured". Those age badly and since agents may change code and not comments, this means leftover comments may derive from code that may has changed since a comment was written, which is misleading or destructive.
-- **No design intent or future plans.** That is `docs/PLAN.md`'s job, and a comment that disagrees with the plan is noise at best and causes alternate implementation or wasted effort at worst.
+- **No design intent or future plans.** Create or update a single planing document as markdown while working on features or other goals.  Do not create separate or alternate working documents-- keep all edits to a single working plan document.
 
 ---
 

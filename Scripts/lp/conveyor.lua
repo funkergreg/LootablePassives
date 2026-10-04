@@ -124,6 +124,12 @@ local function read_process_rates(model)
     return rates
 end
 
+-- Get(Index) takes an argument, so it is not util.method; passed to pcall by
+-- reference like the accessors in lp/util.lua.
+local function _call_get(container, index)
+    return container:Get(index)
+end
+
 -- instance key -> { passives = { id, ... }, owner = <UId key or nil> }, walked
 -- from the model's own character container rather than from the world's slots
 -- observer, which fires for every container in the world.
@@ -140,9 +146,8 @@ local function read_queued_passives(model)
 
     local slot_count = unwrap(method(container, "Num")) or 0
     for index = 0, slot_count - 1 do
-        local slot
-        -- Get(Index) takes an argument, so it is written out: util.method is for zero-arity calls only.
-        pcall(function() slot = unwrap(container:Get(index)) end)
+        local got, slot = pcall(_call_get, container, index)
+        slot = got and unwrap(slot) or nil
         if is_valid(slot) then
             local handle = unwrap(method(slot, "GetHandle"))
             if is_valid(handle) then
@@ -215,17 +220,15 @@ local function on_consumed(entry, actor)
             .. "single-player it means the OwnerPlayerUId read is not working.")
     end
 
-    -- One owe() call for the whole Pal: it sorts and rewrites the entire file per call.
-    local names, owed_items = {}, {}
-    for _, passive_id in ipairs(entry.passives) do
-        local item_id = module_for(passive_id)
-        if item_id ~= nil then
-            owed_items[#owed_items + 1] = item_id
-            names[#names + 1] = passive_id
-        end
-    end
+    -- entry.passives holds only ids is_extractable accepted, and each has a module.
+    local names = entry.passives
     if #names == 0 then
         return
+    end
+    -- One owe() call for the whole Pal: it sorts and rewrites the entire file per call.
+    local owed_items = {}
+    for index, passive_id in ipairs(names) do
+        owed_items[index] = module_for(passive_id)
     end
     ledger.owe(entry.owner, owed_items)
 
@@ -253,10 +256,9 @@ end
 -- One pass over the model's queue: snapshots newly seen Pals, updates the rate
 -- of those already tracked, and resolves entries that have left the queue.
 --
--- actor is read from the model on every pass rather than cached, so two
--- conveyors cannot answer each other's authority check or drop location.
+-- actor is read from the model in the pass that needs it rather than cached, so
+-- two conveyors cannot answer each other's authority check or drop location.
 local function pass(model)
-    local actor = unwrap(method(model, "GetActor"))
     local rates = read_process_rates(model)
 
     -- The container walk happens only for a key not already tracked.
@@ -266,11 +268,10 @@ local function pass(model)
             queued = queued or read_queued_passives(model)
             local snapshot = queued[key]
             if snapshot ~= nil then
-                tracked[key] = {
-                    passives = snapshot.passives,
-                    owner = snapshot.owner,
-                    rate = rate,
-                }
+                -- read_queued_passives builds a fresh table per key, so it is
+                -- kept rather than copied.
+                snapshot.rate = rate
+                tracked[key] = snapshot
             end
         else
             tracked[key].rate = rate
@@ -279,31 +280,34 @@ local function pass(model)
 
     -- Gone from the queue: consumed at or above COMPLETE_RATE, withdrawn below
     -- it. A withdrawal owes nothing and logs nothing.
+    local actor
     for key, entry in pairs(tracked) do
         if rates[key] == nil then
             tracked[key] = nil
             if entry.rate >= COMPLETE_RATE then
+                actor = actor or unwrap(method(model, "GetActor"))
                 on_consumed(entry, actor)
             end
         end
     end
 end
 
--- Both callbacks are built once, at load, and handed to hooks.register by
--- reference; neither captures per-call state. See lp/hooks.lua.
-local function on_proceed(_, model_param)
+local function pass_if_valid(model_param)
     local model = unwrap(model_param)
     if is_valid(model) then
         pass(model)
     end
 end
 
+-- Both callbacks are built once, at load, and handed to hooks.register by
+-- reference; neither captures per-call state.
+local function on_proceed(_, model_param)
+    pass_if_valid(model_param)
+end
+
 -- Zero-parameter hook: the context argument is the model.
 local function on_container_update(context)
-    local model = unwrap(context)
-    if is_valid(model) then
-        pass(model)
-    end
+    pass_if_valid(context)
 end
 
 local function install()

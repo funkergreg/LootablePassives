@@ -25,7 +25,7 @@ SCRIPT_DIRECTORY = SCRIPT_DIRECTORY:gsub("([\\/])[Ll][Pp][\\/]$", "%1")
 -- Derived once, here, because the journal and the ledger must agree on it.
 local UE4SS_ROOT = SCRIPT_DIRECTORY:match("^(.*[\\/]UE4SS[\\/])") or SCRIPT_DIRECTORY
 
--- The mod's only log channel, and it is unconditional. There is no second,
+-- The mod's only log channel, and it is unconditional.
 local function log(message)
     -- print supplies the newline. Do not format one in as well.
     print(string.format("[%s] %s", MOD_NAME, message))
@@ -280,7 +280,6 @@ local function write_lines(path, lines, label)
 end
 
 return {
-    SCRIPT_DIRECTORY = SCRIPT_DIRECTORY,
     UE4SS_ROOT = UE4SS_ROOT,
     array_count = array_count,
     field = field,

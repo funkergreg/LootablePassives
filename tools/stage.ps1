@@ -10,15 +10,20 @@
     be a deliberate edit here.
 
     Staged:
-      Info.json, thumbnail.png, README.md, LICENSE,
+      Info.json, thumbnail.png, LICENSE,
       Scripts\, PalSchemaMods\LootablePassives\
+
+    README.md is not staged: it documents the GitHub development repo, not the
+    shipped mod. The Workshop page text is .docs\workshop-description.txt, which
+    is pasted into the Workshop page by hand and is not staged either.
 
     The destination is the numbered folder the uploader's Create New Mod made
     under the Workshop content directory. Its name is the Steam item id, and the
     .workshop.json inside it holds the Published ID -- that file is the
     uploader's and is never written or deleted here.
 
-    Like install.ps1 this is a MIRROR, and the same check runs first: a file in
+    Like install.ps1 this is a MIRROR, built on the same helpers in
+    tools\mirror.ps1, and the same check runs first: a file in
     the destination that the staged set does not have stops the run before
     anything is copied. Left alone it would be uploaded to subscribers. -Force
     deletes those files, and any directory left empty, instead of stopping.
@@ -64,6 +69,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'mirror.ps1')
+
 $repo = Split-Path -Parent $PSScriptRoot
 
 # Everything that ships, and nothing else. Relative to the repo root; a folder is
@@ -72,7 +79,6 @@ $repo = Split-Path -Parent $PSScriptRoot
 $ALLOWLIST = @(
     'Info.json'
     'thumbnail.png'
-    'README.md'
     'LICENSE'
     'Scripts'
     'PalSchemaMods\LootablePassives'
@@ -160,47 +166,43 @@ foreach ($entry in $ALLOWLIST) {
     }
     [void]$stagedRelative.Add($entry)
     if (Test-Path $source -PathType Container) {
-        $prefix = (Resolve-Path -LiteralPath $source).Path.TrimEnd('\') + '\'
-        foreach ($item in Get-ChildItem -LiteralPath $source -Recurse -Force) {
-            [void]$stagedRelative.Add((Join-Path $entry $item.FullName.Substring($prefix.Length)))
+        foreach ($rel in (Get-RelativePaths $source -IncludeDirectories)) {
+            [void]$stagedRelative.Add((Join-Path $entry $rel))
         }
     }
 }
 
-foreach ($rule in @($info.InstallRule)) {
-    if ($LEGAL_TYPES -notcontains [string]$rule.Type) {
-        $problems += "InstallRule Type '$($rule.Type)' is not one the loader knows."
-    }
-    foreach ($target in @($rule.Targets)) {
-        $relative = (([string]$target) -replace '^\./', '') -replace '/', '\'
-        if (-not $stagedRelative.Contains($relative)) {
-            $problems += "InstallRule Targets '$target' is not in the staged set."
-        }
-    }
+# A Targets or Thumbnail path from Info.json as a repo-relative Windows path.
+function ConvertTo-RepoRelative {
+    param([string] $Path)
+    return ($Path -replace '^\./', '') -replace '/', '\'
 }
 
 # The loader appends {PackageName} to the type's directory and THEN copies each
 # Targets folder in under its own name. A target whose leaf is the package name
 # therefore installs as PackageName\PackageName\..., which loads as nothing and
-# reports nothing. This is not hypothetical: it shipped once.
+# reports nothing.
+$targetPrefixes = @()
 foreach ($rule in @($info.InstallRule)) {
+    if ($LEGAL_TYPES -notcontains [string]$rule.Type) {
+        $problems += "InstallRule Type '$($rule.Type)' is not one the loader knows."
+    }
     foreach ($target in @($rule.Targets)) {
-        $leaf = Split-Path -Leaf (([string]$target) -replace '/', '\')
-        if ($leaf -eq $info.PackageName) {
+        $relative = ConvertTo-RepoRelative $target
+        $targetPrefixes += $relative
+        if (-not $stagedRelative.Contains($relative)) {
+            $problems += "InstallRule Targets '$target' is not in the staged set."
+        }
+        if ((Split-Path -Leaf $relative) -eq $info.PackageName) {
             $problems += "InstallRule Targets '$target' ends in the package name, so it installs as '$($info.PackageName)\$($info.PackageName)'. Name the folders INSIDE it instead."
         }
     }
 }
 
 # Anything staged that no Targets path covers is shipped and never installed.
-# Package metadata is read from the item folder itself and is not installed.
-$METADATA = @('Info.json', 'thumbnail.png', 'README.md', 'LICENSE')
-$targetPrefixes = @()
-foreach ($rule in @($info.InstallRule)) {
-    foreach ($target in @($rule.Targets)) {
-        $targetPrefixes += ((([string]$target) -replace '^\./', '') -replace '/', '\')
-    }
-}
+# Package metadata -- the allowlisted files -- is read from the item folder
+# itself and is not installed.
+$METADATA = @($ALLOWLIST | Where-Object { Test-Path (Join-Path $repo $_) -PathType Leaf })
 foreach ($relative in $stagedRelative) {
     if ($METADATA -contains $relative) { continue }
     if (Test-Path (Join-Path $repo $relative) -PathType Container) { continue }
@@ -220,7 +222,7 @@ $thumbnail = [string]$info.Thumbnail
 if ([string]::IsNullOrWhiteSpace($thumbnail)) {
     $problems += "Thumbnail is empty."
 }
-elseif (-not $stagedRelative.Contains(((($thumbnail -replace '^\./', '') -replace '/', '\')))) {
+elseif (-not $stagedRelative.Contains((ConvertTo-RepoRelative $thumbnail))) {
     $problems += "Thumbnail '$thumbnail' is not in the staged set."
 }
 
@@ -270,38 +272,26 @@ else {
 #-------------------------------------------------------------------------------
 
 $stale = @()
-$prefix = (Resolve-Path -LiteralPath $Destination).Path.TrimEnd('\') + '\'
-foreach ($item in Get-ChildItem -LiteralPath $Destination -Recurse -File -Force) {
-    $relative = $item.FullName.Substring($prefix.Length)
+foreach ($relative in (Get-RelativePaths $Destination)) {
     if ($UPLOADER_OWNED -contains $relative) { continue }
     if (-not $stagedRelative.Contains($relative)) {
-        $stale += [pscustomobject]@{ Rel = $relative; Path = $item.FullName }
+        $stale += [pscustomobject]@{ Rel = $relative; Path = (Join-Path $Destination $relative) }
     }
 }
 
 if ($stale.Count -gt 0 -and -not $Force) {
-    Write-Host ""
-    Write-Warning "$($stale.Count) file(s) in the item folder are not in this package:"
-    foreach ($s in $stale) { Write-Host "    $($s.Rel)" }
-    Write-Host ""
-    $msg = "Staging stopped before copying anything. Those files would be uploaded to every subscriber. Re-run with -Force to delete them."
-    if ($DryRun) {
-        Write-Host $msg
-        Write-Host ""
-        Write-Host "Dry run only. Nothing was changed."
-        return
-    }
-    Write-Host $msg
-    exit 1
+    Stop-OnStale -DryRun:$DryRun `
+        -Heading "$($stale.Count) file(s) in the item folder are not in this package:" `
+        -Listing @($stale | ForEach-Object { $_.Rel }) `
+        -Message "Staging stopped before copying anything. Those files would be uploaded to every subscriber. Re-run with -Force to delete them."
 }
 
 Write-Host "  $repo"
 Write-Host "    -> $Destination"
 
 # Printed because getting this wrong is silent in game: the mod appears in the
-# manager, installs, and does nothing. Lua is from the uploader docs; PalSchema
-# is from reading an InstallManifest the loader wrote. The other three types
-# have not been observed here, so their package-name level is not asserted.
+# manager, installs, and does nothing. The package-name level is asserted for
+# Lua and PalSchema only.
 Write-Host ""
 Write-Host "  Installs as:"
 foreach ($rule in @($info.InstallRule)) {
@@ -315,7 +305,7 @@ foreach ($rule in @($info.InstallRule)) {
         default     { "<unknown type>" }
     }
     foreach ($target in @($rule.Targets)) {
-        $leaf = Split-Path -Leaf (([string]$target) -replace '/', '\')
+        $leaf = Split-Path -Leaf (ConvertTo-RepoRelative $target)
         Write-Host "    $base\$leaf\"
     }
 }
@@ -342,15 +332,7 @@ foreach ($entry in $ALLOWLIST) {
     }
 }
 
-# A folder emptied by the stale sweep would otherwise survive as an empty shell.
-Get-ChildItem -LiteralPath $Destination -Recurse -Directory -Force |
-    Sort-Object { $_.FullName.Length } -Descending |
-    ForEach-Object {
-        if (-not (Get-ChildItem -LiteralPath $_.FullName -Force)) {
-            Write-Host "    rmdir  $($_.FullName)"
-            if (-not $DryRun) { Remove-Item -LiteralPath $_.FullName -Force }
-        }
-    }
+Remove-EmptyDirectories $Destination -DryRun:$DryRun
 
 Write-Host ""
 if ($DryRun) {
@@ -358,5 +340,5 @@ if ($DryRun) {
 }
 else {
     if ($stale.Count -gt 0) { Write-Host "Deleted $($stale.Count) file(s) the package no longer has." }
-    Write-Host "Staged $($info.PackageName) $($info.Version). Upload it from Palworld Mod Uploader, then set visibility and description on the Workshop page."
+    Write-Host "Staged $($info.PackageName) $($info.Version). Upload it from Palworld Mod Uploader, then set visibility on the Workshop page and paste .docs\workshop-description.txt into its description if that file changed."
 }
