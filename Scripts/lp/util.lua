@@ -232,13 +232,39 @@ end
 -- then ExecuteInGameThread.
 --
 -- ALLOCATES TWO CLOSURES PER CALL, so it is for one-off work, never a per-frame
--- path; that is main.lua's coalescer().
+-- path; that is coalescer() below.
 local function run_later(delay_ms, fn, a, b)
     ExecuteWithDelay(delay_ms, function()
         ExecuteInGameThread(function()
             fn(a, b)
         end)
     end)
+end
+
+-- Wraps work in a scheduler that keeps at most one deferred pass queued: the
+-- returned function runs work on the game thread after delay ms, through
+-- ExecuteWithDelay and then ExecuteInGameThread, and does nothing while a pass
+-- is already queued. The flag clears before work runs, so work may reschedule
+-- itself.
+--
+-- Called at LOAD. Each call builds its flag and its runner once, so the
+-- scheduler it returns allocates nothing however often a hook fires. A flag
+-- alone would not do it, because ExecuteWithDelay(0, ...) completes within the
+-- tick.
+local function coalescer(work, delay)
+    local scheduled = false
+    local run
+    run = function()
+        scheduled = false
+        ExecuteInGameThread(work)
+    end
+    return function()
+        if scheduled then
+            return
+        end
+        scheduled = true
+        ExecuteWithDelay(delay, run)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -338,6 +364,7 @@ end
 return {
     UE4SS_ROOT = UE4SS_ROOT,
     array_count = array_count,
+    coalescer = coalescer,
     field = field,
     find_all = find_all,
     find_first = find_first,

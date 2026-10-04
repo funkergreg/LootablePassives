@@ -4,6 +4,9 @@
 -- write_journal("granted"), remove_skill, clear_journal. The module is created
 -- before the passive is removed. begin_journal settles any earlier row still on
 -- disk before writing over it.
+--
+-- Nothing here writes to the Surgery panel. Each peer repairs its own panel from
+-- what it observes in lp/ui.lua; this file only logs outcomes.
 
 local util = require("lp.util")
 local ids = require("lp.ids")
@@ -32,13 +35,11 @@ local add_implant = inventory.add_implant
 local find_inventory = inventory.find_inventory
 local local_player_id = inventory.local_player_id
 local player_id_number = inventory.player_id_number
-local player_uid = inventory.player_uid
 local remove_skill = inventory.remove_skill
 local restore_replaced_passive = inventory.restore_replaced_passive
 local undo_swap = inventory.undo_swap
 local settle_before_exchange = recovery.settle_before_exchange
 local current_page = ui.current_page
-local on_transaction_complete = ui.on_transaction_complete
 local selected_parameter = ui.selected_parameter
 local selected_passive = ui.selected_passive
 local visible_extraction_widget = ui.visible_extraction_widget
@@ -82,25 +83,16 @@ local function capture_targeted_record(request_player_id)
     }
 end
 
--- Snapshots every PalIndividualCharacterParameter in the world whose
--- OwnerPlayerUId is the requester's PlayerUId, via passives.snapshot_all, which
--- crash recovery also calls unfiltered. Returns nil, and logs, when the
--- requester's PlayerUId does not read: an unfiltered snapshot would resolve to a
--- marker swap on any player's Pal and grant its module to this requester.
+-- Snapshots every PalIndividualCharacterParameter in the world, via
+-- passives.snapshot_all, which crash recovery also calls. There is no owner
+-- filter: the Pal a player operates on need not carry that player's
+-- OwnerPlayerUId. resolve_record refuses when more than one snapshot shows a
+-- marker swap, which is what keeps two players' simultaneous requests apart.
 local function snapshot_server_parameters(request_player_id)
-    local owner = player_uid(request_player_id)
-    if owner == nil then
-        log(string.format(
-            "WARNING: could not read the PlayerUId of requesting player %s, so this Surgery Table "
-            .. "request was not tracked. If it was one of this mod's operations, its marker stays on "
-            .. "the Pal and nothing was granted.",
-            tostring(player_id_number(request_player_id))))
-        return nil
-    end
     return {
-        snapshots = snapshot_all(owner),
+        snapshots = snapshot_all(),
         request_player_id = request_player_id,
-        mode_source = "owner snapshot",
+        mode_source = "server snapshot",
     }
 end
 
@@ -114,13 +106,12 @@ local function is_remote_request(request_player_id)
 end
 
 -- For a request from the local player, tries capture_targeted_record first and
--- falls through to the owner snapshot only when there is no tab page at
+-- falls through to the server snapshot only when there is no tab page at
 -- all; a page that is present and yielded nothing returns nil instead. A remote
--- request goes straight to the snapshot, and its record carries remote = true,
--- which is what keeps finish off the local player's Surgery panel.
+-- request goes straight to the snapshot: the recorded tab page is the local
+-- player's and says nothing about it.
 local function capture_record(request_player_id)
-    local remote = is_remote_request(request_player_id)
-    if not remote then
+    if not is_remote_request(request_player_id) then
         local succeeded, record = pcall(capture_targeted_record, request_player_id)
         if succeeded and record ~= nil then
             return record
@@ -130,10 +121,9 @@ local function capture_record(request_player_id)
         end
     end
     local fallback_ok, fallback = pcall(snapshot_server_parameters, request_player_id)
-    if not fallback_ok or fallback == nil then
+    if not fallback_ok then
         return nil
     end
-    fallback.remote = remote or nil
     return fallback
 end
 
@@ -215,7 +205,6 @@ local function resolve_record(record)
                     before_ids = snapshot.before_ids,
                     request_player_id = record.request_player_id,
                     mode_source = record.mode_source,
-                    remote = record.remote,
                     lock = lock,
                     mode = EXTRACTION_MODES[lock],
                     stray = stray or nil,
@@ -255,17 +244,6 @@ local function stranded_marker(record)
         end
     end
     return found_snapshot, found_lock
-end
-
--- Logs the outcome. The panel refresh that follows it is
--- ui.on_transaction_complete, which reads record.mode and owns every timing
--- decision in it. Not called for a remote record: the panel is the local
--- player's, and the exchange was not.
-local function finish(record, message)
-    log(message)
-    if not record.remote then
-        on_transaction_complete(record.mode)
-    end
 end
 
 -- The first row of an exchange, always "prepared". write_journal replaces
@@ -427,7 +405,7 @@ local function finalize_implant(record)
         -- the module, and target == nil is the definition of this branch.
         -- Reachable only from a JSON route row with no IMPLANT_TARGET entry in
         -- lp/ids.lua.
-        finish(record, string.format(
+        log(string.format(
             "ERROR: no target passive configured for alias %s; alias removed. The module "
             .. "was spent and CANNOT be refunded -- nothing records which module it was. "
             .. "This is a data fault: that route has no IMPLANT_TARGET entry.",
@@ -441,7 +419,7 @@ local function finalize_implant(record)
             target, module_for(target), record.lock)
     then
         local undone, refunded = unwind_alias(record, target)
-        finish(record, string.format(
+        log(string.format(
             "ERROR: the recovery journal could not be written, so %s was not implanted. "
             .. "Alias undone=%s, module refunded=%s.",
             target, tostring(undone), tostring(refunded)))
@@ -454,7 +432,7 @@ local function finalize_implant(record)
         -- The prepared/implant row on disk replays by installing target, which
         -- here is the duplicate, so it is never kept.
         journal_after_undo(record, undone, "replace")
-        finish(record, string.format(
+        log(string.format(
             "Blocked a duplicate %s: this Pal already has it. Alias undone=%s, module refunded=%s.",
             target, tostring(undone), tostring(refunded)))
         return
@@ -462,7 +440,7 @@ local function finalize_implant(record)
 
     if restore_replaced_passive(record.parameter, target, record.lock) then
         clear_journal()
-        finish(record, string.format("Implanted %s from a disposable module for player %s (%s).",
+        log(string.format("Implanted %s from a disposable module for player %s (%s).",
             target, tostring(player_id_number(record.request_player_id)), record.mode_source))
     else
         local undone, refunded = unwind_alias(record, target)
@@ -470,7 +448,7 @@ local function finalize_implant(record)
         -- prepared/implant row stays for recovery to retry the insert;
         -- otherwise it is replaced by one that finishes the unwind.
         journal_after_undo(record, undone, refunded and "replace" or "keep")
-        finish(record, string.format(
+        log(string.format(
             "ERROR: could not install %s from its module; alias undone=%s, module refunded=%s. "
             .. "The gold was spent.",
             target, tostring(undone), tostring(refunded)))
@@ -482,7 +460,7 @@ end
 --------------------------------------------------------------------------------
 
 -- 12 attempts at 250 ms. Each retry allocates one closure pair; see the note on
--- coalescer() in main.lua before raising either number.
+-- coalescer() in lp/util.lua before raising either number.
 local RESOLVE_ATTEMPTS = 12
 local RESOLVE_INTERVAL_MS = 250
 
@@ -499,7 +477,7 @@ function finalize_extraction(record, attempt)
         if vanilla then
             -- The same outcome as running out of attempts with no marker, on
             -- the first attempt that sees the change.
-            finish(record, "A passive list changed with no marker, so this was not one of our "
+            log("A passive list changed with no marker, so this was not one of our "
                 .. "operations; nothing was changed.")
         elseif attempt < RESOLVE_ATTEMPTS then
             schedule_finalize(record, attempt + 1, RESOLVE_INTERVAL_MS)
@@ -510,12 +488,12 @@ function finalize_extraction(record, attempt)
             -- what authorises lp/recovery.lua to remove it on the next map load.
             local snapshot, lock = stranded_marker(record)
             if snapshot == nil then
-                finish(record, "No marker appeared, so this was not one of our operations; "
+                log("No marker appeared, so this was not one of our operations; "
                     .. "nothing was changed.")
             else
                 local journalled = begin_journal(snapshot.parameter, snapshot.before_ids,
                     "stranded", snapshot.expect_passive_id, nil, lock)
-                finish(record, string.format(
+                log(string.format(
                     "WARNING: the exchange could not be resolved and marker %s is stranded on "
                     .. "this Pal. Journalled=%s; if true it is cleaned up on the next map load.",
                     tostring(lock), tostring(journalled)))
@@ -536,11 +514,11 @@ function finalize_extraction(record, attempt)
     -- Marker added with nothing removed: remove it and grant nothing.
     if record.stray then
         if remove_skill(record.parameter, record.lock) then
-            finish(record, "Nothing extracted: an empty slot was selected, so the marker was removed again.")
+            log("Nothing extracted: an empty slot was selected, so the marker was removed again.")
         else
             local journalled = begin_journal(record.parameter, record.before_ids,
                 "stranded", nil, nil, record.lock)
-            finish(record, string.format(
+            log(string.format(
                 "ERROR: an empty slot was selected and marker %s could not be removed. "
                 .. "Journalled=%s; if true it is cleared on the next map load.",
                 tostring(record.lock), tostring(journalled)))
@@ -549,14 +527,14 @@ function finalize_extraction(record, attempt)
     end
 
     if not is_extractable(record.passive_id) then
-        finish(record, string.format("Blocked extraction of unsupported passive %s; %s.",
+        log(string.format("Blocked extraction of unsupported passive %s; %s.",
             record.passive_id, restore_on_abort(record, "write")))
         return
     end
 
     local bag = find_inventory(record.request_player_id)
     if not is_valid(bag) then
-        finish(record, string.format("ERROR: inventory unavailable, so %s was not extracted; %s.",
+        log(string.format("ERROR: inventory unavailable, so %s was not extracted; %s.",
             record.passive_id, restore_on_abort(record, "write")))
         return
     end
@@ -568,21 +546,21 @@ function finalize_extraction(record, attempt)
     if not begin_journal(record.parameter, record.before_ids, "marker",
             record.passive_id, record.item_id, record.lock)
     then
-        finish(record, string.format(
+        log(string.format(
             "ERROR: the recovery journal could not be written, so %s was not extracted without "
             .. "crash protection; %s.", record.passive_id, restore_on_abort(record, "none")))
         return
     end
     local granted, reason = add_implant(bag, record.item_id)
     if not granted then
-        finish(record, string.format("ERROR: implant grant failed for %s (%s); %s.",
+        log(string.format("ERROR: implant grant failed for %s (%s); %s.",
             record.passive_id, tostring(reason), restore_on_abort(record, "keep")))
         return
     end
     if not write_journal("granted", "marker", record.passive_id, record.item_id, record.lock) then
         -- Implant granted, marker still on the Pal, no entry advanced to
         -- authorise removing it. Stops here and keeps both.
-        finish(record, string.format(
+        log(string.format(
             "ERROR: granted %s but the journal could not be advanced; stopped before removing "
             .. "the marker. The implant was kept.", record.item_id))
         return
@@ -596,7 +574,7 @@ function finalize_extraction(record, attempt)
         if halted then
             -- The sweep's granted/loop row is on disk and the marker is still
             -- attached; recovery removes the passive and then the marker.
-            finish(record, string.format(
+            log(string.format(
                 "ERROR: extract-all stopped after %s and %d more passive(s), when a passive could "
                 .. "not be removed after its module was granted. The modules were kept, and the "
                 .. "journal and marker are kept so the removal is finished on the next map load.",
@@ -617,7 +595,7 @@ function finalize_extraction(record, attempt)
     if not remove_skill(record.parameter, record.lock) then
         -- Journal left in place, stamped granted/marker: that is the entry
         -- lp/recovery.lua completes by removing the marker.
-        finish(record, string.format(
+        log(string.format(
             "ERROR: marker cleanup failed after granting %s. The implant was retained, and the "
             .. "journal is kept so the marker is cleaned up on the next map load.",
             record.passive_id))
@@ -630,12 +608,12 @@ function finalize_extraction(record, attempt)
         if #extra_skipped > 0 then
             skipped_note = string.format(" Skipped (no implant): %s.", table.concat(extra_skipped, ", "))
         end
-        finish(record, string.format(
+        log(string.format(
             "Extracted %d passive(s) from this Pal for player %s (%s): %s plus %d more.%s",
             extra_extracted + 1, tostring(player_id_number(record.request_player_id)),
             record.mode_source, record.passive_id, extra_extracted, skipped_note))
     else
-        finish(record, string.format(
+        log(string.format(
             "Extracted %s into %s for player %s (%s).",
             record.passive_id, record.item_id,
             tostring(player_id_number(record.request_player_id)), record.mode_source))

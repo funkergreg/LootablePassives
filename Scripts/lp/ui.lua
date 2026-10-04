@@ -1,4 +1,5 @@
--- Lootable Passives -- The Surgery widget: access, the Edit gate, and panel repair.
+-- Lootable Passives -- The Surgery widget: access, the Edit gate, panel repair,
+-- and the local exchange this peer is waiting on.
 --
 -- The gate here duplicates checks the transaction also makes, and the
 -- duplication is load-bearing rather than accidental: the transaction runs
@@ -14,12 +15,15 @@ local passives = require("lp.passives")
 
 local field = util.field
 local is_valid = util.is_valid
+local coalescer = util.coalescer
 local log = util.log
 local method = util.method
 local name_to_string = util.name_to_string
 local IMPLANT_TARGET = ids.IMPLANT_TARGET
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local is_extract_mode = ids.is_extract_mode
+local first_marker = passives.first_marker
+local get_skill_ids = passives.get_skill_ids
 local has_skill = passives.has_skill
 local is_extractable = passives.is_extractable
 
@@ -42,8 +46,23 @@ end
 -- Surgery widget access
 --------------------------------------------------------------------------------
 
+-- The passive id on the widget's card named property_name, read from its
+-- BindedPassiveSkillName. Returns nil for an invalid card or an empty slot,
+-- which reads as "None".
+local function card_passive(widget, property_name)
+    local card = field(widget, property_name)
+    if not is_valid(card) then
+        return nil
+    end
+    local passive_id = name_to_string(field(card, "BindedPassiveSkillName"))
+    if passive_id == "None" then
+        return nil
+    end
+    return passive_id
+end
+
 -- The passive id on the card at the selected slot. Returns nil for a negative or
--- out-of-range index, an invalid card, or an empty slot, which reads as "None".
+-- out-of-range index, and otherwise what card_passive returns.
 --
 -- Takes a widget its caller has already validated -- current_page() or
 -- visible_extraction_widget() -- and does not validate it again.
@@ -56,15 +75,7 @@ local function selected_passive(widget)
     if property_name == nil then
         return nil
     end
-    local card = field(widget, property_name)
-    if not is_valid(card) then
-        return nil
-    end
-    local passive_id = name_to_string(field(card, "BindedPassiveSkillName"))
-    if passive_id == "None" then
-        return nil
-    end
-    return passive_id
+    return card_passive(widget, property_name)
 end
 
 -- The tab page's selected Pal, as its PalIndividualCharacterParameter.
@@ -96,6 +107,11 @@ local live_screen = nil
 -- block_edit. Reset by forget_live_widgets along with the page it was set on.
 local edit_disabled_by_mod = false
 
+-- The Surgery operation this peer asked for and is waiting on, or nil. Written
+-- only in the local exchange section at the bottom of this file, and cleared by
+-- forget_live_widgets.
+local exchange = nil
+
 -- Set once, the first time note_live_page is given something is_valid rejects.
 local context_warning_reported = false
 
@@ -126,6 +142,7 @@ local function forget_live_widgets()
     live_page = nil
     live_screen = nil
     edit_disabled_by_mod = false
+    exchange = nil
 end
 
 local function current_page()
@@ -251,7 +268,7 @@ end
 -- alias_target_already_present is true.
 --
 -- Takes no arguments so main.lua can hand it to ExecuteInGameThread by
--- reference; see the note on coalescer() in main.lua. main.lua does not schedule
+-- reference; see the note on coalescer() in lp/util.lua. main.lua does not schedule
 -- it at all when surgery_ui_gate is false in settings.lua.
 local function enforce_extraction_gate()
     local page = current_page()
@@ -313,6 +330,87 @@ local function _set_consume_item_id(screen, item_name)
     screen.CachedConsumeItemId = item_name
 end
 
+-- The passive ids the right-hand Pal detail is showing, one card_passive per
+-- card, skipping empty cards. nil when the detail does not read.
+local function detail_passives(detail)
+    if not is_valid(detail) then
+        return nil
+    end
+    local shown = {}
+    for _, property_name in ipairs(PASSIVE_CARD_PROPERTIES) do
+        local passive_id = card_passive(detail, property_name)
+        if passive_id ~= nil then
+            shown[#shown + 1] = passive_id
+        end
+    end
+    return shown
+end
+
+-- Element-wise equality, in order.
+local function same_list(a, b)
+    if #a ~= #b then
+        return false
+    end
+    for index = 1, #a do
+        if a[index] ~= b[index] then
+            return false
+        end
+    end
+    return true
+end
+
+-- Do two id lists hold the same ids in any order? Compares sorted copies.
+local function same_ids(a, b)
+    if #a ~= #b then
+        return false
+    end
+    local left, right = {}, {}
+    for index = 1, #a do
+        left[index], right[index] = a[index], b[index]
+    end
+    table.sort(left)
+    table.sort(right)
+    return same_list(left, right)
+end
+
+-- BindFromHandle takes one UPalIndividualCharacterHandle*
+-- (WBP_IngameMenu_PalBox_PalDetail.hpp) and rebinds the detail to that Pal.
+local function _call_bind_from_handle(detail, handle)
+    detail:BindFromHandle(handle)
+end
+
+-- Reads the screen's Pal detail against the selected Pal's passive list, logs
+-- both, and rebinds the detail through BindFromHandle(CurrentHandle) when the
+-- detail still shows one of our markers or a different set of passives. The log
+-- is the result.
+local function repair_detail(screen, page)
+    local detail = field(screen, "WBP_IngameMenu_PalBox_PalDetail")
+    local shown = detail_passives(detail)
+    local actual = get_skill_ids(selected_parameter(page))
+    if shown == nil or actual == nil then
+        log(string.format("Pal detail check skipped: detail readable=%s, Pal list readable=%s.",
+            tostring(shown ~= nil), tostring(actual ~= nil)))
+        return
+    end
+    local stale = first_marker(shown) ~= nil or not same_ids(shown, actual)
+    log(string.format("Pal detail shows [%s]; the Pal has [%s]; %s.",
+        table.concat(shown, ","), table.concat(actual, ","),
+        stale and "stale, rebinding it" or "current, left alone"))
+    if not stale then
+        return
+    end
+    local handle = field(screen, "CurrentHandle")
+    if not is_valid(handle) then
+        log("Pal detail NOT rebound: the screen has no CurrentHandle.")
+        return
+    end
+    log("Calling BindFromHandle on the Pal detail.")
+    local succeeded = pcall(_call_bind_from_handle, detail, handle)
+    shown = detail_passives(detail) or {}
+    log(string.format("BindFromHandle %s; the Pal detail now shows [%s].",
+        succeeded and "returned" or "raised", table.concat(shown, ",")))
+end
+
 -- Set once, the first time a refresh finds no open page.
 local closed_skip_reported = false
 
@@ -370,6 +468,7 @@ local function refresh_surgery_ui(reset_panel, rebuild_list)
             method(screen, "SetupPassiveChangeItem")
         end
         method(screen, "RefreshItemDisplay")
+        repair_detail(screen, page)
     end
 
     return true
@@ -399,7 +498,7 @@ end
 
 -- The three callbacks the timers below take are built once, at load, and passed
 -- to ExecuteWithDelay and ExecuteInGameThread by reference; see the note on
--- coalescer() in main.lua.
+-- coalescer() in lp/util.lua.
 local function reset_panel_now()
     refresh_surgery_ui(true, false)
 end
@@ -412,8 +511,8 @@ local function reset_on_game_thread()
     ExecuteInGameThread(reset_panel_now)
 end
 
--- What a finished transaction does to the Surgery panel. Called by
--- lp.transaction's finish with that transaction's mode.
+-- What a finished exchange does to the Surgery panel. Called by the local
+-- exchange section below with that exchange's mode.
 --
 -- reset_panel is false for mode == "implant", which is what stops
 -- refresh_surgery_ui clearing the operation chip and the consume-item count for
@@ -433,15 +532,154 @@ local function on_transaction_complete(mode)
     end
 end
 
+--------------------------------------------------------------------------------
+-- The local exchange
+--------------------------------------------------------------------------------
+--
+-- Each peer watches the operation it asked for itself. begin_local_exchange runs
+-- from main.lua's hook on the model's RequestChangePassiveSkill, on the peer
+-- that clicked; the server's half of the exchange may run on another machine.
+-- check_local_exchange re-reads the Pal's passive list and calls the exchange
+-- finished when no marker is on it and the list has moved from where it
+-- started, then hands the mode to on_transaction_complete. The engine events
+-- that call it are triggers only; the read is the check, so it does not matter
+-- which of them fires on a given peer.
+
+-- 20 polls at 250 ms: 5 s. Each poll is one passive-list read.
+local EXCHANGE_POLL_MS = 250
+local EXCHANGE_POLL_LIMIT = 20
+
+-- Logs message, clears the pending exchange, and hands record's mode to
+-- on_transaction_complete.
+local function end_local_exchange(record, message)
+    log(message)
+    exchange = nil
+    on_transaction_complete(record.mode)
+end
+
+-- Re-reads the pending exchange's Pal. Finished when no marker is on it and the
+-- list differs from the one at the request, or when a marker was seen earlier
+-- and is gone now even though the list is back where it started, as after an
+-- abort or an empty-slot extraction. Returns whether it finished. trigger names
+-- the calling event for the log.
+local function check_local_exchange(trigger)
+    local record = exchange
+    if record == nil then
+        return false
+    end
+    local after_ids = get_skill_ids(record.parameter)
+    if after_ids == nil then
+        return false
+    end
+    local marker = first_marker(after_ids)
+    if marker ~= nil then
+        if not record.marker_seen then
+            record.marker_seen = true
+            log(string.format("Marker %s is on the Pal (%s, poll %d); the server half is pending.",
+                marker, trigger, record.polls))
+        end
+        return false
+    end
+    if not record.marker_seen and same_list(record.before_ids, after_ids) then
+        return false
+    end
+    end_local_exchange(record, string.format(
+        "The %s exchange finished (%s, poll %d): the Pal now has [%s]. Repairing the panel.",
+        record.lock, trigger, record.polls, table.concat(after_ids, ",")))
+    return true
+end
+
+local schedule_exchange_poll
+
+local function run_exchange_poll()
+    local record = exchange
+    if record == nil then
+        return
+    end
+    record.polls = record.polls + 1
+    if check_local_exchange("poll") then
+        return
+    end
+    if record.polls < EXCHANGE_POLL_LIMIT then
+        schedule_exchange_poll()
+        return
+    end
+    end_local_exchange(record, string.format(
+        "WARNING: the %s exchange did not finish within %d ms (marker seen=%s, server accepted=%s). "
+        .. "The Pal has [%s]. The panel is reset anyway; a marker still listed is stranded.",
+        record.lock, EXCHANGE_POLL_MS * EXCHANGE_POLL_LIMIT, tostring(record.marker_seen),
+        tostring(record.notified), table.concat(get_skill_ids(record.parameter) or {}, ",")))
+end
+
+-- One scheduled poll at a time; coalescer clears its flag before
+-- run_exchange_poll runs, so the poll can reschedule itself.
+schedule_exchange_poll = coalescer(run_exchange_poll, EXCHANGE_POLL_MS)
+
+-- Called from main.lua's hook on the model's RequestChangePassiveSkill with the
+-- requested passive id and slot index. Records nothing for a vanilla passive id.
+-- The Pal is the recorded tab page's CachedCharacter, read now.
+local function begin_local_exchange(passive_id, slot_index)
+    local mode = EXTRACTION_MODES[passive_id]
+    if mode == nil then
+        return
+    end
+    local page = current_page()
+    local parameter = page ~= nil and selected_parameter(page) or nil
+    local before_ids = get_skill_ids(parameter)
+    if before_ids == nil then
+        log(string.format(
+            "Requested %s but the selected Pal's passive list does not read (tab page recorded=%s), "
+            .. "so the panel is not repaired for this exchange.", passive_id, tostring(page ~= nil)))
+        return
+    end
+    if exchange ~= nil then
+        log(string.format("A pending %s exchange is replaced by this request.", exchange.lock))
+    end
+    exchange = {
+        mode = mode,
+        lock = passive_id,
+        parameter = parameter,
+        before_ids = before_ids,
+        polls = 0,
+        marker_seen = false,
+        notified = false,
+    }
+    log(string.format("Requested %s on slot %s of a Pal with [%s]; waiting for the exchange to finish.",
+        passive_id, tostring(slot_index), table.concat(before_ids, ",")))
+    schedule_exchange_poll()
+end
+
+-- Called from main.lua's hook on the screen's OnOperatingPassiveNotifyied with
+-- its Success argument: the server's answer to the vanilla half of the request.
+local function note_operation_result(success)
+    if exchange == nil then
+        return
+    end
+    if success == false then
+        log(string.format(
+            "The server refused the %s request; nothing to wait for. The panel is left as vanilla "
+            .. "shows it.", exchange.lock))
+        exchange = nil
+        return
+    end
+    if not exchange.notified then
+        exchange.notified = true
+        log(string.format("The server accepted the %s request; the vanilla half is done.", exchange.lock))
+    end
+    check_local_exchange("operation notify")
+end
+
 return {
+    begin_local_exchange = begin_local_exchange,
+    check_local_exchange = check_local_exchange,
+    consume_pending_refresh = consume_pending_refresh,
+    current_page = current_page,
+    enforce_extraction_gate = enforce_extraction_gate,
     forget_live_widgets = forget_live_widgets,
     note_live_page = note_live_page,
     note_live_screen = note_live_screen,
-    consume_pending_refresh = consume_pending_refresh,
-    current_page = current_page,
-    on_transaction_complete = on_transaction_complete,
+    note_operation_result = note_operation_result,
     refresh_pending = refresh_pending,
-    enforce_extraction_gate = enforce_extraction_gate,
     selected_parameter = selected_parameter,
     selected_passive = selected_passive,
     visible_extraction_widget = visible_extraction_widget,

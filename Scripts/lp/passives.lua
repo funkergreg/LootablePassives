@@ -44,9 +44,19 @@ end
 -- Passive list inspection
 --------------------------------------------------------------------------------
 
+-- A TArray<FName> as a list of strings. An FName that will not convert becomes
+-- "<invalid>", so the list length always matches the array's. nil in, empty
+-- list out.
+local function name_list(array)
+    local names = {}
+    for index = 1, array_count(array) do
+        names[index] = name_to_string(array[index]) or "<invalid>"
+    end
+    return names
+end
+
 -- GetPassiveSkillList() as a list of strings, or nil if the parameter is invalid
--- or the call raises. An FName that will not convert becomes "<invalid>", so the
--- list length always matches the array's.
+-- or the call raises.
 local function get_skill_ids(parameter)
     if not is_valid(parameter) then
         return nil
@@ -55,11 +65,7 @@ local function get_skill_ids(parameter)
     if skills == nil then
         return nil
     end
-    local skill_ids = {}
-    for index = 1, array_count(skills) do
-        skill_ids[index] = name_to_string(skills[index]) or "<invalid>"
-    end
-    return skill_ids
+    return name_list(skills)
 end
 
 -- An FPalInstanceID, as field() returns it, turned into its InstanceId GUID as a
@@ -85,21 +91,18 @@ local function owner_key(parameter)
     return guid_key(field(field(parameter, "SaveParameter"), "OwnerPlayerUId"))
 end
 
--- Every PalIndividualCharacterParameter in the world, as
--- { parameter = ..., before_ids = { id, ... } }. With owner, only those whose
--- owner_key equals it; a Pal whose owner does not read is left out.
+-- Every PalIndividualCharacterParameter in the world whose passive list reads,
+-- as { parameter = ..., before_ids = { id, ... } }.
 --
--- One walk of the object pool, shared by the owner-filtered capture in
+-- One walk of the object pool, shared by the server-snapshot capture in
 -- lp/transaction.lua and the sweep in lp/recovery.lua. It is the most expensive
 -- engine call in the mod. get_skill_ids does its own is_valid.
-local function snapshot_all(owner)
+local function snapshot_all()
     local found = {}
     for _, parameter in ipairs(find_all("PalIndividualCharacterParameter")) do
-        if owner == nil or owner_key(parameter) == owner then
-            local skill_ids = get_skill_ids(parameter)
-            if skill_ids ~= nil then
-                found[#found + 1] = { parameter = parameter, before_ids = skill_ids }
-            end
+        local skill_ids = get_skill_ids(parameter)
+        if skill_ids ~= nil then
+            found[#found + 1] = { parameter = parameter, before_ids = skill_ids }
         end
     end
     return found
@@ -144,6 +147,16 @@ local function has_skill(parameter, id)
         end
     end
     return false
+end
+
+-- The first of our markers or aliases in the list, or nil.
+local function first_marker(skill_ids)
+    for _, id in ipairs(skill_ids or {}) do
+        if EXTRACTION_MODES[id] ~= nil then
+            return id
+        end
+    end
+    return nil
 end
 
 -- True when the id is a real passive -- not nil, not "None", not one of this
@@ -255,12 +268,14 @@ return {
     counts = counts,
     detect_added_lock = detect_added_lock,
     detect_replaced_passive = detect_replaced_passive,
+    first_marker = first_marker,
     get_skill_ids = get_skill_ids,
     has_skill = has_skill,
     instance_key = instance_key,
     is_extractable = is_extractable,
     is_module_id = is_module_id,
     module_for = module_for,
+    name_list = name_list,
     owner_key = owner_key,
     pal_key = pal_key,
     snapshot_all = snapshot_all,

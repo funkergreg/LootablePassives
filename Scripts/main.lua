@@ -19,32 +19,48 @@ local hooks = require("lp.hooks")
 local conveyor = require("lp.conveyor")
 local ledger = require("lp.ledger")
 
+local coalescer = util.coalescer
 local has_authority = util.has_authority
 local log = util.log
+local name_to_string = util.name_to_string
 local unwrap = util.unwrap
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local JOURNAL_PATH = journal.JOURNAL_PATH
 local journal_is_writable = journal.journal_is_writable
+local name_list = passives.name_list
+local begin_local_exchange = ui.begin_local_exchange
+local check_local_exchange = ui.check_local_exchange
 local consume_pending_refresh = ui.consume_pending_refresh
 local enforce_extraction_gate = ui.enforce_extraction_gate
 local forget_live_widgets = ui.forget_live_widgets
 local note_live_page = ui.note_live_page
 local note_live_screen = ui.note_live_screen
+local note_operation_result = ui.note_operation_result
 local refresh_pending = ui.refresh_pending
 local capture_record = transaction.capture_record
 local schedule_finalize = transaction.schedule_finalize
 local schedule_recovery = recovery.schedule_recovery
 
+-- Server side: runs where the swap is executed, on the host only.
 local SERVER_REQUEST =
 "/Script/Pal.PalMapObjectOperatingTableModel:RequestRequestChangePassiveSkill_ServerInternal"
+-- Requesting side: RequestChangePassiveSkill(targetHandle, skillIndex,
+-- PassiveSkill) on the same model (Pal.hpp), on the peer that clicked.
+local LOCAL_REQUEST =
+"/Script/Pal.PalMapObjectOperatingTableModel:RequestChangePassiveSkill"
 local TAB_PAGE_BP =
     "/Game/Pal/Blueprint/UI/UserInterface/IngameMenu/OperatingTable/" ..
     "WBP_OperatingTable_TabPage.WBP_OperatingTable_TabPage_C"
 local UPDATE_BUTTON_STATE = TAB_PAGE_BP .. ":Update Button State"
+-- Zero-argument event on the tab page (WBP_OperatingTable_TabPage.hpp).
+local INVENTORY_UPDATED = TAB_PAGE_BP .. ":On Update Local Player Inventory"
 local SCREEN_BP =
     "/Game/Pal/Blueprint/UI/UserInterface/IngameMenu/OperatingTable/" ..
     "WBP_OperatingTable.WBP_OperatingTable_C"
 local PASSIVE_UPDATED = SCREEN_BP .. ":OnPassiveUpdate"
+-- OnOperatingPassiveNotifyied(Success) on the screen (WBP_OperatingTable.hpp):
+-- the server's answer to a request, delivered to the peer that asked.
+local OPERATION_NOTIFIED = SCREEN_BP .. ":OnOperatingPassiveNotifyied"
 
 
 -- Hooks
@@ -71,29 +87,6 @@ RegisterHook(
     end
 )
 
--- Wraps work in a scheduler that keeps at most one deferred pass queued.
---
--- Called at LOAD, three times. Each call builds its flag and its runner once, so
--- the scheduler it returns allocates nothing however often a hook fires. That is
--- the point: these hooks fire at frame rate, and a closure per firing is
--- registry churn. A flag alone would not do it, because
--- ExecuteWithDelay(0, ...) completes within the tick.
-local function coalescer(work, delay)
-    local scheduled = false
-    local run
-    run = function()
-        scheduled = false
-        ExecuteInGameThread(work)
-    end
-    return function()
-        if scheduled then
-            return
-        end
-        scheduled = true
-        ExecuteWithDelay(delay, run)
-    end
-end
-
 local gate_on = SETTINGS.surgery_ui_gate ~= false
 local schedule_gate_pass = coalescer(enforce_extraction_gate, 0)
 
@@ -114,17 +107,38 @@ end
 
 local schedule_refresh = coalescer(consume_pending_refresh, 0)
 
+-- The click, on the peer that made it. The handle argument is not read: the Pal
+-- comes from the recorded tab page. Logs nothing for a vanilla passive id.
+local function on_local_request(_, _handle, skill_index, passive_skill)
+    begin_local_exchange(name_to_string(passive_skill), unwrap(skill_index))
+end
+
 -- OnPassiveUpdate fires on the screen after a passive change, for vanilla
--- operations as well as this mod's, hence the refresh_pending check.
+-- operations as well as this mod's, hence the refresh_pending check. Logs the
+-- passive list each firing carries.
 --
--- The context argument is the screen, WBP_OperatingTable_C, and this is the only
--- place it is obtained. A refresh armed before this hook has fired once does the
--- page half and skips the list rebuild.
-local function on_passive_update(context)
+-- The context argument is the screen, WBP_OperatingTable_C. A refresh armed
+-- before this hook has fired once does the page half and skips the list rebuild.
+local function on_passive_update(context, passive_ids)
     note_live_screen(unwrap(context))
+    log(string.format("OnPassiveUpdate: [%s]", table.concat(name_list(unwrap(passive_ids)), ",")))
+    check_local_exchange("OnPassiveUpdate")
     if refresh_pending() then
         schedule_refresh()
     end
+end
+
+-- The server's verdict on the vanilla half of a request, on the peer that asked.
+local function on_operation_notified(context, success)
+    note_live_screen(unwrap(context))
+    note_operation_result(unwrap(success))
+end
+
+-- The local inventory changed while the tab page exists. On a client, a module
+-- arriving from the host is one of these.
+local function on_local_inventory_update(context)
+    note_live_page(unwrap(context))
+    check_local_exchange("inventory update")
 end
 
 -- Delivering what a previous session left owed.
@@ -187,12 +201,21 @@ RegisterLoadMapPostHook(function()
     schedule_flush()
 end)
 
+hooks.register(LOCAL_REQUEST, on_local_request,
+    "the Surgery request watcher",
+    "Without it no exchange is tracked on this peer, so its Surgery panel is not repaired.")
 hooks.register(UPDATE_BUTTON_STATE, on_update_button_state,
     "the Edit-button eligibility gate",
     "The transaction enforces every rule the gate does either way.")
 hooks.register(PASSIVE_UPDATED, on_passive_update,
-    "the event-driven panel reset on OnPassiveUpdate",
-    "Timed panel resets cover it until then.")
+    "the passive-update trigger",
+    "The exchange poll covers it.")
+hooks.register(OPERATION_NOTIFIED, on_operation_notified,
+    "the Surgery result watcher",
+    "A refused request is then only noticed by the exchange timeout.")
+hooks.register(INVENTORY_UPDATED, on_local_inventory_update,
+    "the inventory-update trigger",
+    "The exchange poll covers it.")
 local conveyor_on = SETTINGS.conveyor_extraction ~= false
 if conveyor_on then
     conveyor.install()

@@ -21,15 +21,19 @@ The per-frame hooks, for judging whether a change touches a hot path:
 | `WBP_OperatingTable_TabPage_C:Update Button State` | `main.lua` | every frame while the Surgery tab is open | `on_update_button_state`, then the coalesced `ui.enforce_extraction_gate` |
 | `PalBuildObjectConvertCharacterToItem:OnProceedConvertProcess_ServerInternal` | `lp/conveyor.lua` | every frame while a conveyor is converting | `conveyor.pass` |
 | `PalMapObjectConvertCharacterToItemModel:OnUpdateCharacterContainer_ServerInternal` | `lp/conveyor.lua` | when a Pal arrives or leaves | `conveyor.pass` |
-| `WBP_OperatingTable_C:OnPassiveUpdate` | `main.lua` | after any passive change | cheap unless a refresh is armed |
-| `PalMapObjectOperatingTableModel:RequestRequestChangePassiveSkill_ServerInternal` | `main.lua`, bare `RegisterHook` | once per surgery request, vanilla included | `transaction.capture_record`, then `transaction.schedule_finalize` |
+| `WBP_OperatingTable_C:OnPassiveUpdate` | `main.lua` | after any passive change | one log line, `ui.check_local_exchange`, and the armed refresh if any |
+| `WBP_OperatingTable_C:OnOperatingPassiveNotifyied` | `main.lua` | once per surgery request, on the peer that asked | `ui.note_operation_result` |
+| `WBP_OperatingTable_TabPage_C:On Update Local Player Inventory` | `main.lua` | when the local inventory changes while the tab page exists | `ui.check_local_exchange`, one nil test when nothing is pending |
+| `PalMapObjectOperatingTableModel:RequestChangePassiveSkill` | `main.lua` | once per surgery request, on the peer that asked | `ui.begin_local_exchange`, nothing for a vanilla id |
+| `PalMapObjectOperatingTableModel:RequestRequestChangePassiveSkill_ServerInternal` | `main.lua`, bare `RegisterHook` | once per surgery request, vanilla included, server only | `transaction.capture_record`, then `transaction.schedule_finalize` |
 
 ## Suggested order
 
-1. Item 7 first. It is a decision rather than code, and it settles behaviour that already shipped in the working tree.
-2. Then items 1, 3 and 6, which are contained and have clear verification.
-3. Then item 2, which is mechanical but broad.
-4. Items 4 and 5 last. Both are micro-optimisations that need engine facts confirmed first.
+1. Items 1, 3 and 5 first, which are contained and have clear verification.
+2. Then item 2, which is mechanical but broad.
+3. Item 4 last. It is a micro-optimisation that needs engine facts confirmed first.
+
+Two earlier items are gone: the owner filter on `passives.snapshot_all` no longer exists, and the panel refresh after a vanilla operation no longer exists because `lp/transaction.lua` no longer writes to the panel at all. Both were settled by `.docs/multiplayer-surgery-plan.md`.
 
 ## 1. Register `SERVER_REQUEST` through `hooks.register`
 
@@ -135,25 +139,7 @@ The table reuse is low risk. Re-keying by address is moderate: a reused address 
 - Two conveyors converting at once each log their own `Disassembly yielded ...` lines.
 - A withdrawn Pal (removed below `COMPLETE_RATE`) logs nothing and grants nothing.
 
-## 5. Owner filter in `passives.snapshot_all` formats a GUID per world object
-
-### Now
-
-`snapshot_all(owner)` runs on the `SERVER_REQUEST` pre-callback, on the game thread, whenever the transaction falls back to the owner snapshot: remote requests, dedicated servers, or no recorded tab page. It calls `owner_key(parameter)` for every `PalIndividualCharacterParameter` in the world, wild Pals included. Each call is two property reads, a `pcall`, and a `string.format`, compared against the requester's key string.
-
-### Change
-
-Read the requester's four GUID ints once, then compare `A`/`B`/`C`/`D` numerically per Pal, building no strings. This needs a second form of `util.guid_key` that returns the four parts, or a comparison helper. Keep the null-GUID rule: a GUID that reads all zero must never match.
-
-### Risk
-
-Low to moderate. It touches the owner matching that decides whose Pal a request may act on; a wrong match grants a module to the wrong player. The saving is only noticeable in large worlds.
-
-### Verify
-
-On the snapshot path, which is easiest to reach by closing the Surgery screen between confirming and resolving, an extraction resolves to the right Pal. A vanilla surgery logs the no-marker line.
-
-## 6. Finalize retries allocate two closures per attempt
+## 5. Finalize retries allocate two closures per attempt
 
 ### Now
 
@@ -176,26 +162,6 @@ Moderate. It changes scheduling order if two requests overlap. Keep `schedule_fi
 - Two quick surgeries in a row both log their outcome.
 - A refused vanilla operation, such as one with too little gold, logs `No marker appeared ...` after about 3 s.
 
-## 7. Decide: panel refresh after the vanilla early exit
-
-### Now
-
-When `finalize_extraction` sees a vanilla operation, through the second return of `resolve_record`, it calls `finish`. Since the record has no `mode`, `ui.on_transaction_complete(nil)` arms a full panel reset: `reset_panel = true` clears the operation chip and consume-item count, and the operation list is rebuilt. That runs at about 0.6 s, plus the unconditional reset at 1.6 s.
-
-Before the early exit existed, the same reset ran after all 12 attempts, at about 3.3 s. The behaviour is unchanged; only the timing moved closer to vanilla's own repaint.
-
-### Decide
-
-Whether a vanilla operation should trigger this mod's panel reset at all. The panel repair exists to repaint after this mod's own swaps; for a vanilla operation, the selection being cleared is not this mod's.
-
-### If no
-
-Log without the refresh on both no-marker paths: the early exit and the out-of-attempts `No marker appeared` branch. For example, add a `log_only` variant of `finish`, or have those two branches call `log` directly. `finish` already skips the refresh for remote records, so the panel logic itself needs no change.
-
-### Verify
-
-After a vanilla surgery, the Surgery panel shows vanilla's state with no flicker or cleared selection.
-
 ## Considered and not worth doing
 
 Recorded so a later review does not re-raise them:
@@ -204,3 +170,13 @@ Recorded so a later review does not re-raise them:
 - `tools/ledger_test.lua` uses raw `io` rather than util's file helpers. This is on purpose: it checks the file the ledger wrote without going through the code that wrote it.
 - The bucket get-or-create pattern in `conveyor.bucket_for` and `ledger.bucket_for`, `ui.current_page` against `ui.current_screen`, and the two `find_first("PalPlayerCharacter")` calls in `main.lua` and `lp/hooks.lua` are each too small for a shared helper.
 - In `tools/stage.ps1`, the `$stale +=` accumulation is quadratic and `Copy-Item` copies the whole payload on every run. It runs over about a hundred files, so neither is worth changing.
+
+## Simplify Run 2
+
+Items below were skipped in the last simplify run and have not been evaluated for value or risk:
+
+- The old refresh timers still sit behind the new exchange watcher. Simplification and altitude both flagged this. on_transaction_complete still runs its 500 ms and 1600 ms refresh timers after the watcher has already seen the change, so one exchange can refresh the panel up to three times. The suggested fix is a single direct refresh_surgery_ui call, which deletes pending_reset, refresh_pending, consume_pending_refresh and schedule_refresh. I didn't do it because it changes timing behaviour, and the multiplayer plan leaves those timers for the timed test run. It is the largest remaining simplification and is worth doing after that run.
+- Every request now reads every Pal in the world. With the owner filter gone, each request and each retry reads the whole world. The plan chose that trade-off on purpose, and nothing in the repo shows the target Pal can be read from the request instead.
+- Diagnostic logging: the OnPassiveUpdate list log and repair_detail's log on every refresh are left in, since this build is for testing. Once they go, name_list can stop being exported from passives.
+- The inventory-update and operation-notify triggers only pay off after the timer change above.
+- Inlining is_remote_request and snapshot_server_parameters: too small a gain to bother.

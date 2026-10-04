@@ -6,16 +6,15 @@
 -- sweeps markers it has no journal entry for.
 
 local util = require("lp.util")
-local ids = require("lp.ids")
 local journal = require("lp.journal")
 local passives = require("lp.passives")
 local inventory = require("lp.inventory")
 
 local log = util.log
 local run_later = util.run_later
-local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local clear_journal = journal.clear_journal
 local read_journal = journal.read_journal
+local first_marker = passives.first_marker
 local pal_key = passives.pal_key
 local snapshot_all = passives.snapshot_all
 local remove_skill = inventory.remove_skill
@@ -24,16 +23,6 @@ local undo_swap = inventory.undo_swap
 --------------------------------------------------------------------------------
 -- Crash recovery
 --------------------------------------------------------------------------------
-
--- The first of our markers in the list, or nil.
-local function first_marker(skill_ids)
-    for _, id in ipairs(skill_ids or {}) do
-        if EXTRACTION_MODES[id] ~= nil then
-            return id
-        end
-    end
-    return nil
-end
 
 -- Every Pal carrying one of our markers, as { parameter = ..., lock = <id> },
 -- leaving out the Pal whose pal_key is skip_key when one is given. The world

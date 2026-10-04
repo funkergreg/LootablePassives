@@ -28,3 +28,6 @@ desktop.ini
 # Palworld Mod Uploader's file. It lives in the Workshop item folder, holds the
 # Published ID and last uploaded Version, and is never copied into the repo.
 .workshop.json
+
+# Screenshots used in dev and testing
+.docs/*.png

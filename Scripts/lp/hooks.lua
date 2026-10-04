@@ -3,7 +3,7 @@
 -- The two widget hooks in main.lua and both conveyor hooks register through
 -- here. main.lua's SERVER_REQUEST hook calls RegisterHook directly, since it
 -- takes a pre- and a post-callback. Coalescing a hook that fires at frame rate
--- is not here; that is main.lua's coalescer().
+-- is not here; that is lp/util.lua's coalescer().
 --
 -- Four properties of the shape below are deliberate:
 --
