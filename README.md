@@ -207,9 +207,9 @@ Install it on every player for full functionality. A player without it cannot us
 
 Not tested: dedicated-server hosting.
 
-### Known limitation
+### Known Issues
 
-The Edit button's coloring in the surgery table is wonky on some transactions; exiting the menu and coming back solves the issues with a UI redraw.
+The Edit button's coloring in the surgery table is wonky after some transactions - specifically for clients; exiting the menu and coming back solves the issues with a UI redraw.
 
 ### Mod Install
 

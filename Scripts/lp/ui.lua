@@ -201,6 +201,40 @@ local function edit_button(widget)
     return nil
 end
 
+-- The Edit button's state for the log: the outer WBP_CommonButton_C's
+-- GetIsEnabled() and IsHovered() (UMG.hpp, zero arguments) and the inner
+-- CommonButtonBase's IsInteractionEnabled() and bHasFocus.
+local function edit_state(page)
+    local outer = field(page, "WBP_CommonButton")
+    local inner = edit_button(page)
+    return string.format("edit outerEnabled=%s hovered=%s innerInteraction=%s innerFocus=%s",
+        tostring(method(outer, "GetIsEnabled")), tostring(method(outer, "IsHovered")),
+        tostring(method(inner, "IsInteractionEnabled")), tostring(field(inner, "bHasFocus")))
+end
+
+-- SetIsEnabled(bool) on a UWidget (UMG.hpp), prebuilt for pcall.
+local function _call_set_is_enabled(widget, enabled)
+    widget:SetIsEnabled(enabled)
+end
+
+-- Re-enables the outer Edit button when GetIsEnabled() reads false. This module
+-- never disables it, so a false here was written by the game. Does nothing while
+-- an exchange is pending, when a false may be the game holding the button for
+-- a request in flight. when prefixes the log lines.
+local function repair_edit(when, page)
+    if exchange ~= nil then
+        return
+    end
+    local outer = field(page, "WBP_CommonButton")
+    if not is_valid(outer) or method(outer, "GetIsEnabled") ~= false then
+        return
+    end
+    log(when .. ": the outer Edit button reads disabled; calling SetIsEnabled(true) on it.")
+    local succeeded = pcall(_call_set_is_enabled, outer, true)
+    log(string.format("%s: SetIsEnabled %s; the outer Edit button now reads enabled=%s.",
+        when, succeeded and "returned" or "raised", tostring(method(outer, "GetIsEnabled"))))
+end
+
 -- Writes SetIsInteractionEnabled on the inner CommonButtonBase
 -- (CommonUI.hpp:324, one bool argument). This stops the click and changes
 -- nothing about the paint.
@@ -345,6 +379,21 @@ local function _set_consume_item_id(screen, item_name)
     screen.CachedConsumeItemId = item_name
 end
 
+-- UpdateNum(FName) on the tab page (WBP_OperatingTable_TabPage.hpp:70), one
+-- FName argument: redraws the chip's quantity readout for that item.
+local function _call_update_num(page, item_name)
+    page:UpdateNum(item_name)
+end
+
+-- The chip's quantity readout, BP_PalTextBlock_Num, for the log: its text
+-- through GetText() and its visibility through GetVisibility() (UMG.hpp, both
+-- zero-argument).
+local function num_state(page)
+    local block = field(page, "BP_PalTextBlock_Num")
+    return string.format("count text=%s visibility=%s",
+        tostring(name_to_string(method(block, "GetText"))), tostring(method(block, "GetVisibility")))
+end
+
 -- The passive ids the right-hand Pal detail is showing: card_passive of each of
 -- its four cards whose IsVisible() reads true. A card the game has emptied keeps
 -- its last name and is hidden, so hidden cards are returned separately, as the
@@ -376,8 +425,9 @@ local function log_detail_state(when, screen, page)
     local detail = field(screen, "WBP_IngameMenu_PalBox_PalDetail")
     local shown, hidden = detail_passives(detail)
     local actual = get_skill_ids(selected_parameter(page))
-    local panel = string.format("panel operation=%s slot=%s",
-        tostring((pending_operation(page))), tostring(field(page, "CachedPassiveSlotIndex")))
+    local panel = string.format("panel operation=%s slot=%s; %s",
+        tostring((pending_operation(page))), tostring(field(page, "CachedPassiveSlotIndex")),
+        edit_state(page))
     if shown == nil or actual == nil then
         log(string.format("%s: Pal detail check skipped, detail readable=%s, Pal list readable=%s; %s.",
             when, tostring(shown ~= nil), tostring(actual ~= nil), panel))
@@ -450,9 +500,7 @@ local closed_skip_reported = false
 
 -- Resets the panel after a transaction. Returns true if it wrote anything.
 --
--- reset_panel clears the operation chip and consume-item count;
--- on_transaction_complete passes false for an implant, where that selection is
--- not this mod's to clear.
+-- reset_panel clears the operation chip and consume-item count.
 --
 -- rebuild_list calls SetupPassiveChangeItem, which recreates every entry widget
 -- in the operation list.
@@ -486,6 +534,11 @@ local function refresh_surgery_ui(reset_panel, rebuild_list, when)
         method(page, "Set Passive Empty Item")
         method(page, "ReflectPassiveChange")
         method(page, "RefreshCurrentPassiveItem")
+        -- The quantity readout survives the writes above after a consumable
+        -- route; UpdateNum with no item is the vanilla redraw for it.
+        log(string.format("%s: before UpdateNum(None): %s.", when, num_state(page)))
+        pcall(_call_update_num, page, FName("None"))
+        log(string.format("%s: after UpdateNum(None): %s.", when, num_state(page)))
     end
 
     if screen ~= nil then
@@ -514,13 +567,22 @@ end
 -- nil when unarmed; otherwise the reset_panel value to refresh with.
 local pending_reset = nil
 
+-- The tab page's operation and slot as on_transaction_complete found them,
+-- before any reset: the selection the finished exchange left behind. nil when
+-- no backstop is due.
+local finished_selection = nil
+
+-- Runs the armed refresh, then repair_edit on the same page. repair_edit runs
+-- here only, once per finished exchange, and not on the 1600 ms timer.
 local function consume_pending_refresh()
     local reset_panel = pending_reset
     if reset_panel == nil then
         return
     end
     pending_reset = nil
-    refresh_surgery_ui(reset_panel, true, "refresh on finish")
+    if refresh_surgery_ui(reset_panel, true, "refresh on finish") then
+        repair_edit("refresh on finish", current_page())
+    end
 end
 
 -- An accessor, not an exported variable: main.lua reads pending_reset, and
@@ -533,8 +595,22 @@ end
 -- The three callbacks the timers below take are built once, at load, and passed
 -- to ExecuteWithDelay and ExecuteInGameThread by reference; see the note on
 -- coalescer() in lp/util.lua.
+-- Resets the panel only when its operation and slot still equal
+-- finished_selection, which is the game repainting the finished exchange's
+-- selection. Any other selection is the player's, as is any selection while a
+-- new exchange is pending; then the refresh runs without the reset.
 local function reset_panel_now()
-    refresh_surgery_ui(true, false, "reset at 1600 ms")
+    local selection = finished_selection
+    finished_selection = nil
+    local page = current_page()
+    local operation = page ~= nil and (pending_operation(page)) or nil
+    local slot = page ~= nil and field(page, "CachedPassiveSlotIndex") or nil
+    local stale = selection ~= nil and exchange == nil
+        and operation == selection.operation and slot == selection.slot
+    log(string.format("reset at 1600 ms: panel operation=%s slot=%s, finished with operation=%s slot=%s; reset=%s.",
+        tostring(operation), tostring(slot), tostring(selection and selection.operation),
+        tostring(selection and selection.slot), tostring(stale)))
+    refresh_surgery_ui(stale, false, "reset at 1600 ms")
 end
 
 local function consume_on_game_thread()
@@ -548,12 +624,13 @@ end
 -- What a finished exchange does to the Surgery panel. Called by the local
 -- exchange section below with that exchange's mode.
 --
--- reset_panel is false for mode == "implant", which is what stops
--- refresh_surgery_ui clearing the operation chip and the consume-item count for
--- an insert: that selection is not this mod's to clear. See the note on
--- refresh_surgery_ui above.
+-- The panel is reset for every mode, implants included. After an implant the
+-- chip still names the alias and the Pal now carries its target, so the gate
+-- would block the next click as a duplicate; clearing the selection is what
+-- leaves the button in a state vanilla owns.
 local function on_transaction_complete(mode)
-    local reset_panel = mode ~= "implant"
+    local reset_panel = true
+    log(string.format("Panel refresh armed for the %s exchange.", tostring(mode)))
     pending_reset = reset_panel
 
     -- The tick after finish: the marker is already off the Pal, and every
@@ -562,8 +639,14 @@ local function on_transaction_complete(mode)
     ExecuteWithDelay(0, consume_on_game_thread)
 
     if reset_panel then
-        -- Unconditional, and not gated on the armed refresh: the late backstop
-        -- for a repaint the game makes after the first refresh.
+        -- Not gated on the armed refresh: the late backstop for a repaint the
+        -- game makes after the first refresh. reset_panel_now compares against
+        -- the selection recorded here.
+        local page = current_page()
+        finished_selection = page ~= nil and {
+            operation = (pending_operation(page)),
+            slot = field(page, "CachedPassiveSlotIndex"),
+        } or nil
         ExecuteWithDelay(1600, reset_on_game_thread)
     end
 end
