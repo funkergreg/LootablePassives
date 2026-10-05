@@ -201,9 +201,9 @@ RegisterLoadMapPostHook(function()
     schedule_flush()
 end)
 
-hooks.register(LOCAL_REQUEST, on_local_request,
-    "the Surgery request watcher",
-    "Without it no exchange is tracked on this peer, so its Surgery panel is not repaired.")
+-- Widget hooks first, native hooks after: hooks.announce_if_complete reports as
+-- soon as every registration made so far has taken, and a native hook takes at
+-- load while a widget hook waits for a world.
 hooks.register(UPDATE_BUTTON_STATE, on_update_button_state,
     "the Edit-button eligibility gate",
     "The transaction enforces every rule the gate does either way.")
@@ -216,6 +216,9 @@ hooks.register(OPERATION_NOTIFIED, on_operation_notified,
 hooks.register(INVENTORY_UPDATED, on_local_inventory_update,
     "the inventory-update trigger",
     "The exchange poll covers it.")
+hooks.register(LOCAL_REQUEST, on_local_request,
+    "the Surgery request watcher",
+    "Without it no exchange is tracked on this peer, so its Surgery panel is not repaired.")
 local conveyor_on = SETTINGS.conveyor_extraction ~= false
 if conveyor_on then
     conveyor.install()

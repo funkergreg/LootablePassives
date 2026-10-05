@@ -231,12 +231,17 @@ end
 -- but false. That read is on the button itself, so a page recreated without a
 -- map load is written to even while edit_disabled_by_mod is still true from the
 -- old one.
-local function block_edit(widget)
+--
+-- Logged on the transition only, never on the per-frame pass that finds the
+-- button already held.
+local function block_edit(widget, pending, index)
     if edit_disabled_by_mod and method(edit_button(widget), "IsInteractionEnabled") == false then
         return
     end
     set_edit_interactable(widget, false)
     edit_disabled_by_mod = true
+    log(string.format("Edit blocked: %s pending, slot %s holds %s.",
+        tostring(pending), tostring(index), tostring(selected_passive(widget))))
 end
 
 -- Restores the interaction flag, and only if this module cleared it.
@@ -246,6 +251,7 @@ local function release_edit(widget)
     end
     edit_disabled_by_mod = false
     set_edit_interactable(widget, true)
+    log("Edit released.")
 end
 
 -- Is the passive an alias would install already on the Pal?
@@ -262,10 +268,16 @@ end
 -- Runs for whatever operation is pending, including none: the release branch has
 -- to be reachable from every state, or a block made in one state outlives it.
 --
--- Blocks when an extract mode is pending and the selected slot does not hold an
--- extractable passive -- selected_passive returns nil for an empty slot, and
--- is_extractable rejects it -- or when an alias is pending and
--- alias_target_already_present is true.
+-- Blocks only while a slot is selected (CachedPassiveSlotIndex >= 0), and then
+-- when an extract mode is pending and that slot does not hold an extractable
+-- passive -- selected_passive returns nil for an empty slot, and is_extractable
+-- rejects it -- or when an alias is pending and alias_target_already_present is
+-- true.
+--
+-- With no slot selected the button is released whatever is pending: vanilla
+-- keeps Edit disabled itself in that state, and a CommonButtonBase whose
+-- interaction is off cannot take gamepad focus, so a block here would send the
+-- focus ring to the slot group when an operation is chosen from the list.
 --
 -- Takes no arguments so main.lua can hand it to ExecuteInGameThread by
 -- reference; see the note on coalescer() in lp/util.lua. main.lua does not schedule
@@ -276,12 +288,15 @@ local function enforce_extraction_gate()
         return
     end
 
+    local index = field(page, "CachedPassiveSlotIndex")
+    local slot_selected = type(index) == "number" and index >= 0
     local pending, mode = pending_operation(page)
-    local blocked = (is_extract_mode(mode) and not is_extractable(selected_passive(page)))
-        or (mode == "implant" and alias_target_already_present(page, pending))
+    local blocked = slot_selected and (
+        (is_extract_mode(mode) and not is_extractable(selected_passive(page)))
+        or (mode == "implant" and alias_target_already_present(page, pending)))
 
     if blocked then
-        block_edit(page)
+        block_edit(page, pending, index)
     else
         release_edit(page)
     end
@@ -330,20 +345,47 @@ local function _set_consume_item_id(screen, item_name)
     screen.CachedConsumeItemId = item_name
 end
 
--- The passive ids the right-hand Pal detail is showing, one card_passive per
--- card, skipping empty cards. nil when the detail does not read.
+-- The passive ids the right-hand Pal detail is showing: card_passive of each of
+-- its four cards whose IsVisible() reads true. A card the game has emptied keeps
+-- its last name and is hidden, so hidden cards are returned separately, as the
+-- second value, for the log. nil when the detail does not read.
 local function detail_passives(detail)
     if not is_valid(detail) then
         return nil
     end
-    local shown = {}
+    local shown, hidden = {}, {}
     for _, property_name in ipairs(PASSIVE_CARD_PROPERTIES) do
         local passive_id = card_passive(detail, property_name)
         if passive_id ~= nil then
-            shown[#shown + 1] = passive_id
+            local visible_ok, visible = pcall(_call_is_visible, field(detail, property_name))
+            if visible_ok and visible == true then
+                shown[#shown + 1] = passive_id
+            else
+                hidden[#hidden + 1] = passive_id
+            end
         end
     end
-    return shown
+    return shown, hidden
+end
+
+-- One log line on the Pal detail against the selected Pal, plus the tab page's
+-- CurrentPassiveId and CachedPassiveSlotIndex as they stand, prefixed with when
+-- it was read. Returns the detail widget, the shown list and the Pal's list; the
+-- lists are nil when either side does not read.
+local function log_detail_state(when, screen, page)
+    local detail = field(screen, "WBP_IngameMenu_PalBox_PalDetail")
+    local shown, hidden = detail_passives(detail)
+    local actual = get_skill_ids(selected_parameter(page))
+    local panel = string.format("panel operation=%s slot=%s",
+        tostring((pending_operation(page))), tostring(field(page, "CachedPassiveSlotIndex")))
+    if shown == nil or actual == nil then
+        log(string.format("%s: Pal detail check skipped, detail readable=%s, Pal list readable=%s; %s.",
+            when, tostring(shown ~= nil), tostring(actual ~= nil), panel))
+        return detail, nil, nil
+    end
+    log(string.format("%s: Pal detail shows [%s] (hidden cards: [%s]); the Pal has [%s]; %s.",
+        when, table.concat(shown, ","), table.concat(hidden, ","), table.concat(actual, ","), panel))
+    return detail, shown, actual
 end
 
 -- Element-wise equality, in order.
@@ -382,33 +424,25 @@ end
 -- Reads the screen's Pal detail against the selected Pal's passive list, logs
 -- both, and rebinds the detail through BindFromHandle(CurrentHandle) when the
 -- detail still shows one of our markers or a different set of passives. The log
--- is the result.
-local function repair_detail(screen, page)
-    local detail = field(screen, "WBP_IngameMenu_PalBox_PalDetail")
-    local shown = detail_passives(detail)
-    local actual = get_skill_ids(selected_parameter(page))
-    if shown == nil or actual == nil then
-        log(string.format("Pal detail check skipped: detail readable=%s, Pal list readable=%s.",
-            tostring(shown ~= nil), tostring(actual ~= nil)))
+-- is the result. when prefixes the log lines.
+local function repair_detail(when, screen, page)
+    local detail, shown, actual = log_detail_state(when, screen, page)
+    if shown == nil then
         return
     end
-    local stale = first_marker(shown) ~= nil or not same_ids(shown, actual)
-    log(string.format("Pal detail shows [%s]; the Pal has [%s]; %s.",
-        table.concat(shown, ","), table.concat(actual, ","),
-        stale and "stale, rebinding it" or "current, left alone"))
-    if not stale then
+    if first_marker(shown) == nil and same_ids(shown, actual) then
         return
     end
     local handle = field(screen, "CurrentHandle")
     if not is_valid(handle) then
-        log("Pal detail NOT rebound: the screen has no CurrentHandle.")
+        log(when .. ": Pal detail is stale and NOT rebound: the screen has no CurrentHandle.")
         return
     end
-    log("Calling BindFromHandle on the Pal detail.")
+    log(when .. ": Pal detail is stale; calling BindFromHandle on it.")
     local succeeded = pcall(_call_bind_from_handle, detail, handle)
     shown = detail_passives(detail) or {}
-    log(string.format("BindFromHandle %s; the Pal detail now shows [%s].",
-        succeeded and "returned" or "raised", table.concat(shown, ",")))
+    log(string.format("%s: BindFromHandle %s; the Pal detail now shows [%s].",
+        when, succeeded and "returned" or "raised", table.concat(shown, ",")))
 end
 
 -- Set once, the first time a refresh finds no open page.
@@ -426,7 +460,7 @@ local closed_skip_reported = false
 -- Both are skipped entirely unless the recorded page is open, and the screen
 -- half is skipped unless the recorded screen is open. Nothing is written to a
 -- widget that is not open.
-local function refresh_surgery_ui(reset_panel, rebuild_list)
+local function refresh_surgery_ui(reset_panel, rebuild_list, when)
     local page = open_recorded(current_page())
     if page == nil then
         if not closed_skip_reported then
@@ -468,14 +502,14 @@ local function refresh_surgery_ui(reset_panel, rebuild_list)
             method(screen, "SetupPassiveChangeItem")
         end
         method(screen, "RefreshItemDisplay")
-        repair_detail(screen, page)
+        repair_detail(when, screen, page)
     end
 
     return true
 end
 
 -- Armed by on_transaction_complete below, consumed by whichever of two paths
--- reaches it first: main.lua's OnPassiveUpdate hook, or the 500 ms timer that
+-- reaches it first: main.lua's OnPassiveUpdate hook, or the next-tick timer that
 -- function starts. Consuming it clears it, so the refresh runs once per arming.
 -- nil when unarmed; otherwise the reset_panel value to refresh with.
 local pending_reset = nil
@@ -486,7 +520,7 @@ local function consume_pending_refresh()
         return
     end
     pending_reset = nil
-    refresh_surgery_ui(reset_panel, true)
+    refresh_surgery_ui(reset_panel, true, "refresh on finish")
 end
 
 -- An accessor, not an exported variable: main.lua reads pending_reset, and
@@ -500,7 +534,7 @@ end
 -- to ExecuteWithDelay and ExecuteInGameThread by reference; see the note on
 -- coalescer() in lp/util.lua.
 local function reset_panel_now()
-    refresh_surgery_ui(true, false)
+    refresh_surgery_ui(true, false, "reset at 1600 ms")
 end
 
 local function consume_on_game_thread()
@@ -522,12 +556,14 @@ local function on_transaction_complete(mode)
     local reset_panel = mode ~= "implant"
     pending_reset = reset_panel
 
-    -- Second path to the same armed refresh, for when the OnPassiveUpdate hook
-    -- does not reach it. consume_pending_refresh runs at most once per arming.
-    ExecuteWithDelay(500, consume_on_game_thread)
+    -- The tick after finish: the marker is already off the Pal, and every
+    -- millisecond here is a millisecond it stays painted in the slot.
+    -- consume_pending_refresh runs at most once per arming.
+    ExecuteWithDelay(0, consume_on_game_thread)
 
     if reset_panel then
-        -- Unconditional, and not gated on the armed refresh.
+        -- Unconditional, and not gated on the armed refresh: the late backstop
+        -- for a repaint the game makes after the first refresh.
         ExecuteWithDelay(1600, reset_on_game_thread)
     end
 end
@@ -545,15 +581,18 @@ end
 -- that call it are triggers only; the read is the check, so it does not matter
 -- which of them fires on a given peer.
 
--- 20 polls at 250 ms: 5 s. Each poll is one passive-list read.
-local EXCHANGE_POLL_MS = 250
-local EXCHANGE_POLL_LIMIT = 20
+-- 50 polls at 100 ms: 5 s. Each poll is one passive-list read, and the poll
+-- interval is how long the marker stays painted after the server half ends.
+local EXCHANGE_POLL_MS = 100
+local EXCHANGE_POLL_LIMIT = 50
 
 -- Logs message, clears the pending exchange, and hands record's mode to
--- on_transaction_complete.
+-- on_transaction_complete. The Pal detail is read and logged first, before any
+-- write of this module's: what it shows here is what the game repainted alone.
 local function end_local_exchange(record, message)
     log(message)
     exchange = nil
+    log_detail_state("at finish", current_screen(), current_page())
     on_transaction_complete(record.mode)
 end
 
@@ -570,6 +609,11 @@ local function check_local_exchange(trigger)
     local after_ids = get_skill_ids(record.parameter)
     if after_ids == nil then
         return false
+    end
+    if trigger ~= "poll" then
+        -- Every event-driven check is logged; the poll is not, since it repeats.
+        log(string.format("Checked the %s exchange (%s): the Pal has [%s].",
+            record.lock, trigger, table.concat(after_ids, ",")))
     end
     local marker = first_marker(after_ids)
     if marker ~= nil then

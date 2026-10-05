@@ -31,3 +31,4 @@ desktop.ini
 
 # Screenshots used in dev and testing
 .docs/*.png
+.docs/**/*.png

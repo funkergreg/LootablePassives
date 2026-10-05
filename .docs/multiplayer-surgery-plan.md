@@ -172,6 +172,79 @@ Implemented in the working tree on 2026-10-04, unstaged and untested at the time
 
 Hooks after the change, in the `All 7 hooks installed` line: the Surgery request watcher, the Edit-button eligibility gate, the passive-update trigger, the Surgery result watcher, the inventory-update trigger, the conveyor progress watcher, the conveyor arrival/departure watcher.
 
+## First host run, 2026-10-04 19:39, version 1.0.4
+
+One extract-all on Foxcicle with Diet Lover, Coldblooded and Pacifist, slot 0 selected. Screenshots in `.docs/new/`, untouched since capture, so their times line up with the log.
+
+What the log settled:
+
+- The request hook fires on the host. `Requested LP_ExtractAll on slot 0 ...` at 49.198, so the screen does reach the model's `RequestChangePassiveSkill` through its UFunction.
+- The vanilla swap landed 44 ms later: `OnPassiveUpdate: [LP_ExtractAll, ...]`, the marker line, then the server-accepted line 2 ms after that. Passive update before result notify, on the host.
+- The transaction resolved at 49.397 and the exchange finished on the first poll at 49.455, 58 ms later. No event finished it: the inventory update fires at the grant, which precedes the removals, and no further `OnPassiveUpdate` arrived.
+- **The parameter's delegate does not fire for this mod's `RemovePassiveSkill` calls.** Exactly one `OnPassiveUpdate` line per extraction. The poll is therefore the only completion path on the host, and the design's refusal to depend on events is what made this work.
+- The screenshot at 50.727 shows the correct end state: empty chip, slot row gone, Edit grey, Pal detail with no passives, three module toasts.
+- The detail read was wrong. The log said the detail still showed all three names after `BindFromHandle`, while the screenshot shows it empty. An emptied card keeps its last `BindedPassiveSkillName` and is hidden, so reading names alone reports stale cards that are not visible. `BindFromHandle` may well have done nothing; the read could not tell.
+- `All 1 hooks installed` fired at load. The announce reports as soon as every registration made so far has taken, and the native request hook was registered first, alone. Ordering fault, not a missing hook.
+
+Changes made after this run:
+
+- `detail_passives` counts only cards whose `IsVisible()` reads true, and returns the hidden names separately so the log shows both.
+- The detail is read and logged at the moment the exchange finishes, before any write of this module's, under the prefix `at finish`. The 500 ms and 1600 ms passes log under their own prefixes. Three readings in a row show who repaints the detail and when.
+- Every event-driven check of a pending exchange logs the Pal's list with the trigger's name, so the inventory-update and result hooks can be seen firing.
+- The native request hook is registered last in `main.lua`, after the widget hooks, so the hooks line waits for the world. `lp/hooks.lua`'s comment on `announce_if_complete` now states the ordering rule.
+
+Still open after this run: whether vanilla or this module reset the centre panel, and whether vanilla or `BindFromHandle` emptied the detail. The `at finish` reading answers the second; the first needs a run with `surgery_ui_gate` left on and the timers' log lines compared against a screenshot taken between 49.5 and 50.1.
+
+## Second host run, 2026-10-04 19:50 to 19:52, version 1.0.5
+
+One extract-one on Broncherry, Waterproof in slot 1, then one extract-all on the same Pal. Screenshots in `.docs/new-2/`, untouched since capture. Their clock reads about 2 s behind the log's: the Yes dialog shot of the first exchange is stamped 19:51:58 and the request is logged at 19:52:01.2.
+
+What the log settled:
+
+- `All 7 hooks installed` once the world existed. The ordering fix holds.
+- Both exchanges finished on the first poll, 58 and 42 ms after the transaction line. Request to finish was 265 and 255 ms.
+- One `OnPassiveUpdate` per exchange, for the swap, as in the first run.
+- **The Pal detail is stale at finish and at 500 ms, with the marker on a visible card, and `BindFromHandle` repaints it.** Both exchanges. Vanilla does not repaint the detail after this mod's removals, so the repair is load-bearing. After the rebind the emptied cards keep their old names and read as hidden, which is what the first run's name-only read tripped over.
+- The inventory-update hook logged no check during either exchange. On the host, `On Update Local Player Inventory` does not fire for the mod's `AddItem_ServerInternal`. It stays registered for the client, where the replicated inventory may drive it.
+- The screenshots at the end of each exchange show the correct state: empty chip, grey Edit, detail with the remaining passives, module toasts.
+
+The odd frame at 19:51:09: Extract Passive just chosen, no slot selected, Edit grey, and the gamepad focus ring drawn around the whole slot group rather than one card. Not seen on the second pass, where the player moved onto a card first. The reading: `GetFocusTarget` on the tab page sends focus to Edit after the list closes; vanilla has already set `EnabledButton` false there, and the gate had also set the button's interaction off, which makes a CommonButtonBase unfocusable; focus fell back to the slot group container. The gate gains nothing in the no-slot state, since vanilla disables Edit there itself.
+
+Changes made after this run:
+
+- `enforce_extraction_gate` acts only while `CachedPassiveSlotIndex` is 0 or more. With no slot selected it releases, whatever operation is pending. The empty-slot block and the duplicate-implant block are unchanged.
+- `log_detail_state` also prints the tab page's `CurrentPassiveId` and `CachedPassiveSlotIndex`, so the `at finish` line shows whether vanilla has already cleared the centre panel before the 500 ms refresh writes it.
+
+Still open: who clears the centre panel on success. The `at finish` line now answers it. If vanilla does, `reset_panel`'s writes on the success path are redundant and could be dropped for extractions, leaving them for the abort and timeout paths.
+
+## Third host run, 2026-10-04 20:13 to 20:14, version 1.0.6
+
+One extract-one on Digtoise, slot 2, then one extract-all. Screenshots in `.docs/new-3/`. Uneventful: both exchanges finished on the first poll, the detail repair ran both times, and the hooks line read seven.
+
+What the log settled:
+
+- **Vanilla does not clear the centre panel on success.** The `at finish` line read `panel operation=LP_ExtractAll slot=0` with the marker still painted in the slot; the `refresh` line 700 ms later read `slot=-1`, which is this module's write. `reset_panel` is load-bearing and stays. `CurrentPassiveId` is never cleared by either side and stays at the marker id until the next selection; nothing reads it after the exchange, so that is left alone.
+- The frame at 20:14:18 shows the marker painted in the selected slot and in the Pal detail, with the module toasts arriving. It sits in the window between the vanilla swap landing and this module's refresh: 250 ms of poll interval plus 500 ms of refresh delay, about 0.9 s in total. The marker cannot be kept off the screen entirely, since vanilla paints the swap result before the server half of the exchange has run and the swap is the mechanism; the window can only be shortened.
+
+Changes made after this run:
+
+- The exchange poll runs at 100 ms, 50 polls to the same 5 s timeout.
+- The refresh runs on the tick after finish rather than 500 ms later, logged as `refresh on finish`. The 1600 ms reset stays as the late backstop for any repaint the game makes after the first refresh.
+- Expected window after the change: about 100 to 150 ms on the host. If the game does repaint the marker after the early refresh, the `reset at 1600 ms` line will show the slot back at 0 and the detail stale again, and the 500 ms delay goes back in.
+
+## Fourth host run, 2026-10-04 20:31 to 20:32, version 1.0.7
+
+One extract-one and one extract-all on Mossanda, with an off-script step between them: the empty second slot was selected while Extract All was pending. Screenshots in `.docs/new-4/`.
+
+What the log settled:
+
+- The shortened window holds. Swap landed at 22.494, exchange finished at 22.687 on the second 100 ms poll, `refresh on finish` wrote at 22.869. About 375 ms from marker painted to marker gone, down from about 900. The `reset at 1600 ms` line read `slot=-1` with a clean detail both times, so the game does not repaint after the early refresh.
+- The log has no line from the empty-slot moment. The gate runs on a per-frame hook and did not log, so a block left no trace.
+
+The empty-slot moment, from the screenshots: vanilla painted Edit blue, since an empty slot is a valid target for a vanilla implant; the gate switched the button's interaction off, since an extract into an empty slot would put a stray marker on the Pal for 1000 gold; a CommonButtonBase with interaction off cannot take gamepad focus, so the cursor could not reach Edit; Cancel cleared the slot and the gate released. This is the blocked-and-lit behaviour `block_edit`'s comment describes, working as intended. It is a different case from the whole-block focus ring of the second run, where no slot was selected.
+
+Change made after this run: `block_edit` and `release_edit` log on the transition, with the pending operation, slot index and the slot's passive. Never on the per-frame pass.
+
 ## Verification
 
 ### What to read in the next host log

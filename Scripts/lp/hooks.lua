@@ -32,9 +32,10 @@ local entries = {}
 
 local announced = false
 
--- One line, when the last registration lands. Two register at load and two only
--- once a world exists, so reporting each one separately would scatter four lines
--- across a startup.
+-- One line, when every registration made so far has landed. Native hooks take at
+-- load and widget hooks only once a world exists, so the line is correct only if
+-- a widget hook is registered before any native one; main.lua orders them that
+-- way. Reporting each one separately would scatter the lines across a startup.
 local function announce_if_complete()
     if announced then
         return
