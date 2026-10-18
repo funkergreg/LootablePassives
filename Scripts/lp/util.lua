@@ -28,8 +28,8 @@ local UE4SS_ROOT = SCRIPT_DIRECTORY:match("^(.*[\\/]UE4SS[\\/])") or SCRIPT_DIRE
 
 -- The mod's only log channel, and it is unconditional.
 local function log(message)
-    -- print supplies the newline. Do not format one in as well.
-    print(string.format("[%s] %s", MOD_NAME, message))
+    -- UE4SS's print writes no line break of its own.
+    print(string.format("[%s] %s\n", MOD_NAME, message))
 end
 
 --------------------------------------------------------------------------------
@@ -228,42 +228,41 @@ end
 -- Scheduling
 --------------------------------------------------------------------------------
 
--- Runs fn(a, b) on the game thread after delay_ms, through ExecuteWithDelay and
--- then ExecuteInGameThread.
+-- Every delay in the mod goes through ExecuteInGameThreadWithDelay, which runs
+-- its callback on the game thread. ExecuteWithDelay runs its callback on
+-- UE4SS's async thread, against the same Lua state the game-thread hooks use.
+
+-- Runs fn(a, b) on the game thread after delay_ms, through
+-- ExecuteInGameThreadWithDelay.
 --
--- ALLOCATES TWO CLOSURES PER CALL, so it is for one-off work, never a per-frame
+-- ALLOCATES ONE CLOSURE PER CALL, so it is for one-off work, never a per-frame
 -- path; that is coalescer() below.
 local function run_later(delay_ms, fn, a, b)
-    ExecuteWithDelay(delay_ms, function()
-        ExecuteInGameThread(function()
-            fn(a, b)
-        end)
+    ExecuteInGameThreadWithDelay(delay_ms, function()
+        fn(a, b)
     end)
 end
 
 -- Wraps work in a scheduler that keeps at most one deferred pass queued: the
 -- returned function runs work on the game thread after delay ms, through
--- ExecuteWithDelay and then ExecuteInGameThread, and does nothing while a pass
--- is already queued. The flag clears before work runs, so work may reschedule
--- itself.
+-- ExecuteInGameThreadWithDelay, and does nothing while a pass is already
+-- queued. The flag clears before work runs, so work may reschedule itself.
 --
 -- Called at LOAD. Each call builds its flag and its runner once, so the
--- scheduler it returns allocates nothing however often a hook fires. A flag
--- alone would not do it, because ExecuteWithDelay(0, ...) completes within the
--- tick.
+-- scheduler it returns allocates nothing however often a hook fires.
 local function coalescer(work, delay)
     local scheduled = false
     local run
     run = function()
         scheduled = false
-        ExecuteInGameThread(work)
+        work()
     end
     return function()
         if scheduled then
             return
         end
         scheduled = true
-        ExecuteWithDelay(delay, run)
+        ExecuteInGameThreadWithDelay(delay, run)
     end
 end
 

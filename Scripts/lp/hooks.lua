@@ -66,7 +66,7 @@ local function schedule_retry(entry)
         return
     end
     entry.pending = true
-    ExecuteWithDelay(RETRY_DELAY_MS, entry.retry)
+    ExecuteInGameThreadWithDelay(RETRY_DELAY_MS, entry.retry)
 end
 
 local function attempt(entry)

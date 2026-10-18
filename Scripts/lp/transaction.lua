@@ -459,7 +459,7 @@ end
 -- Finalize
 --------------------------------------------------------------------------------
 
--- 12 attempts at 250 ms. Each retry allocates one closure pair; see the note on
+-- 12 attempts at 250 ms. Each retry allocates one closure; see the note on
 -- coalescer() in lp/util.lua before raising either number.
 local RESOLVE_ATTEMPTS = 12
 local RESOLVE_INTERVAL_MS = 250

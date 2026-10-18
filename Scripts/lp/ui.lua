@@ -313,9 +313,9 @@ end
 -- interaction is off cannot take gamepad focus, so a block here would send the
 -- focus ring to the slot group when an operation is chosen from the list.
 --
--- Takes no arguments so main.lua can hand it to ExecuteInGameThread by
--- reference; see the note on coalescer() in lp/util.lua. main.lua does not schedule
--- it at all when surgery_ui_gate is false in settings.lua.
+-- Takes no arguments so main.lua can hand it to coalescer() by reference; see
+-- the note on coalescer() in lp/util.lua. main.lua does not schedule it at all
+-- when surgery_ui_gate is false in settings.lua.
 local function enforce_extraction_gate()
     local page = current_page()
     if page == nil then
@@ -592,9 +592,9 @@ local function refresh_pending()
     return pending_reset ~= nil
 end
 
--- The three callbacks the timers below take are built once, at load, and passed
--- to ExecuteWithDelay and ExecuteInGameThread by reference; see the note on
--- coalescer() in lp/util.lua.
+-- The two callbacks the timers below take are built once, at load, and passed
+-- to ExecuteInGameThreadWithDelay by reference; see the note on coalescer() in
+-- lp/util.lua.
 -- Resets the panel only when its operation and slot still equal
 -- finished_selection, which is the game repainting the finished exchange's
 -- selection. Any other selection is the player's, as is any selection while a
@@ -613,14 +613,6 @@ local function reset_panel_now()
     refresh_surgery_ui(stale, false, "reset at 1600 ms")
 end
 
-local function consume_on_game_thread()
-    ExecuteInGameThread(consume_pending_refresh)
-end
-
-local function reset_on_game_thread()
-    ExecuteInGameThread(reset_panel_now)
-end
-
 -- What a finished exchange does to the Surgery panel. Called by the local
 -- exchange section below with that exchange's mode.
 --
@@ -636,7 +628,7 @@ local function on_transaction_complete(mode)
     -- The tick after finish: the marker is already off the Pal, and every
     -- millisecond here is a millisecond it stays painted in the slot.
     -- consume_pending_refresh runs at most once per arming.
-    ExecuteWithDelay(0, consume_on_game_thread)
+    ExecuteInGameThreadWithDelay(0, consume_pending_refresh)
 
     if reset_panel then
         -- Not gated on the armed refresh: the late backstop for a repaint the
@@ -647,7 +639,7 @@ local function on_transaction_complete(mode)
             operation = (pending_operation(page)),
             slot = field(page, "CachedPassiveSlotIndex"),
         } or nil
-        ExecuteWithDelay(1600, reset_on_game_thread)
+        ExecuteInGameThreadWithDelay(1600, reset_panel_now)
     end
 end
 

@@ -29,6 +29,11 @@ desktop.ini
 # Published ID and last uploaded Version, and is never copied into the repo.
 .workshop.json
 
-# Screenshots used in dev and testing
+# Screenshot and text used in dev and testing
 .docs/*.png
 .docs/**/*.png
+.docs/*.txt
+.docs/**/*.txt
+
+# Logs, though none are expected locally
+*.log

@@ -38,7 +38,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_SWIMSPEED_UP_2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_CraftSpeed_up2": {
@@ -78,7 +78,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_CRAFTSPEED_UP2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_MutationPal_Babysitter": {
@@ -118,7 +118,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_MUTATIONPAL_BABYSITTER_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PAL_ALLAttack_up1": {
@@ -158,7 +158,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PAL_ALLATTACK_UP1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_Deffence_up2": {
@@ -198,7 +198,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_DEFFENCE_UP2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PAL_FullStomach_Down_1": {
@@ -238,7 +238,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PAL_FULLSTOMACH_DOWN_1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PAL_ALLAttack_up3": {
@@ -278,7 +278,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PAL_ALLATTACK_UP3_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_WorldTree_CraftSpeed": {
@@ -318,7 +318,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_WORLDTREE_CRAFTSPEED_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_Deffence_up3": {
@@ -358,7 +358,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_DEFFENCE_UP3_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PAL_FullStomach_Down_2": {
@@ -398,7 +398,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PAL_FULLSTOMACH_DOWN_2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_WorldTree_MoveSpeed": {
@@ -438,7 +438,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_WORLDTREE_MOVESPEED_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_Stamina_Up_3": {
@@ -478,7 +478,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_STAMINA_UP_3_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PAL_ALLAttack_up2": {
@@ -518,7 +518,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PAL_ALLATTACK_UP2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_SalePrice_Up_2": {
@@ -558,7 +558,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_SALEPRICE_UP_2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_Stamina_Up_2": {
@@ -598,7 +598,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_STAMINA_UP_2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_WorldTree_ATK_DEF": {
@@ -638,7 +638,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_WORLDTREE_ATK_DEF_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_Deffence_up1": {
@@ -678,7 +678,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_DEFFENCE_UP1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_AutoHPRegeneRate_Passive": {
@@ -718,7 +718,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_AUTOHPREGENERATE_PASSIVE_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PAL_Sanity_Down_3": {
@@ -758,7 +758,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PAL_SANITY_DOWN_3_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_MutationPal_ExplosionResist": {
@@ -798,7 +798,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_MUTATIONPAL_EXPLOSIONRESIST_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_WorldTree_Sanity": {
@@ -838,7 +838,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_WORLDTREE_SANITY_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_MutationPal_Mutant": {
@@ -878,7 +878,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_MUTATIONPAL_MUTANT_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_MutationPal_Immortal": {
@@ -918,7 +918,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_MUTATIONPAL_IMMORTAL_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_CoolTimeReduction_Up_2": {
@@ -958,7 +958,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_COOLTIMEREDUCTION_UP_2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_Stamina_Up_1": {
@@ -998,7 +998,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_STAMINA_UP_1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_Nocturnal": {
@@ -1038,7 +1038,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_NOCTURNAL_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_SwimSpeed_up_3": {
@@ -1078,7 +1078,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_SWIMSPEED_UP_3_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_TrainerLogging_up1": {
@@ -1118,7 +1118,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_TRAINERLOGGING_UP1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PAL_FullStomach_Down_3": {
@@ -1158,7 +1158,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PAL_FULLSTOMACH_DOWN_3_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_NonKilling": {
@@ -1198,7 +1198,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_NONKILLING_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_TrainerMining_up1": {
@@ -1238,7 +1238,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_TRAINERMINING_UP1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_TrainerWorkSpeed_UP_1": {
@@ -1278,7 +1278,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_TRAINERWORKSPEED_UP_1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_Noukin": {
@@ -1318,7 +1318,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_NOUKIN_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_MoveSpeed_up_1": {
@@ -1358,7 +1358,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_MOVESPEED_UP_1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_SalePrice_Up_1": {
@@ -1398,7 +1398,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_SALEPRICE_UP_1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_Test_PalEgg_HatchingSpeed_Up": {
@@ -1438,7 +1438,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_TEST_PALEGG_HATCHINGSPEED_UP_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PAL_Sanity_Down_1": {
@@ -1478,7 +1478,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PAL_SANITY_DOWN_1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_ReloadSpeedUp_Passive": {
@@ -1518,7 +1518,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_RELOADSPEEDUP_PASSIVE_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_CraftSpeed_up3": {
@@ -1558,7 +1558,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_CRAFTSPEED_UP3_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_MoveSpeed_up_2": {
@@ -1598,7 +1598,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_MOVESPEED_UP_2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_WorldTree_DEF": {
@@ -1638,7 +1638,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_WORLDTREE_DEF_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_CoolTimeReduction_Up_1": {
@@ -1678,7 +1678,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_COOLTIMEREDUCTION_UP_1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_CraftSpeed_up1": {
@@ -1718,7 +1718,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_CRAFTSPEED_UP1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_RideJumpCount_Increase2": {
@@ -1758,7 +1758,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_RIDEJUMPCOUNT_INCREASE2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_SwimSpeed_up_1": {
@@ -1798,7 +1798,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_SWIMSPEED_UP_1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_TrainerDEF_UP_1": {
@@ -1838,7 +1838,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_TRAINERDEF_UP_1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_MoveSpeed_up_3": {
@@ -1878,7 +1878,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_MOVESPEED_UP_3_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_WorldTree_ATK": {
@@ -1918,7 +1918,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_WORLDTREE_ATK_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_Vampire": {
@@ -1958,7 +1958,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_VAMPIRE_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_TrainerATK_UP_1": {
@@ -1998,7 +1998,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_TRAINERATK_UP_1_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PlayerSP_DecreaseRate_Passive": {
@@ -2038,7 +2038,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PLAYERSP_DECREASERATE_PASSIVE_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PAL_CorporateSlave": {
@@ -2078,7 +2078,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PAL_CORPORATESLAVE_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_PAL_Sanity_Down_2": {
@@ -2118,7 +2118,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_PAL_SANITY_DOWN_2_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_Insert_WorldTree_FullStomach": {
@@ -2158,7 +2158,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_INSERT_WORLDTREE_FULLSTOMACH_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     }
   },

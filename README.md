@@ -92,7 +92,7 @@ This mod names the three PalSchema folders individually, without a trailing `/`,
 
 ### The edit, check, release loop
 
-There is no build step, and there is no local-only test build. The repository is the working copy, and every change that is tested is uploaded: staged with a new version, uploaded to the Workshop, and played on the host machine and on a second, subscribed machine that joins it in multiplayer. Both machines then run the same version.
+There is no build step. The repository is the working copy. A plain `stage.ps1` is a local test build: it raises the patch number (`1.1.1` → `1.1.2`), sets `DebugMode` true, and ships nothing; the host machine installs it at its next launch. A multiplayer test also uploads that stage, so that a second, subscribed machine joining the host runs the same version. Only `stage.ps1 -Publish` makes a shipping release: it raises the minor number and resets the patch to 0 (`1.1.2` → `1.2.0`), the version form of a shipped release.
 
 ```powershell
 # edit the JSON under PalSchemaMods\ or the Lua under Scripts\, then:

@@ -43,13 +43,18 @@ Subscribe to both dependencies as well and enable all three under [b]Options →
 
 [h2]Multiplayer[/h2]
 
-Install it on every player for full functionality. A player without it cannot use the implants, and show as blank entries in shared storage. Tested on two machines with the host modded and the client not: result was stable for both players, extraction and disassembly normal for the host who had the mod.  Has NOT been tested on a client where the host does not have the mod.
+- This mod is compatible with multiplayer, AS LONG AS THE HOST HAS IT, as the host is responsible for giving out items in multiplayer
+- It is reported NOT TO WORK ON DEDICATED SERVER HOSTING.
 
-Not tested: dedicated-server hosting.
+For regular multiplayer, install this mod on every player for full functionality. A client player without it cannot use the implants, and items added to the game would show as blank entries in shared storage for players without it. Tested on two machines with the host modded and the client not: result was stable for both players, extraction and disassembly normal for the host who had the mod.
 
 [h2]Known Issues[/h2]
 
 The Edit button's coloring in the surgery table is wonky after some transactions - specifically for clients; exiting the menu and coming back solves the issues with a UI redraw.
+
+[h2]Mod Compatibility[/h2]
+
+As in the description, this mod edits existing in-game items like disposable implants, the purchasable passive recipes (arena and bounty), and the interaction with the base equipment surgery table and pal disassembly conveyor.  Do not use this mod at the same time as other mods that also modify these -- choose this or that -- as having two mods that act on the same thing is likely to cause a conflict and crash the game.
 
 [h2]Uninstalling[/h2]
 
@@ -62,3 +67,14 @@ Two things worth knowing first, both general to Palworld modding rather than spe
 [h2]Source Code[/h2]
 
 Full source available on GitHub: https://github.com/funkergreg/LootablePassives
+
+[h2]Changelog[/h2]
+
+[h3]1.2.0[/h3]
+- Fixed
+  - Threading delay which may have caused a crash on exit in some cases
+  - Duplication of names in passive list in palbox search
+  - Descriptions at surgery table now list passive skill's description instead of a default alias created by mod
+
+[h3]1.1.0[/h3]
+- Initial public release

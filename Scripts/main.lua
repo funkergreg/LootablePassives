@@ -18,6 +18,7 @@ local recovery = require("lp.recovery")
 local hooks = require("lp.hooks")
 local conveyor = require("lp.conveyor")
 local ledger = require("lp.ledger")
+local desc_probe = require("lp.desc_probe")
 
 local coalescer = util.coalescer
 local has_authority = util.has_authority
@@ -100,6 +101,7 @@ local schedule_gate_pass = coalescer(enforce_extraction_gate, 0)
 -- a pass is already queued.
 local function on_update_button_state(context)
     note_live_page(unwrap(context))
+    desc_probe.run_once()
     if gate_on then
         schedule_gate_pass()
     end

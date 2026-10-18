@@ -37,7 +37,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_EXTRACT_ONE_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     },
     "LP_ExtractAll": {
@@ -77,7 +77,7 @@
       "IsStackablePartnerSkillBySameTribe": false,
       "OverrideNameTextID": "PASSIVE_LP_EXTRACT_ALL_NAME",
       "OverrideSummaryTextId": "None",
-      "Category": "SortDisplayable",
+      "Category": "SortNotDisplayable",
       "SortKeyJP": ""
     }
   },
