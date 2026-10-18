@@ -34,6 +34,7 @@ desktop.ini
 .docs/**/*.png
 .docs/*.txt
 .docs/**/*.txt
+!.docs/workshop-description.txt
 
 # Logs, though none are expected locally
 *.log

@@ -46,6 +46,8 @@ This repo contains a Palworld mod.
   - `LootablePassivesOperatingTable.json` — 61 routes for passives with no vanilla row.
   - `LootablePassivesVanillaPrices.json` — reprices the 54 vanilla routes. **`Price` only.** Naming `RequireItemId` here would overwrite and thereby destroy the recipe gate. The price follows whether the route **consumes** what it requires, not whether the row is vanilla: 33 recipe routes at 5000, and the 21 that spend one of vanilla's own `PalPassiveSkillChange_Consumable_*` implants at 1000, matching every route this mod adds. Those 21 are exactly the rows that gate on a consumable in `LootablePassivesInsertRoutes.json`; derive the list from that file rather than retyping it.
   - `LootablePassivesInsertRoutes.json` — the 54 alias routes, plus the 54 inert alias passives that let those rows render. Every row needs a matching key in `lp/ids.lua`'s `IMPLANT_TARGET`; the two are maintained together in current implementation. A row with no key installs an inert alias and leaves it on the Pal; a key with no row is a dead list entry.
+    - Aliases and the two markers carry `Category: "SortNotDisplayable"` (`EPalPassiveCategory`, `Pal_enums.hpp`). `SortDisplayable` lists each alias in the Palbox search/sort list as a duplicate of its real passive.
+    - Each alias's `_DESC` string in `translations/en/` is a static copy of the real passive's `BP_PalUIFunctionLibrary_C::BuildPassiveSkillDescText` output, rich-text tags included. Vanilla has no text id to point at: it builds that text from the passive's row at runtime. A game update that changes a passive's numbers leaves its alias text stale until it is copied again.
 - `translations/en/` — display strings by text id.
 
 ### Naming

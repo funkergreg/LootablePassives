@@ -25,11 +25,14 @@ This repository is the mod's source, not the shipped mod. The mod is distributed
 | `LICENSE`, `thumbnail.png` | Package metadata | yes |
 | `README.md` | This page: the development repo's documentation | no |
 | `.docs\workshop-description.txt` | The Steam Workshop page text, in Steam's BBCode | no |
+| `.docs\crash-watch.md` | The working notes document: the open crash watch, its evidence, and how to triage a recurrence | no |
 | `tools\` | `stage.ps1`, `test_staging.ps1`, `luacheck.js`, `ledger_test.lua` | no |
 | `package.json` | Declares `luaparse` for `tools\luacheck.js` | no |
 | `.luacheckrc`, `.luarc.json` | Declare UE4SS's injected globals for luacheck and the Lua language server | no |
 
 What ships is decided by `Info.json`, not by a list in the tools: `stage.ps1` stages `Info.json`, the `Thumbnail` file, `LICENSE`, and every `InstallRule` target, and nothing else.
+
+Screenshots, crash-dialog text and logs dropped into `.docs\` while testing are ignored by git; `.gitignore` lists the patterns.
 
 ### Starting a mod
 
@@ -100,10 +103,10 @@ node tools\luacheck.js          # Lua parse check
 luacheck Scripts                # static analysis; the baseline is 0 warnings / 0 errors
 lua tools\ledger_test.lua       # after any change to Scripts\lp\ledger.lua
 .\tools\test_staging.ps1          # after any change to tools\stage.ps1
-.\tools\stage.ps1               # dev build: patch + 1, DebugMode on; add -DryRun to preview
-.\tools\stage.ps1 -Publish      # release: minor + 1, patch 0, DebugMode off
-# Upload To Steam from Palworld Mod Uploader
-# restart Palworld on both machines, check both are on the new version, test, read the log
+.\tools\stage.ps1               # local test build: patch + 1, DebugMode on; add -DryRun to preview
+.\tools\stage.ps1 -Publish      # release: minor + 1, patch 0, DebugMode off; deletes stale files
+# for a multiplayer test or a release: Upload To Steam from Palworld Mod Uploader
+# restart Palworld (on both machines for a multiplayer test), check the version, test, read the log
 ```
 
 `stage.ps1` writes `Version` and `DebugMode` into the repository's `Info.json` and then stages that file unchanged, so the repository always matches what was last staged:
@@ -117,8 +120,8 @@ Only a release has patch `0`. Raise the major version by editing `Info.json` by 
 
 1. Preview the stage if you want: add `-DryRun` to either command. It prints the next version and changes nothing.
 2. Stage a dev build with `.\tools\stage.ps1`, or a release with `.\tools\stage.ps1 -Publish`. Commit the rewritten `Info.json` with the change it carries.
-3. Upload from **Palworld Mod Uploader**, which is software run from Steam. A dev build is uploaded too, so the second machine can download it; it goes out with `DebugMode` on, which makes every subscriber's loader reinstall the mod at each launch until the next release.
-4. Restart Palworld on both machines. The host reinstalls from the item folder at launch. The subscribed machine reinstalls once Steam has downloaded the upload. Check the version under **Options → Mod Management** on both before testing together.
+3. For a release, or a multiplayer test, upload from **Palworld Mod Uploader**, which is software run from Steam. A local test build needs no upload. A dev build that is uploaded goes out with `DebugMode` on, which makes every subscriber's loader reinstall the mod at each launch until the next release.
+4. Restart Palworld. The host reinstalls from the item folder at launch. A subscribed machine reinstalls once Steam has downloaded the upload; for a multiplayer test, check the version under **Options → Mod Management** on both machines before testing together.
 5. If the player-facing description changed, paste `.docs\workshop-description.txt` into the Workshop page's description by hand. The uploader does not carry it, and the stage does not include it.
 
 UE4SS hot reload is disabled, and the loader installs only at launch, so a running game does not pick up a change until it restarts.
@@ -136,7 +139,7 @@ repo  --stage.ps1-->  <Workshop content>\1623730\<item id>\  --loader, at launch
 - **What it stages.** `Info.json`, the `Thumbnail` file, `LICENSE`, and every `InstallRule` target, and nothing else. It refuses an `Info.json` the uploader would accept but the game would not install, warns about a target missing from the repository, and prints where each rule installs. It overwrites the item folder's `Info.json` with the repository's, and never touches the uploader's `.workshop.json`.
 - **A mirror.** Before copying anything, it compares the item folder with the files about to be staged. A file the stage does not have stops the run with nothing changed. After you delete a file from the repository, run the next stage with `-Force`, which deletes those files and any folder left empty. `-Publish` does the same deletion without `-Force`, so a release is always an exact mirror of the repository. At the next reinstall the file is in the old manifest and not in the new install; check the game folder the first time you rely on that.
 - **When the loader reinstalls.** At launch it compares `Version` in the item folder's `Info.json` with the installed copy in `<Palworld>\Mods\ManagedMods\LootablePassives\`, as plain strings. When they differ, or when `DebugMode` is true, it removes what its `InstallManifest.json` lists and copies the `InstallRule` targets in again. A subscribed machine does the same after Steam downloads an upload. Every stage raises the version, so the first launch after each stage installs it. `stage.ps1` warns if the new version equals the last upload, which a subscribed machine would not reinstall.
-- **Stage only when you are going to upload.** The host's next launch installs the staged copy whether or not it was uploaded, and a subscribed machine is then on an older version than the host.
+- **The host installs whatever is staged.** Its next launch installs the staged copy whether or not it was uploaded. That is what makes a plain stage a local test build; for a multiplayer test, upload it too, or the subscribed machine is on an older version than the host.
 - **Only the loader writes the game folders.** For a `Lua` rule it also adds the `<PackageName> : 1` line to UE4SS's `mods.txt`, which is what starts the Lua half.
 - **Turning the mod off.** Use **Options → Mod Management**, which removes both halves. Setting `LootablePassives : 0` in `mods.txt` stops only the Lua half, and the Surgery Table operations stay listed with nothing behind them.
 
@@ -151,6 +154,32 @@ The log is `UE4SS.log` in the game's UE4SS folder. Filter it on:
 A healthy start logs `Loaded 115 extractable passives, 2 extraction operations, 54 insert routes.` That line counts only the Lua tables, and it prints even when the JSON loaded nothing. The data half is confirmed by PalSchema's own lines: `DT_OperatingTablePassiveSkillDataTable: 54 rows updated, 117 rows added, 0 rows deleted, 0 errors` and `DT_PassiveSkill_Main_Common: 0 rows updated, 56 rows added`.
 
 After a crash, look in `%LOCALAPPDATA%\Pal\Saved\Crashes\`.
+
+### The data half
+
+The JSON under `PalSchemaMods\LootablePassives\` is edited by hand and is the source of truth; nothing generates or validates it, and PalSchema skips a malformed file without an error a player would see.
+
+| File | Holds |
+| --- | --- |
+| `items\LootablePassivesImplants.json` | The 94 mod-defined disposable implants, `LP_Implant_<passive>` |
+| `raw\LootablePassivesOperation.json` | The two extraction markers, `LP_ExtractOne` and `LP_ExtractAll`, and their Surgery Table rows |
+| `raw\LootablePassivesOperatingTable.json` | 61 insertion routes for passives vanilla has no Surgery Table row for |
+| `raw\LootablePassivesVanillaPrices.json` | `Price` only, on vanilla's 54 routes: 5000 for a recipe, 1000 for one that consumes a vanilla implant |
+| `raw\LootablePassivesInsertRoutes.json` | 54 `LP_Insert_<passive>` alias passives and their routes, for the passives whose one Surgery Table row vanilla already uses for a recipe |
+| `translations\en\LootablePassivesOperation.json` | English names and descriptions for the markers and the aliases |
+
+Each alias is swapped for its real passive by `Scripts\lp\ids.lua`'s `IMPLANT_TARGET` as soon as it is implanted, so every alias row needs a key there and every key needs a row. The aliases and markers have `Category` `SortNotDisplayable`, which keeps them out of the Palbox search and sort list; with `SortDisplayable` each alias showed there as a duplicate of its real passive.
+
+An alias's description is a static English copy of the text the game builds for the real passive (`BP_PalUIFunctionLibrary`'s `BuildPassiveSkillDescText`), color tags included. If a game update changes a passive's numbers, its alias keeps the old text until it is copied again.
+
+### Settings
+
+`Scripts\settings.lua` holds the two switches that are safe to change. Each is documented in the file.
+
+- `conveyor_extraction`: the Pal Disassembly Conveyor's implants. `false` registers none of its hooks; implants already owed from an earlier session are still delivered.
+- `surgery_ui_gate`: the Edit-button gate on the Surgery screen, which refuses a click that cannot succeed. It is a kill switch for the one part of the mod that writes to a widget while the screen is open; with it off, the transaction still checks every rule and unwinds, but the operation's gold is not refunded.
+
+The file is installed with the rest of `Scripts\`, so the loader overwrites an edit made in the game folder at its next reinstall.
 
 ### The tools
 
@@ -168,7 +197,7 @@ The player-facing sections at the top of this README and `.docs\workshop-descrip
 
 Pull a passive off a Pal and receive a disposable implant.
 
-Vanilla has disposable implants for a handful of passives. This mod defines disposable implants for **all 115** passives, and gives you two ways to get them.
+Vanilla has disposable implants for a handful of passives. This mod defines disposable implants for **all 115** passives in the vanilla game, and gives you two ways to get them.
 
 ### Benefit
 
@@ -203,13 +232,18 @@ Subscribe to both dependencies as well and enable all three under **Options → 
 
 ### Multiplayer
 
-Install it on every player for full functionality. A player without it cannot use the implants, and show as blank entries in shared storage. Tested on two machines with the host modded and the client not: result was stable for both players, extraction and disassembly normal for the host who had the mod.  Has NOT been tested on a client where the host does not have the mod.
+- This mod is compatible with multiplayer, AS LONG AS THE HOST HAS IT, as the host is responsible for giving out items in multiplayer.
+- It is reported NOT TO WORK ON DEDICATED SERVER HOSTING.
 
-Not tested: dedicated-server hosting.
+For regular multiplayer, install this mod on every player for full functionality. A client player without it cannot use the implants, and items added to the game would show as blank entries in shared storage for players without it. Tested on two machines with the host modded and the client not: result was stable for both players, extraction and disassembly normal for the host who had the mod.
 
 ### Known Issues
 
 The Edit button's coloring in the surgery table is wonky after some transactions - specifically for clients; exiting the menu and coming back solves the issues with a UI redraw.
+
+### Mod Compatibility
+
+This mod edits existing in-game items like disposable implants, the purchasable passive recipes (arena and bounty), and the interaction with the base equipment surgery table and pal disassembly conveyor. Do not use this mod at the same time as other mods that also modify these -- choose this or that -- as having two mods that act on the same thing is likely to cause a conflict and crash the game.
 
 ### Mod Install
 
@@ -222,6 +256,18 @@ Disable it under **Options → Mod Management** and the loader removes what it i
 What this mod leaves behind is ordinary: passives already implanted are real passives and stay on the Pal, and disposable implants still in an inventory refer to items that no longer exist.
 
 Two things worth knowing first, both general to Palworld modding rather than specific to this mod. Pocketpair's guidance is that turning a mod off is not always enough and that files left in the game folder can still be loaded — if you have ever installed mods by hand, delete those with File Explorer and verify your game files through Steam. And a save that has been loaded with mods enabled can keep showing problems afterwards, so back up a save you care about before experimenting.
+
+### Changelog
+
+#### 1.2.0
+
+- Fixed a likely cause of a crash when leaving a world, such as exiting to the title screen: the mod's delayed work now always runs on the game thread.
+- Fixed passives appearing twice in the Palbox search and sort list.
+- The Surgery Table's passive list now shows each passive's own description for the disposable-implant entries, instead of placeholder text.
+
+#### 1.1.0
+
+- Initial public release.
 
 ## Credits
 

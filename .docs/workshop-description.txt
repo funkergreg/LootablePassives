@@ -2,7 +2,7 @@
 
 Pull a passive off a Pal and receive a disposable implant.
 
-Vanilla has disposable implants for a handful of passives. This mod defines disposable implants for [b]all 115[/b] passives, and gives you two ways to get them.
+Vanilla has disposable implants for a handful of passives. This mod defines disposable implants for [b]all 115[/b] passives in the vanilla game, and gives you two ways to get them.
 
 [h2]Benefit[/h2]
 
@@ -43,8 +43,10 @@ Subscribe to both dependencies as well and enable all three under [b]Options →
 
 [h2]Multiplayer[/h2]
 
-- This mod is compatible with multiplayer, AS LONG AS THE HOST HAS IT, as the host is responsible for giving out items in multiplayer
-- It is reported NOT TO WORK ON DEDICATED SERVER HOSTING.
+[list]
+[*]This mod is compatible with multiplayer, AS LONG AS THE HOST HAS IT, as the host is responsible for giving out items in multiplayer.
+[*]It is reported NOT TO WORK ON DEDICATED SERVER HOSTING.
+[/list]
 
 For regular multiplayer, install this mod on every player for full functionality. A client player without it cannot use the implants, and items added to the game would show as blank entries in shared storage for players without it. Tested on two machines with the host modded and the client not: result was stable for both players, extraction and disassembly normal for the host who had the mod.
 
@@ -71,10 +73,13 @@ Full source available on GitHub: https://github.com/funkergreg/LootablePassives
 [h2]Changelog[/h2]
 
 [h3]1.2.0[/h3]
-- Fixed
-  - Threading delay which may have caused a crash on exit in some cases
-  - Duplication of names in passive list in palbox search
-  - Descriptions at surgery table now list passive skill's description instead of a default alias created by mod
+[list]
+[*]Fixed a likely cause of a crash when leaving a world, such as exiting to the title screen: the mod's delayed work now always runs on the game thread.
+[*]Fixed passives appearing twice in the Palbox search and sort list.
+[*]The Surgery Table's passive list now shows each passive's own description for the disposable-implant entries, instead of placeholder text.
+[/list]
 
 [h3]1.1.0[/h3]
-- Initial public release
+[list]
+[*]Initial public release.
+[/list]
