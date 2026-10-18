@@ -42,7 +42,8 @@
     This is a MIRROR, and the check that makes it one runs first: a file in the
     item folder that the staged set does not have stops the run before anything
     is copied. Left alone it would be uploaded to subscribers. -Force deletes
-    those files, and any directory left empty, instead of stopping.
+    those files, and any directory left empty, instead of stopping. -Publish
+    does the same, so a release is always an exact mirror of the repo.
 
     Six checks run on the repo's Info.json before anything is copied, because
     the uploader validates almost nothing and everything it misses fails
@@ -64,7 +65,7 @@
     either case. The loader writes UE4SS's mods.txt entry itself.
 
 .PARAMETER Publish
-    Stage a release: minor + 1, patch 0, DebugMode false.
+    Stage a release: minor + 1, patch 0, DebugMode false. Implies -Force.
 
 .PARAMETER GameRoot
     Palworld install root. Defaults to the usual Steam location.
@@ -420,7 +421,10 @@ else {
 
 $stale = @(Get-StaleFiles -Destination $Destination -Keep $stagedRelative -Exclude $UPLOADER_OWNED)
 
-if ($stale.Count -gt 0 -and -not $Force) {
+# -Publish deletes stale files as -Force does.
+$prune = $Force -or $Publish
+
+if ($stale.Count -gt 0 -and -not $prune) {
     Write-Host ""
     Write-Warning "$($stale.Count) file(s) in the item folder are not in this package:"
     foreach ($s in $stale) { Write-Host "    $($s.Rel)" }

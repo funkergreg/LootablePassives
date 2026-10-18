@@ -22,7 +22,6 @@ globals = {
     "FindAllOf",
     "FindFirstOf",
     "StaticFindObject",
-    "FindObject",
     "StaticConstructObject",
     "CreateInvalidObject",
     "FName",

@@ -100,7 +100,7 @@ lua tools\ledger_test.lua         # after any lp/ledger.lua edit
 
 - Staging is not optional and it is not automatic: the game loads only what the loader copied out of the item folder, so an unstaged repo edit is just an untested repo edit. `stage.ps1 -DryRun` first if you want to see what moves and the next version.
 - **Uploading is the user's step, done by hand in Palworld Mod Uploader.** An agent stages; it does not upload or claim a stage has been uploaded.
-- **A file the stage does not have stops the run.** The stage is a mirror, and the check that makes it one runs before anything is copied: a file in the item folder with no counterpart in the staged set is listed, and the run exits 1 with nothing changed (exit 0 under `-DryRun`). `-Force` deletes those files, and any directory left empty, instead of stopping. Delete a Lua module or a JSON patch from the repo and the next stage is `-Force`.
+- **A file the stage does not have stops the run.** The stage is a mirror, and the check that makes it one runs before anything is copied: a file in the item folder with no counterpart in the staged set is listed, and the run exits 1 with nothing changed (exit 0 under `-DryRun`). `-Force` deletes those files, and any directory left empty, instead of stopping. Delete a Lua module or a JSON patch from the repo and the next dev stage is `-Force`. `-Publish` implies `-Force`, so a release is always an exact mirror of the repo.
 - Read `UE4SS.log` filtered on:
   - `[LootablePassives]` for the mod's own messages, which trace the code paths reached
   - `PalSchema` for confirmation that the JSON loaded

@@ -208,6 +208,17 @@ try {
     Test-That '-Force exits 0' ($run.Exit -eq 0) $run
     Test-That '-Force deletes the stale file' (-not (Test-Path (Join-Path $fx.Item 'Scripts\old.lua'))) $run
 
+    # -Publish deletes stale files without -Force, and a directory left empty.
+    $fx = New-Fixture -ItemFiles @('Scripts\old.lua', 'Retired\gone.json')
+    $run = Invoke-Stage $fx @('-Publish', '-DryRun')
+    Test-That 'stale publish under -DryRun exits 0' ($run.Exit -eq 0) $run
+    Test-That 'stale publish under -DryRun keeps the stale file' (Test-Path (Join-Path $fx.Item 'Scripts\old.lua')) $run
+    $run = Invoke-Stage $fx @('-Publish')
+    Test-That 'stale publish exits 0' ($run.Exit -eq 0) $run
+    Test-That 'publish deletes the stale file' (-not (Test-Path (Join-Path $fx.Item 'Scripts\old.lua'))) $run
+    Test-That 'publish removes a directory left empty' (-not (Test-Path (Join-Path $fx.Item 'Retired'))) $run
+    Test-That 'stale publish writes a release version' ((Get-RepoInfo $fx).Version -eq '1.3.0') $run
+
     # A first stage into a Create New Mod folder: the template's main.lua is
     # overwritten and its empty type folders are removed.
     $fx = New-Fixture -ItemFiles @('Scripts\main.lua')
