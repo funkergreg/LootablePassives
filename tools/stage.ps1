@@ -341,6 +341,7 @@ $patch = [int]$v[4].Value
 if ($Publish) {
     $newVersion = "$major.$($minor + 1).0"
     $newDebug = 'false'
+    $Force = $true
 }
 else {
     $newVersion = "$major.$minor.$($patch + 1)"
@@ -421,10 +422,7 @@ else {
 
 $stale = @(Get-StaleFiles -Destination $Destination -Keep $stagedRelative -Exclude $UPLOADER_OWNED)
 
-# -Publish deletes stale files as -Force does.
-$prune = $Force -or $Publish
-
-if ($stale.Count -gt 0 -and -not $prune) {
+if ($stale.Count -gt 0 -and -not $Force) {
     Write-Host ""
     Write-Warning "$($stale.Count) file(s) in the item folder are not in this package:"
     foreach ($s in $stale) { Write-Host "    $($s.Rel)" }

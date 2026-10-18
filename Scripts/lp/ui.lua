@@ -592,7 +592,7 @@ local function refresh_pending()
     return pending_reset ~= nil
 end
 
--- The two callbacks the timers below take are built once, at load, and passed
+-- The callbacks the timers below take are built once, at load, and passed
 -- to ExecuteInGameThreadWithDelay by reference; see the note on coalescer() in
 -- lp/util.lua.
 -- Resets the panel only when its operation and slot still equal

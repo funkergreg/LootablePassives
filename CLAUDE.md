@@ -132,7 +132,7 @@ Lua and luacheck are installed with Scoop, into the user profile, with no admin 
 - Lua 5.5 (lua, luac on PATH) — for quick local sanity checks
 - luacheck 1.2.0 — a real static analyzer (undefined globals, unused vars, shadowing), stronger than this repo's tools/luacheck.js, which is parse-only
 - luaparse — the parser `tools/luacheck.js` uses, declared in `package.json`
-- .luacheckrc — declares UE4SS's injected globals (RegisterHook, ExecuteInGameThread, FindAllOf, etc.) so luacheck stops flagging the mod's own API as "undefined". Without it `luacheck Scripts` reports dozens of false positives; with it, only real findings.
+- .luacheckrc — declares UE4SS's injected globals (RegisterHook, ExecuteInGameThreadWithDelay, FindAllOf, etc.) so luacheck stops flagging the mod's own API as "undefined". Without it `luacheck Scripts` reports dozens of false positives; with it, only real findings.
 - .luarc.json — the same global list for LuaLS, so the in-editor language server and the CLI checker agree.
 
 ### How a staged build reaches the game

@@ -228,10 +228,6 @@ end
 -- Scheduling
 --------------------------------------------------------------------------------
 
--- Every delay in the mod goes through ExecuteInGameThreadWithDelay, which runs
--- its callback on the game thread. ExecuteWithDelay runs its callback on
--- UE4SS's async thread, against the same Lua state the game-thread hooks use.
-
 -- Runs fn(a, b) on the game thread after delay_ms, through
 -- ExecuteInGameThreadWithDelay.
 --

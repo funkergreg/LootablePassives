@@ -15,7 +15,6 @@ globals = {
     -- Threading / scheduling. Game-thread schedulers only: ExecuteWithDelay,
     -- ExecuteAsync and LoopAsync run their callback on UE4SS's async thread,
     -- and are left out so that a call to one reads as undefined.
-    "ExecuteInGameThread",
     "ExecuteInGameThreadWithDelay",
 
     -- Object lookup / construction
