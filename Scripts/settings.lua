@@ -16,7 +16,7 @@ return {
     -- tools/stage.ps1 writes this line: true for a dev build, false for a
     -- release, matching Info.json's DebugMode. True adds "DEBUG:" trace lines to
     -- UE4SS.log and arms debug_faults below. Read at every use.
-    debug = true, -- stage:DebugMode
+    debug = false, -- stage:DebugMode
 
     -- Pal Disassembly Conveyor extraction: on or off. Default true.
     --
