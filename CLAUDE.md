@@ -120,7 +120,8 @@ lua tools\ledger_test.lua         # after any lp/ledger.lua edit
 - .\tools\stage.ps1 is the only repo -> game path. Run it before every functional runtime test. Its header documents every check and option; the rules an agent must keep:
   - **Plain `stage.ps1` is the local test build, and it is safe and proper to run before any test regardless of git state.** It increments the third (patch) part of `Version` and sets `DebugMode` true. It does not ship anything.
   - **`-Publish` is the only shipping build.** It increments the second (minor) part, sets the patch to 0 and `DebugMode` false. `major.minor.0` is the version form of a shipped release; a nonzero patch is a local test build.
-  - Every run that stages rewrites `Version` and `DebugMode` **in the repo's `Info.json`**. Commit the rewritten `Info.json` with the change it carries.
+  - Every run that stages rewrites `Version` and `DebugMode` **in the repo's `Info.json`**, and writes the same `DebugMode` value onto every staged text-file line tagged `stage:DebugMode` **in the repo's copy**. Here that is the `debug` line in `Scripts/settings.lua`. Commit the rewritten files with the change they carry.
+  - The `stage:DebugMode` tag is how a mod opts a runtime debug switch into the stage without the script naming any file. Don't write the literal tag anywhere else in a shipped text file: a tagged line with no `true`/`false` before the tag stops the run.
   - `-DryRun`, a failed check, and a stop on stale files all write nothing.
   - It holds nothing specific to this mod, so it can be copied unchanged into another mod's repo. Keep it that way: mod-specific facts belong in `Info.json`.
   - The Workshop page description is not part of the stage. After uploading, paste `.docs/workshop-description.txt` into the Workshop page by hand if it changed.
@@ -149,6 +150,11 @@ repo --stage.ps1--> <Workshop content>\1623730\<item id>\ --loader, at launch-->
 - **Do not disable this mod by setting `LootablePassives : 0` in `mods.txt`.** That line controls only the Lua half. The PalSchema half has no such switch, because it loads whenever its folder is on disk, so the mod's operations stay in the Surgery Table list with nothing behind them. Disable it under **Options → Mod Management**, which uninstalls both halves.
 - **Keep one folder per PackageName under `WorkshopRootDir`.** With several, the loader enables one of them, and which one is not defined.
 - **Do not subscribe to this mod on the host machine** — the one that stages. Steam downloads a subscribed item into the same numbered folder, over the staged files, and the uploader makes subscribed items view-only.
+
+### Settings and debug mode
+
+- `Scripts/lp/config.lua` is the only module that reads `Scripts/settings.lua`. Other modules call its getters (`debug_on`, `conveyor_on`, `gate_on`, `fault`), which read the value on every call, so a setting changed at runtime takes effect at its next use. Add a new setting there, with a default and the type it must have, and describe in `settings.lua` what happens when it changes at runtime.
+- Debug-only trace lines go through `config.debug_log`, which prints only when `debug` is true. Injected failures (`debug_faults`) are a list of scenarios, one per Surgery exchange, used in order. A scenario is active only while its exchange's finalize runs, and is used up only when the exchange turns out to be the mod's. They are read through `config.fault`, which returns the unarmed default outside an exchange or unless `debug` is true, so a release build (`debug = false`) cannot fire one.
 
 ### Errors and warnings
 

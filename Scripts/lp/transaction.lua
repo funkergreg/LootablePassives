@@ -9,15 +9,26 @@
 -- what it observes in lp/ui.lua; this file only logs outcomes.
 
 local util = require("lp.util")
+local config = require("lp.config")
 local ids = require("lp.ids")
 local journal = require("lp.journal")
 local passives = require("lp.passives")
 local inventory = require("lp.inventory")
+local ledger = require("lp.ledger")
 local recovery = require("lp.recovery")
 local ui = require("lp.ui")
 local is_valid = util.is_valid
 local log = util.log
 local run_later = util.run_later
+local HALT = config.HALT
+local debug_log = config.debug_log
+local fault = config.fault
+local fault_log = config.fault_log
+local advance_scenario = config.advance_scenario
+local begin_scenario = config.begin_scenario
+local describe_scenario = config.describe_scenario
+local end_scenario = config.end_scenario
+local peek_scenario = config.peek_scenario
 local IMPLANT_TARGET = ids.IMPLANT_TARGET
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local clear_journal = journal.clear_journal
@@ -35,6 +46,7 @@ local add_implant = inventory.add_implant
 local find_inventory = inventory.find_inventory
 local local_player_id = inventory.local_player_id
 local player_id_number = inventory.player_id_number
+local player_uid = inventory.player_uid
 local remove_skill = inventory.remove_skill
 local restore_replaced_passive = inventory.restore_replaced_passive
 local undo_swap = inventory.undo_swap
@@ -96,35 +108,56 @@ local function snapshot_server_parameters(request_player_id)
     }
 end
 
--- True when the requester's PlayerId and the local player's both read and
--- differ. The recorded tab page is the local player's, so it says nothing about
--- such a request. False when either id cannot be read.
-local function is_remote_request(request_player_id)
+-- True when the requester's PlayerId and the local player's both read and are
+-- equal. False when either id cannot be read.
+local function is_local_request(request_player_id)
     local requester = player_id_number(request_player_id)
-    local own = local_player_id()
-    return requester ~= nil and own ~= nil and requester ~= own
+    return requester ~= nil and requester == local_player_id()
 end
 
 -- For a request from the local player, tries capture_targeted_record first and
 -- falls through to the server snapshot only when there is no tab page at
--- all; a page that is present and yielded nothing returns nil instead. A remote
--- request goes straight to the snapshot: the recorded tab page is the local
--- player's and says nothing about it.
-local function capture_record(request_player_id)
-    if not is_remote_request(request_player_id) then
+-- all; a page that is present and yielded nothing returns nil instead. Any other
+-- request, including one whose requester cannot be identified, goes straight to
+-- the snapshot: the recorded tab page is the local player's.
+local function capture_record_inner(request_player_id)
+    local is_local = is_local_request(request_player_id)
+    debug_log(string.format("capture: requester=%s local=%s is_local=%s",
+        tostring(player_id_number(request_player_id)), tostring(local_player_id()),
+        tostring(is_local)))
+    if is_local then
         local succeeded, record = pcall(capture_targeted_record, request_player_id)
         if succeeded and record ~= nil then
+            debug_log(string.format("capture: targeted UI, selected passive %s",
+                tostring(record.snapshots[1].expect_passive_id)))
             return record
         end
         if current_page() ~= nil then
+            debug_log("capture: tab page present but yielded no record; request not tracked")
             return nil
         end
     end
     local fallback_ok, fallback = pcall(snapshot_server_parameters, request_player_id)
     if not fallback_ok then
+        debug_log("capture: server snapshot raised; request not tracked")
         return nil
     end
+    debug_log(string.format("capture: server snapshot of %d Pals", #fallback.snapshots))
     return fallback
+end
+
+-- capture_record_inner's record, stamped with the fault scenario it will run
+-- under (config.peek_scenario), or nil.
+local function capture_record(request_player_id)
+    local record = capture_record_inner(request_player_id)
+    if record ~= nil then
+        record.scenario = peek_scenario()
+        if record.scenario ~= nil then
+            debug_log(string.format("this request runs under fault scenario %d: %s",
+                record.scenario, describe_scenario(record.scenario)))
+        end
+    end
+    return record
 end
 
 -- How a passive list neither detector matched has moved since the snapshot:
@@ -166,6 +199,10 @@ end
 -- already happened, so retrying cannot turn it into one of ours.
 local function resolve_record(record)
     if record == nil or record.snapshots == nil then
+        return nil, false
+    end
+    if fault("fail_resolve", false) then
+        fault_log("resolve attempt finds nothing on purpose")
         return nil, false
     end
 
@@ -330,15 +367,21 @@ local function extract_additional(parameter, passive_id, item_id, bag, lock)
         log(string.format("SKIPPED %s: implant grant failed (%s).", passive_id, tostring(reason)))
         return false, false
     end
-    if not write_journal("granted", "loop", passive_id, item_id, lock) then
-        -- Implant granted, passive still attached, no journal to authorise a
-        -- replay. Both are kept.
+    local journalled = write_journal("granted", "loop", passive_id, item_id, lock)
+    if not journalled then
         log(string.format(
-            "WARNING: granted %s but the journal could not be updated; keeping passive %s.",
-            item_id, passive_id))
-        return false, false
+            "WARNING: granted %s but the journal could not be updated; removing passive %s "
+            .. "without it.", item_id, passive_id))
     end
     if not remove_skill(parameter, passive_id) then
+        if not journalled then
+            -- No granted/loop row stands to finish the removal, so the sweep
+            -- moves on with the passive still attached.
+            log(string.format(
+                "WARNING: granted %s and could not remove passive %s; no journal row records it, "
+                .. "so both are kept.", item_id, passive_id))
+            return false, false
+        end
         -- Journal kept: granted/loop is the state recovery completes, by
         -- removing this passive and then the marker.
         log(string.format(
@@ -383,16 +426,25 @@ end
 --------------------------------------------------------------------------------
 
 -- Takes the alias off -- putting back the passive it overwrote, when it went
--- into a filled slot -- and grants one module for target back. Returns whether
--- the Pal is back as it was, and whether the module was refunded. Every abort in
--- finalize_implant calls this.
+-- into a filled slot -- and grants one module for target back. When the grant
+-- fails, the module is recorded in lp/ledger.lua against the requester's
+-- PlayerUId, or the ledger's any-owner bucket when that does not read, and
+-- delivered on a later flush. Returns whether the Pal is back as it was, and
+-- "refunded" or "owed". Every abort in finalize_implant calls this.
 local function unwind_alias(record, target)
     local undone = undo_swap(record.parameter, record.passive_id, record.lock)
-    local bag = find_inventory(record.request_player_id)
-    if not is_valid(bag) then
-        return undone, false
+    local item_id = module_for(target)
+    if fault("fail_refund", false) then
+        fault_log("direct refund of " .. item_id .. " skipped on purpose")
+    else
+        local bag = find_inventory(record.request_player_id)
+        if is_valid(bag) and add_implant(bag, item_id) then
+            return undone, "refunded"
+        end
     end
-    return undone, (add_implant(bag, module_for(target)))
+    ledger.owe(player_uid(record.request_player_id), { item_id })
+    log(string.format("Could not refund %s directly; recorded it as owed.", item_id))
+    return undone, "owed"
 end
 
 -- A resolved record whose marker is an alias: replaces the alias with
@@ -418,23 +470,23 @@ local function finalize_implant(record)
     if not begin_journal(record.parameter, record.before_ids, "implant",
             target, module_for(target), record.lock)
     then
-        local undone, refunded = unwind_alias(record, target)
+        local undone, refund = unwind_alias(record, target)
         log(string.format(
             "ERROR: the recovery journal could not be written, so %s was not implanted. "
-            .. "Alias undone=%s, module refunded=%s.",
-            target, tostring(undone), tostring(refunded)))
+            .. "Alias undone=%s, module %s.",
+            target, tostring(undone), refund))
         return
     end
 
     -- Re-checked here rather than relying on the UI gate.
     if count_id(record.before_ids, target) > 0 then
-        local undone, refunded = unwind_alias(record, target)
+        local undone, refund = unwind_alias(record, target)
         -- The prepared/implant row on disk replays by installing target, which
         -- here is the duplicate, so it is never kept.
         journal_after_undo(record, undone, "replace")
         log(string.format(
-            "Blocked a duplicate %s: this Pal already has it. Alias undone=%s, module refunded=%s.",
-            target, tostring(undone), tostring(refunded)))
+            "Blocked a duplicate %s: this Pal already has it. Alias undone=%s, module %s.",
+            target, tostring(undone), refund))
         return
     end
 
@@ -443,15 +495,15 @@ local function finalize_implant(record)
         log(string.format("Implanted %s from a disposable module for player %s (%s).",
             target, tostring(player_id_number(record.request_player_id)), record.mode_source))
     else
-        local undone, refunded = unwind_alias(record, target)
-        -- A module that was not refunded is still paid for, so the
-        -- prepared/implant row stays for recovery to retry the insert;
-        -- otherwise it is replaced by one that finishes the unwind.
-        journal_after_undo(record, undone, refunded and "replace" or "keep")
+        local undone, refund = unwind_alias(record, target)
+        -- The module is refunded or owed, so the prepared/implant row is
+        -- replaced by one that finishes the unwind, or cleared when the alias
+        -- is already off.
+        journal_after_undo(record, undone, "replace")
         log(string.format(
-            "ERROR: could not install %s from its module; alias undone=%s, module refunded=%s. "
+            "ERROR: could not install %s from its module; alias undone=%s, module %s. "
             .. "The gold was spent.",
-            target, tostring(undone), tostring(refunded)))
+            target, tostring(undone), refund))
     end
 end
 
@@ -466,13 +518,49 @@ local RESOLVE_INTERVAL_MS = 250
 
 local finalize_extraction
 
+-- Runs finalize_extraction(record, attempt) under an argument-form pcall, with
+-- record.scenario the active fault scenario for the duration. A raised
+-- config.HALT is logged as the debug halt it is; any other error is logged as
+-- an ERROR.
+local function run_finalize(record, attempt)
+    begin_scenario(record.scenario)
+    local succeeded, raised = pcall(finalize_extraction, record, attempt)
+    end_scenario()
+    if succeeded then
+        return
+    end
+    if raised == HALT then
+        fault_log("the exchange stopped where halt_after_journal names; the journal row on disk "
+            .. "is replayed on the next map load")
+    else
+        log("ERROR: the exchange raised a Lua error and stopped: " .. tostring(raised))
+    end
+end
+
 -- Runs finalize_extraction(record, attempt) on the game thread after delay_ms.
 local function schedule_finalize(record, attempt, delay_ms)
-    run_later(delay_ms, finalize_extraction, record, attempt)
+    run_later(delay_ms, run_finalize, record, attempt)
+end
+
+-- Moves the fault scenario cursor past record.scenario, once the exchange is
+-- known to be one of this mod's, and logs it.
+local function use_scenario(record)
+    if advance_scenario(record.scenario) then
+        debug_log(string.format("fault scenario %d used by this exchange", record.scenario))
+    end
 end
 
 function finalize_extraction(record, attempt)
     local resolved, vanilla = resolve_record(record)
+    if resolved ~= nil then
+        use_scenario(record)
+        debug_log(string.format("resolve attempt %d: marker %s (%s) replaced %s%s", attempt,
+            tostring(resolved.lock), tostring(resolved.mode), tostring(resolved.passive_id),
+            resolved.stray and ", stray" or ""))
+    elseif attempt == 1 or attempt == RESOLVE_ATTEMPTS or vanilla then
+        debug_log(string.format("resolve attempt %d of %d: nothing matched (vanilla=%s)",
+            attempt, RESOLVE_ATTEMPTS, tostring(vanilla)))
+    end
     if resolved == nil then
         if vanilla then
             -- The same outcome as running out of attempts with no marker, on
@@ -491,12 +579,24 @@ function finalize_extraction(record, attempt)
                 log("No marker appeared, so this was not one of our operations; "
                     .. "nothing was changed.")
             else
+                use_scenario(record)
+                -- The selected slot's passive is named only when its count
+                -- fell, so recovery puts back a passive the swap removed and
+                -- otherwise only removes the marker.
+                local lost = snapshot.expect_passive_id
+                local after_ids = get_skill_ids(snapshot.parameter)
+                if lost ~= nil and (after_ids == nil
+                        or count_id(after_ids, lost) >= count_id(snapshot.before_ids, lost))
+                then
+                    lost = nil
+                end
                 local journalled = begin_journal(snapshot.parameter, snapshot.before_ids,
-                    "stranded", snapshot.expect_passive_id, nil, lock)
+                    "stranded", lost, nil, lock)
                 log(string.format(
                     "WARNING: the exchange could not be resolved and marker %s is stranded on "
-                    .. "this Pal. Journalled=%s; if true it is cleaned up on the next map load.",
-                    tostring(lock), tostring(journalled)))
+                    .. "this Pal. Journalled=%s, naming passive %s; if true it is cleaned up on "
+                    .. "the next map load.",
+                    tostring(lock), tostring(journalled), tostring(lost)))
             end
         end
         return
@@ -558,11 +658,27 @@ function finalize_extraction(record, attempt)
         return
     end
     if not write_journal("granted", "marker", record.passive_id, record.item_id, record.lock) then
-        -- Implant granted, marker still on the Pal, no entry advanced to
-        -- authorise removing it. Stops here and keeps both.
+        -- The prepared/marker row may still be on disk, and its replay would
+        -- restore the passive the module was just granted for. The marker is
+        -- removed now instead; if that fails, a stranded row naming no passive
+        -- replaces it, and if that also fails the row is deleted. An extract-all
+        -- sweep is not started.
+        local outcome
+        if remove_skill(record.parameter, record.lock) then
+            clear_journal()
+            outcome = "the marker was removed"
+        elseif write_journal("prepared", "stranded", nil, nil, record.lock) then
+            outcome = "the marker could not be removed and is journalled for removal on the next "
+                .. "map load"
+        else
+            clear_journal()
+            outcome = string.format("the marker could not be removed or journalled; %s stays on "
+                .. "the Pal", record.lock)
+        end
         log(string.format(
-            "ERROR: granted %s but the journal could not be advanced; stopped before removing "
-            .. "the marker. The implant was kept.", record.item_id))
+            "ERROR: granted %s but the journal could not be advanced; %s.%s",
+            record.item_id, outcome,
+            record.mode == "all" and " Extract-all stopped after the first passive." or ""))
         return
     end
 

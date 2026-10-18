@@ -7,8 +7,8 @@ if type(package) == "table" then
     package.path = MOD_ROOT .. "?.lua;" .. (package.path or "")
 end
 
-local SETTINGS = require("settings")
 local util = require("lp.util")
+local config = require("lp.config")
 local ids = require("lp.ids")
 local journal = require("lp.journal")
 local passives = require("lp.passives")
@@ -24,6 +24,9 @@ local has_authority = util.has_authority
 local log = util.log
 local name_to_string = util.name_to_string
 local unwrap = util.unwrap
+local conveyor_on = config.conveyor_on
+local debug_on = config.debug_on
+local gate_on = config.gate_on
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local JOURNAL_PATH = journal.JOURNAL_PATH
 local journal_is_writable = journal.journal_is_writable
@@ -31,12 +34,14 @@ local name_list = passives.name_list
 local begin_local_exchange = ui.begin_local_exchange
 local check_local_exchange = ui.check_local_exchange
 local consume_pending_refresh = ui.consume_pending_refresh
+local edit_held = ui.edit_held
 local enforce_extraction_gate = ui.enforce_extraction_gate
 local forget_live_widgets = ui.forget_live_widgets
 local note_live_page = ui.note_live_page
 local note_live_screen = ui.note_live_screen
 local note_operation_result = ui.note_operation_result
 local refresh_pending = ui.refresh_pending
+local release_extraction_gate = ui.release_extraction_gate
 local capture_record = transaction.capture_record
 local schedule_finalize = transaction.schedule_finalize
 local schedule_recovery = recovery.schedule_recovery
@@ -87,21 +92,25 @@ RegisterHook(
     end
 )
 
-local gate_on = SETTINGS.surgery_ui_gate ~= false
 local schedule_gate_pass = coalescer(enforce_extraction_gate, 0)
+local schedule_gate_release = coalescer(release_extraction_gate, 0)
 
 -- One callback, and it is the PRE-callback.
 --
 -- UE4SS does not run a post-callback for a Blueprint function hook, so the gate
--- work is deferred a frame from here, and not scheduled at all with the gate off.
+-- work is deferred a frame from here. surgery_ui_gate is read on every firing:
+-- on, the gate pass is scheduled; off, nothing is scheduled unless the gate
+-- still holds the button blocked, in which case one release is.
 --
 -- The context argument is the tab page: Update Button State is a method on
 -- WBP_OperatingTable_TabPage_C. Recorded on every firing, including those where
 -- a pass is already queued.
 local function on_update_button_state(context)
     note_live_page(unwrap(context))
-    if gate_on then
+    if gate_on() then
         schedule_gate_pass()
+    elseif edit_held() then
+        schedule_gate_release()
     end
 end
 
@@ -196,6 +205,12 @@ RegisterLoadMapPostHook(function()
     -- splash, login or title maps, so a budget exhausted there must not leave
     -- the hook unregistered for the rest of the session.
     hooks.rearm_on_map_load()
+    -- conveyor_extraction turned on after load registers the conveyor hooks
+    -- here; conveyor.install does nothing once they are registered.
+    if conveyor_on() and not conveyor.is_installed() then
+        log("Conveyor extraction is on; registering its hooks.")
+        conveyor.install()
+    end
     flush_attempts = 0
     flush_gave_up = false
     schedule_flush()
@@ -219,8 +234,7 @@ hooks.register(INVENTORY_UPDATED, on_local_inventory_update,
 hooks.register(LOCAL_REQUEST, on_local_request,
     "the Surgery request watcher",
     "Without it no exchange is tracked on this peer, so its Surgery panel is not repaired.")
-local conveyor_on = SETTINGS.conveyor_extraction ~= false
-if conveyor_on then
+if conveyor_on() then
     conveyor.install()
 end
 schedule_recovery("mod startup")
@@ -235,7 +249,8 @@ end
 
 -- The startup counts line. The numbers come from passive_items.lua and
 -- lp/ids.lua; each entry needs a matching row in the PalSchema JSON to be
--- reachable, so a number that reads low means a half that did not load.
+-- reachable, so a number that reads low means a half that did not load. The
+-- switches are as settings.lua reads at load; each is read again at every use.
 local extract_operations, insert_routes = 0, 0
 for _, mode in pairs(EXTRACTION_MODES) do
     if mode == "implant" then
@@ -246,8 +261,10 @@ for _, mode in pairs(EXTRACTION_MODES) do
 end
 log(string.format(
     "Loaded %d extractable passives, %d extraction operations, %d insert routes. "
-    .. "Conveyor extraction %s. Surgery Edit-button gate %s.",
+    .. "Conveyor extraction %s. Surgery Edit-button gate %s. Debug mode %s.",
     passives.MODULE_COUNT, extract_operations, insert_routes,
-    conveyor_on and "on" or "off (conveyor_extraction = false in settings.lua)",
-    gate_on and "on" or "off (surgery_ui_gate = false in settings.lua)"
+    conveyor_on() and "on" or "off (conveyor_extraction = false in settings.lua)",
+    gate_on() and "on" or "off (surgery_ui_gate = false in settings.lua)",
+    debug_on() and "on" or "off"
 ))
+config.debug_log(config.describe_plan())

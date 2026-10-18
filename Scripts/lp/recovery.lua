@@ -1,20 +1,27 @@
 -- Lootable Passives -- Replaying an interrupted exchange.
 --
 -- Acts only on a journal row, and only against a Pal singled out as that row's:
--- the one Pal in the world carrying a marker, or, in settle_before_exchange, the
--- one besides the new exchange's Pal. Both conditions are required: nothing here
--- sweeps markers it has no journal entry for.
+-- the one Pal in the world carrying the row's marker, or, in
+-- settle_before_exchange, the one besides the new exchange's Pal. Both
+-- conditions are required: nothing here sweeps markers it has no journal entry
+-- for.
 
 local util = require("lp.util")
+local config = require("lp.config")
 local journal = require("lp.journal")
 local passives = require("lp.passives")
 local inventory = require("lp.inventory")
 
+local find_first = util.find_first
+local has_authority = util.has_authority
 local log = util.log
 local run_later = util.run_later
+local debug_log = config.debug_log
 local clear_journal = journal.clear_journal
 local read_journal = journal.read_journal
+local count_id = passives.count_id
 local first_marker = passives.first_marker
+local has_skill = passives.has_skill
 local pal_key = passives.pal_key
 local snapshot_all = passives.snapshot_all
 local remove_skill = inventory.remove_skill
@@ -24,24 +31,25 @@ local undo_swap = inventory.undo_swap
 -- Crash recovery
 --------------------------------------------------------------------------------
 
--- Every Pal carrying one of our markers, as { parameter = ..., lock = <id> },
--- leaving out the Pal whose pal_key is skip_key when one is given. The world
--- walk is passives.snapshot_all; this is the filter over it.
-local function marked_parameters(skip_key)
+-- Every Pal whose passive list holds lock, leaving out the Pal whose pal_key is
+-- skip_key when one is given. The world walk is passives.snapshot_all; this is
+-- the filter over it.
+local function parameters_with(lock, skip_key)
     local marked = {}
     for _, snapshot in ipairs(snapshot_all()) do
-        local lock = first_marker(snapshot.before_ids)
-        if lock ~= nil and (skip_key == nil or pal_key(snapshot.parameter) ~= skip_key) then
-            marked[#marked + 1] = { parameter = snapshot.parameter, lock = lock }
+        if count_id(snapshot.before_ids, lock) > 0
+            and (skip_key == nil or pal_key(snapshot.parameter) ~= skip_key)
+        then
+            marked[#marked + 1] = snapshot.parameter
         end
     end
     return marked
 end
 
--- Replays one journal row against parameter, whose marker is lock. The marker is
--- taken from the Pal, not from the journal: read_journal returns no lock column.
--- Returns whether the replay succeeded.
-local function replay(record, parameter, lock)
+-- Replays one journal row against parameter, which carries record.lock. Returns
+-- whether the replay succeeded.
+local function replay(record, parameter)
+    local lock = record.lock
     if record.state == "granted" then
         -- The module exists. A marker row completes by removing the marker. A
         -- loop row also removes its passive first, which may already be off:
@@ -56,28 +64,44 @@ local function replay(record, parameter, lock)
         return remove_skill(parameter, lock)
     end
     -- Prepared implant, marker or stranded row: put the named passive back in
-    -- the marker's place, or only remove the marker when a stranded row names
-    -- none. For an implant the passive is the alias's target and the module is
-    -- already spent; completing the swap is what the row is for.
-    return undo_swap(parameter, record.passive_id, lock)
+    -- the marker's place, or only remove the marker when the row names none or
+    -- the Pal already carries the named passive. For an implant the passive is
+    -- the alias's target and the module is already spent; completing the swap
+    -- is what the row is for.
+    local passive_id = record.passive_id
+    if passive_id ~= nil and has_skill(parameter, passive_id) then
+        log(string.format("Recovery: the Pal already carries %s, so only marker %s is removed.",
+            passive_id, lock))
+        passive_id = nil
+    end
+    return undo_swap(parameter, passive_id, lock)
 end
 
--- Replays one journal row against the single marked Pal, then clears the
--- journal if the replay succeeded.
+-- Replays one journal row against the single Pal carrying its marker, then
+-- clears the journal if the replay succeeded. Does nothing on a peer without
+-- authority, where the row stays on disk.
 local function recover_interrupted_extraction(reason)
     local record = read_journal()
     if record == nil then
         return
     end
-    local marked = marked_parameters(nil)
+    if not has_authority(find_first("PalPlayerCharacter")) then
+        log(string.format(
+            "Recovery journal left on disk after %s: this peer has no authority over the world, "
+            .. "or no player is loaded yet.", reason))
+        return
+    end
+    local marked = parameters_with(record.lock, nil)
+    debug_log(string.format("recovery after %s: %d Pal(s) carry marker %s", reason, #marked,
+        record.lock))
     if #marked ~= 1 then
         log(string.format(
-            "WARNING: recovery journal found %d marker targets after %s; left all passives untouched.",
-            #marked, reason))
+            "WARNING: recovery journal found %d Pals carrying marker %s after %s; left all "
+            .. "passives untouched.", #marked, record.lock, reason))
         return
     end
 
-    if replay(record, marked[1].parameter, marked[1].lock) then
+    if replay(record, marked[1]) then
         clear_journal()
         log(string.format("Recovered interrupted extraction of %s after %s (%s/%s).",
             record.passive_id, reason, record.phase, record.state))
@@ -92,8 +116,8 @@ end
 -- journal may be written.
 --
 -- With no row on disk, returns true. Otherwise the row is replayed now against
--- the one other Pal carrying a marker and cleared if that succeeds; it is
--- discarded if no other Pal carries one. It is left to be overwritten, with a
+-- the one other Pal carrying the row's marker and cleared if that succeeds; it
+-- is discarded if no other Pal carries it. It is left to be overwritten, with a
 -- warning, when it cannot be told apart from the new exchange: the new Pal
 -- already carried a marker, its IndividualId does not read, or two or more other
 -- Pals carry one. Returns false only when the replay ran and failed, keeping the
@@ -109,8 +133,10 @@ local function settle_before_exchange(parameter, before_ids)
     local current = pal_key(parameter)
     local marked = nil
     if current ~= nil and first_marker(before_ids) == nil then
-        marked = marked_parameters(current)
+        marked = parameters_with(record.lock, current)
     end
+    debug_log(string.format("settle before exchange: %s other Pal(s) carry marker %s",
+        marked and tostring(#marked) or "unknown", record.lock))
     if marked == nil or #marked > 1 then
         log(string.format(
             "WARNING: an earlier exchange of %s was still awaiting recovery and could not be told "
@@ -125,7 +151,7 @@ local function settle_before_exchange(parameter, before_ids)
             .. "any more.", described))
         return true
     end
-    if replay(record, marked[1].parameter, marked[1].lock) then
+    if replay(record, marked[1]) then
         clear_journal()
         log(string.format(
             "Recovered an earlier interrupted exchange of %s before starting this one.", described))

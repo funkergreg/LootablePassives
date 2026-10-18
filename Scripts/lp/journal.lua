@@ -4,8 +4,14 @@
 -- checked by its caller, which aborts rather than continuing unjournalled.
 
 local util = require("lp.util")
+local config = require("lp.config")
 local passives = require("lp.passives")
 
+local HALT = config.HALT
+local debug_log = config.debug_log
+local fault_log = config.fault_log
+local journal_write_fails = config.journal_write_fails
+local journal_write_halts = config.journal_write_halts
 local is_writable = util.is_writable
 local log = util.log
 local read_lines = util.read_lines
@@ -39,8 +45,17 @@ local JOURNAL_PATH = util.UE4SS_ROOT .. "LootablePassives_journal.tsv"
 -- different column meanings.
 local JOURNAL_VERSION = "LPJ1"
 
+-- Writes the row and returns whether the write succeeded. Under debug_faults,
+-- fail_journal_write returns false for its row before the file is opened, and
+-- halt_after_journal raises config.HALT once its row is written.
 local function write_journal(state, phase, passive_id, item_id, passive_name)
-    return write_lines(JOURNAL_PATH, {
+    local described = string.format("%s/%s passive=%s item=%s marker=%s", state, phase,
+        tostring(passive_id), tostring(item_id), tostring(passive_name))
+    if journal_write_fails(state, phase) then
+        fault_log("journal write failed on purpose: " .. described)
+        return false
+    end
+    local written = write_lines(JOURNAL_PATH, {
         table.concat({
             JOURNAL_VERSION,
             state,
@@ -50,6 +65,12 @@ local function write_journal(state, phase, passive_id, item_id, passive_name)
             tostring(passive_name or ""),
         }, "\t"),
     }, "recovery journal")
+    debug_log(string.format("journal write %s: %s", written and "ok" or "FAILED", described))
+    if written and journal_write_halts(state, phase) then
+        fault_log("exchange halted after writing " .. described)
+        error(HALT)
+    end
+    return written
 end
 
 -- Can the journal be written at all? Reported by main.lua at load.
@@ -57,9 +78,9 @@ local function journal_is_writable()
     return is_writable(JOURNAL_PATH)
 end
 
--- The journal row as a table, or nil. A row that is unparseable, stamped for
--- another build, or internally inconsistent is logged, its file deleted, and nil
--- returned.
+-- The journal row as { state, phase, passive_id, item_id, lock }, or nil. A row
+-- that is unparseable, stamped for another build, names no marker, or is
+-- internally inconsistent is logged, its file deleted, and nil returned.
 local function parse_journal()
     -- The first line is the whole journal; there is never a second exchange in
     -- flight.
@@ -67,8 +88,8 @@ local function parse_journal()
     if line == nil then
         return nil
     end
-    local version, state, phase, passive_id, item_id =
-        line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t[^\t]*$")
+    local version, state, phase, passive_id, item_id, lock =
+        line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
     if version == nil then
         log("WARNING: ignored and discarded a malformed recovery journal.")
         return nil, true
@@ -78,6 +99,10 @@ local function parse_journal()
             "WARNING: discarded a recovery journal stamped %s; this build writes %s. "
             .. "An interrupted exchange from another version was NOT replayed.",
             tostring(version), JOURNAL_VERSION))
+        return nil, true
+    end
+    if lock == "" then
+        log("WARNING: ignored and discarded a recovery journal with no marker.")
         return nil, true
     end
     -- A "stranded" row may name no passive, so only the exchanging phases
@@ -97,6 +122,7 @@ local function parse_journal()
         phase = phase,
         passive_id = passive_id ~= "" and passive_id or nil,
         item_id = item_id ~= "" and item_id or nil,
+        lock = lock,
     }
 end
 
@@ -105,11 +131,17 @@ local function read_journal()
     if discard then
         remove_file(JOURNAL_PATH)
     end
+    if record ~= nil then
+        debug_log(string.format("journal read: %s/%s passive=%s item=%s marker=%s",
+            record.state, record.phase, tostring(record.passive_id),
+            tostring(record.item_id), record.lock))
+    end
     return record
 end
 
 local function clear_journal()
     remove_file(JOURNAL_PATH)
+    debug_log("journal cleared")
 end
 
 return {

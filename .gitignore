@@ -4,8 +4,7 @@
 # the official mod loader reinstalls this mod into. Listed here in case anyone
 # runs the game from a checkout.
 LootablePassives_journal.tsv
-# Same for the conveyor pending-grant ledger, which tools/ledger_test.lua also
-# writes and removes beside Scripts/ when it runs from a checkout.
+# Same for the conveyor pending-grant ledger.
 LootablePassives_pending.tsv
 
 # tools/luacheck.js needs luaparse, which package.json declares. `npm install`

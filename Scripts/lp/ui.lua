@@ -1,10 +1,8 @@
 -- Lootable Passives -- The Surgery widget: access, the Edit gate, panel repair,
 -- and the local exchange this peer is waiting on.
 --
--- The gate here duplicates checks the transaction also makes, and the
--- duplication is load-bearing rather than accidental: the transaction runs
--- after vanilla has charged the gold, so only a refusal at the button keeps a
--- doomed operation from costing anything. Do not collapse the two.
+-- The gate here makes checks the transaction also makes. The transaction runs
+-- after vanilla has charged the gold; the gate refuses the click before it.
 --
 -- This module must NOT require lp.transaction. transaction requires this one, and
 -- keeping that edge one-directional is what stops the pair forming a cycle.
@@ -97,8 +95,6 @@ end
 -- Both widgets arrive as the context argument of a hook on one of their own
 -- methods: the tab page from Update Button State, the screen from
 -- OnPassiveUpdate. Nothing in this file calls FindAllOf.
---
--- Do not reintroduce a scan here without good reason.
 
 local live_page = nil
 local live_screen = nil
@@ -252,8 +248,7 @@ end
 
 -- Holds the button blocked, by refusing the click and by nothing else.
 --
--- EnabledButton is NOT written, and reintroducing that write is a regression.
--- The property belongs to the Blueprint: Update Button State recomputes it
+-- EnabledButton is not written. The property belongs to the Blueprint: Update Button State recomputes it
 -- from scratch on a hook that fires while the screen is open, and this module
 -- can only write it after that has happened. On a selection the game judges
 -- usable -- an empty slot with an extract route is one, since vanilla has no
@@ -315,7 +310,8 @@ end
 --
 -- Takes no arguments so main.lua can hand it to coalescer() by reference; see
 -- the note on coalescer() in lp/util.lua. main.lua does not schedule it at all
--- when surgery_ui_gate is false in settings.lua.
+-- when surgery_ui_gate is false in settings.lua; it schedules
+-- release_extraction_gate instead while edit_held() is true.
 local function enforce_extraction_gate()
     local page = current_page()
     if page == nil then
@@ -332,6 +328,20 @@ local function enforce_extraction_gate()
     if blocked then
         block_edit(page, pending, index)
     else
+        release_edit(page)
+    end
+end
+
+-- True while this module holds the Edit button blocked.
+local function edit_held()
+    return edit_disabled_by_mod
+end
+
+-- Releases a block this module made on the recorded tab page, whatever is
+-- pending. No arguments, for coalescer(), as enforce_extraction_gate.
+local function release_extraction_gate()
+    local page = current_page()
+    if page ~= nil then
         release_edit(page)
     end
 end
@@ -793,12 +803,14 @@ return {
     check_local_exchange = check_local_exchange,
     consume_pending_refresh = consume_pending_refresh,
     current_page = current_page,
+    edit_held = edit_held,
     enforce_extraction_gate = enforce_extraction_gate,
     forget_live_widgets = forget_live_widgets,
     note_live_page = note_live_page,
     note_live_screen = note_live_screen,
     note_operation_result = note_operation_result,
     refresh_pending = refresh_pending,
+    release_extraction_gate = release_extraction_gate,
     selected_parameter = selected_parameter,
     selected_passive = selected_passive,
     visible_extraction_widget = visible_extraction_widget,

@@ -7,11 +7,15 @@
 -- owe/persist/load and ordered_for. lp.inventory is stubbed, so the assertions
 -- are about which candidate was chosen, never about an item existing.
 --
--- Writes and removes LootablePassives_pending.tsv inside Scripts\ while it
--- runs, which is where util.UE4SS_ROOT resolves to outside a UE4SS install.
+-- Writes and removes LootablePassives_pending.tsv in the system temp directory
+-- while it runs: util.UE4SS_ROOT is pointed there before lp.ledger reads it, so
+-- an aborted run leaves nothing under Scripts\ for a stage to ship.
 local TEST_SOURCE = debug.getinfo(1, "S").source:gsub("^@", "")
 local TOOLS_DIRECTORY = TEST_SOURCE:match("^(.*[\\/])") or "./"
 package.path = TOOLS_DIRECTORY .. "../Scripts/?.lua;" .. package.path
+
+local TEMP_DIRECTORY = os.getenv("TEMP") or os.getenv("TMPDIR") or "/tmp"
+require("lp.util").UE4SS_ROOT = TEMP_DIRECTORY:gsub("[\\/]?$", "/")
 
 -- Stub the engine-facing half. require caches by module name, so seeding
 -- package.loaded is enough for ledger.lua's own require to pick these up.

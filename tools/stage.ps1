@@ -25,6 +25,14 @@
     Only a release has patch 0. -DryRun prints the next version and writes
     nothing. A run stopped by a check or by stale files writes nothing either.
 
+    The same DebugMode value is written into every staged text file line tagged
+    with stage:DebugMode: the first true or false on that line, before the tag,
+    is replaced, in the REPO's copy, which is then staged. A mod's own runtime
+    debug switch opts in with a line such as
+        debug = true, -- stage:DebugMode
+    A tagged line with no true or false before the tag stops the run. Text files
+    are those with the extensions in $TEXT_EXTENSIONS.
+
     What is staged is read from Info.json, and nothing else is:
       Info.json, the Thumbnail file, LICENSE when the repo has one, and every
       InstallRule Targets path, client and server.
@@ -65,7 +73,8 @@
     either case. The loader writes UE4SS's mods.txt entry itself.
 
 .PARAMETER Publish
-    Stage a release: minor + 1, patch 0, DebugMode false. Implies -Force.
+    Stage a release: minor + 1, patch 0, DebugMode false, and false on every
+    stage:DebugMode line. Implies -Force.
 
 .PARAMETER GameRoot
     Palworld install root. Defaults to the usual Steam location.
@@ -118,6 +127,19 @@ $VERSION_MEMBER = '("Version"\s*:\s*")(\d+)\.(\d+)\.(\d+)(")'
 # Matches the DebugMode member with a boolean value; group 1 is everything
 # before the value.
 $DEBUG_MEMBER = '("DebugMode"\s*:\s*)(true|false)'
+
+# The tag that marks a line in a staged text file as carrying DebugMode.
+$DEBUG_TAG = 'stage:DebugMode'
+
+# Matches a tagged line with a boolean before the tag: head is everything before
+# the first true or false, value that boolean, tail the rest up to the tag.
+$DEBUG_TAGGED_LINE = '(?m)^(?<head>[^\r\n]*?)\b(?<value>true|false)\b(?<tail>[^\r\n]*' + [regex]::Escape($DEBUG_TAG) + ')'
+
+# Matches any line holding the tag.
+$DEBUG_TAG_LINE = '(?m)^[^\r\n]*' + [regex]::Escape($DEBUG_TAG)
+
+# Extensions of the staged files searched for the tag.
+$TEXT_EXTENSIONS = @('.lua', '.json', '.ini', '.txt', '.cfg', '.toml', '.yaml', '.yml', '.xml')
 
 #-------------------------------------------------------------------------------
 # Mirror helpers
@@ -321,6 +343,24 @@ foreach ($entry in $ship) {
     }
 }
 
+# Every staged text file other than Info.json holding the DebugMode tag, as
+# objects with Rel, Path, Text and Lines (the tagged line count). A file whose
+# tagged lines do not all carry a boolean before the tag is a problem.
+$debugFiles = @()
+foreach ($rel in $stagedRelative) {
+    if ($rel -eq 'Info.json') { continue }
+    if ($TEXT_EXTENSIONS -notcontains [System.IO.Path]::GetExtension($rel).ToLowerInvariant()) { continue }
+    $path = Join-Path $repo $rel
+    $text = [System.IO.File]::ReadAllText($path)
+    $tagged = [regex]::Matches($text, $DEBUG_TAG_LINE).Count
+    if ($tagged -eq 0) { continue }
+    if ([regex]::Matches($text, $DEBUG_TAGGED_LINE).Count -ne $tagged) {
+        $problems += "$rel has a line tagged $DEBUG_TAG with no true or false before the tag, so DebugMode cannot be written to it."
+        continue
+    }
+    $debugFiles += [pscustomobject]@{ Rel = $rel; Path = $path; Text = $text; Lines = $tagged }
+}
+
 foreach ($warning in $warnings) { Write-Warning $warning }
 
 if ($problems.Count -gt 0) {
@@ -469,10 +509,19 @@ foreach ($rule in @($info.InstallRule)) {
 }
 Write-Host ""
 
-# The repo's Info.json takes the new values first, so the copy below stages it.
+# The repo's Info.json and stage:DebugMode lines take the new values first, so
+# the copy below stages them.
 Write-Host "    write  Info.json Version $newVersion, DebugMode $newDebug"
 if (-not $DryRun) {
     [System.IO.File]::WriteAllText($infoPath, $newInfoText, (New-Object System.Text.UTF8Encoding $false))
+}
+foreach ($file in $debugFiles) {
+    Write-Host "    write  $($file.Rel) $DEBUG_TAG $newDebug ($($file.Lines) line(s))"
+    if ($DryRun) { continue }
+    $newText = [regex]::Replace($file.Text, $DEBUG_TAGGED_LINE, '${head}' + $newDebug + '${tail}')
+    if ($newText -cne $file.Text) {
+        [System.IO.File]::WriteAllText($file.Path, $newText, (New-Object System.Text.UTF8Encoding $false))
+    }
 }
 
 Remove-StaleFiles -Stale $stale -DryRun:$DryRun

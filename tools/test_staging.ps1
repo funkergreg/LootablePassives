@@ -177,6 +177,34 @@ try {
     Test-That 'publish writes Version 1.3.0' ($info.Version -eq '1.3.0') $run
     Test-That 'publish writes DebugMode false' ($info.DebugMode -eq $false) $run
 
+    # stage:DebugMode lines follow DebugMode in the repo and the item folder;
+    # untagged lines, and a boolean after the tag, are left alone.
+    $fx = New-Fixture
+    $settingsRel = 'Scripts\settings.lua'
+    $settingsText = "return {`r`n    debug = false, -- stage:DebugMode true`r`n    other = false,`r`n}`r`n"
+    Write-File (Join-Path $fx.Repo $settingsRel) $settingsText
+    $run = Invoke-Stage $fx
+    $repoSettings = Get-Content -Raw (Join-Path $fx.Repo $settingsRel)
+    Test-That 'dev stage writes true on the tagged line' ($repoSettings -match '(?m)^    debug = true, -- stage:DebugMode true\r$') $run
+    Test-That 'dev stage leaves an untagged line alone' ($repoSettings -match '(?m)^    other = false,\r$') $run
+    Test-That 'dev stage keeps CRLF line endings' ($repoSettings -eq ($settingsText -replace 'debug = false', 'debug = true')) $run
+    Test-That 'staged tagged file matches the repo' (
+        (Get-FileHash (Join-Path $fx.Repo $settingsRel)).Hash -eq (Get-FileHash (Join-Path $fx.Item $settingsRel)).Hash) $run
+    Test-That 'dev stage reports the tagged write' ($run.Out -match 'write  Scripts\\settings\.lua stage:DebugMode true \(1 line') $run
+    $run = Invoke-Stage $fx @('-Publish')
+    Test-That 'publish writes false on the tagged line' (
+        (Get-Content -Raw (Join-Path $fx.Item $settingsRel)) -match '(?m)^    debug = false, -- stage:DebugMode true\r$') $run
+    $repoBefore = Get-Snapshot $fx.Repo
+    $run = Invoke-Stage $fx @('-DryRun')
+    Test-That '-DryRun leaves the tagged line unchanged' ((Get-Snapshot $fx.Repo) -eq $repoBefore) $run
+
+    # A tagged line with no boolean before the tag stops the run.
+    $fx = New-Fixture
+    Write-File (Join-Path $fx.Repo 'Scripts\settings.lua') "debug = 1 -- stage:DebugMode`n"
+    $repoBefore = Get-Snapshot $fx.Repo
+    $run = Invoke-Stage $fx
+    Test-That 'refuses: tagged line with no boolean' ($run.Exit -eq 1 -and (Get-Snapshot $fx.Repo) -eq $repoBefore -and $run.Out -match 'no true or false') $run
+
     # Patch numbers count, they do not concatenate.
     $infoTable = New-Info; $infoTable.Version = '1.0.9'
     $fx = New-Fixture -Info $infoTable

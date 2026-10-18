@@ -40,11 +40,15 @@
 -- per-call cost is one array read and one GUID read; the container walk inside
 -- it is guarded by bucket[key] == nil.
 --
--- CONSUMED VERSUS WITHDRAWN IS DECIDED BY COMPLETE_RATE, and by nothing else.
--- Do not substitute a test for whether the individual still exists: a
--- UPalIndividualCharacterParameter outlives the Pal it belongs to.
+-- CONSUMED VERSUS WITHDRAWN IS DECIDED BY THE RATE ALONE: the last rate seen
+-- plus twice the last step between firings, against COMPLETE_RATE. The
+-- projection is there because the firing that completes a Pal can remove it
+-- before a rate at the threshold is read. Whether the individual still exists
+-- is not tested: a UPalIndividualCharacterParameter outlives the Pal it belongs
+-- to.
 
 local util = require("lp.util")
+local config = require("lp.config")
 local passives = require("lp.passives")
 local ledger = require("lp.ledger")
 local hooks = require("lp.hooks")
@@ -57,6 +61,8 @@ local is_valid = util.is_valid
 local log = util.log
 local method = util.method
 local unwrap = util.unwrap
+local conveyor_on = config.conveyor_on
+local debug_log = config.debug_log
 local get_skill_ids = passives.get_skill_ids
 local instance_key = passives.instance_key
 local is_extractable = passives.is_extractable
@@ -70,6 +76,8 @@ local CONTAINER_HOOK =
 
 -- GUESS: ConvertProgressRate at or above this counts the Pal as consumed; below it, as withdrawn.
 local COMPLETE_RATE = 0.999
+-- Multiplier on the last step in the projection above.
+local STEP_MARGIN = 2
 
 --------------------------------------------------------------------------------
 -- Reading the queue
@@ -147,7 +155,8 @@ end
 -- Tracking
 --------------------------------------------------------------------------------
 
--- model key -> instance key -> { passives = { id, ... }, owner = <UId key or nil>, rate = number }
+-- model key -> instance key ->
+--   { passives = { id, ... }, owner = <UId key or nil>, rate = number, step = number }
 --
 -- One bucket per conveyor. pass(model) treats every entry missing from that
 -- model's queue as having left it, so it may only look at the entries that model
@@ -190,7 +199,7 @@ local function may_create_items(actor)
 end
 
 -- Records the debt, then delivers it. ledger.owe writes to disk before
--- ledger.flush is called; do not reorder these without good reason.
+-- ledger.flush is called.
 local function on_consumed(entry, actor)
     if not may_create_items(actor) then
         return
@@ -255,20 +264,31 @@ local function pass(model)
                 -- read_queued_passives builds a fresh table per key, so it is
                 -- kept rather than copied.
                 snapshot.rate = rate
+                snapshot.step = 0.0
                 bucket[key] = snapshot
             end
         else
-            bucket[key].rate = rate
+            local entry = bucket[key]
+            -- Both hooks call pass, so a firing with no progress keeps the
+            -- last positive step rather than resetting it.
+            if rate > entry.rate then
+                entry.step = rate - entry.rate
+            end
+            entry.rate = rate
         end
     end
 
-    -- Gone from this model's queue: consumed at or above COMPLETE_RATE,
-    -- withdrawn below it. A withdrawal owes nothing and logs nothing.
+    -- Gone from this model's queue: consumed when the projected rate reaches
+    -- COMPLETE_RATE, withdrawn below it. A withdrawal owes nothing.
     local actor
     for key, entry in pairs(bucket) do
         if rates[key] == nil then
             bucket[key] = nil
-            if entry.rate >= COMPLETE_RATE then
+            local consumed = entry.rate + STEP_MARGIN * entry.step >= COMPLETE_RATE
+            debug_log(string.format(
+                "conveyor: a Pal left the queue at rate %.4f (last step %.4f): %s",
+                entry.rate, entry.step, consumed and "consumed" or "withdrawn"))
+            if consumed then
                 actor = actor or method(model, "GetActor")
                 on_consumed(entry, actor)
             end
@@ -281,7 +301,18 @@ end
 --
 -- The container hook is zero-parameter, so its context argument is the model
 -- and this is its callback as is.
+--
+-- With config.conveyor_on() false, returns before reading the model, and
+-- empties tracked on the first such firing: a Pal tracked before the switch
+-- went off is never paid for, whatever its rate.
 local function pass_if_valid(model_param)
+    if not conveyor_on() then
+        if next(tracked) ~= nil then
+            tracked = {}
+            log("Conveyor extraction switched off; Pals being tracked were forgotten.")
+        end
+        return
+    end
     local model = unwrap(model_param)
     if is_valid(model) then
         pass(model)
@@ -293,11 +324,23 @@ local function on_proceed(_, model_param)
     pass_if_valid(model_param)
 end
 
+local installed = false
+
+-- Registers both hooks, once; later calls do nothing.
 local function install()
+    if installed then
+        return
+    end
+    installed = true
     hooks.register(PROCEED_HOOK, on_proceed, "the conveyor progress watcher")
     hooks.register(CONTAINER_HOOK, pass_if_valid, "the conveyor arrival/departure watcher")
 end
 
+local function is_installed()
+    return installed
+end
+
 return {
     install = install,
+    is_installed = is_installed,
 }

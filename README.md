@@ -109,9 +109,9 @@ lua tools\ledger_test.lua       # after any change to Scripts\lp\ledger.lua
 # restart Palworld (on both machines for a multiplayer test), check the version, test, read the log
 ```
 
-`stage.ps1` writes `Version` and `DebugMode` into the repository's `Info.json` and then stages that file unchanged, so the repository always matches what was last staged:
+`stage.ps1` writes `Version` and `DebugMode` into the repository's `Info.json` and then stages that file unchanged, so the repository always matches what was last staged. It writes the same `DebugMode` value onto every staged line tagged `stage:DebugMode`, which in this mod is the `debug` line in `Scripts\settings.lua`:
 
-| Run | `Version` | `DebugMode` | Example |
+| Run | `Version` | `DebugMode` and `debug` | Example |
 | --- | --- | --- | --- |
 | `.\tools\stage.ps1` | patch + 1 | `true` | `1.1.0` → `1.1.1` |
 | `.\tools\stage.ps1 -Publish` | minor + 1, patch `0` | `false` | `1.1.3` → `1.2.0` |
@@ -119,7 +119,7 @@ lua tools\ledger_test.lua       # after any change to Scripts\lp\ledger.lua
 Only a release has patch `0`. Raise the major version by editing `Info.json` by hand; the next stage counts on from there.
 
 1. Preview the stage if you want: add `-DryRun` to either command. It prints the next version and changes nothing.
-2. Stage a dev build with `.\tools\stage.ps1`, or a release with `.\tools\stage.ps1 -Publish`. Commit the rewritten `Info.json` with the change it carries.
+2. Stage a dev build with `.\tools\stage.ps1`, or a release with `.\tools\stage.ps1 -Publish`. Commit the rewritten `Info.json` and `Scripts\settings.lua` with the change they carry.
 3. For a release, or a multiplayer test, upload from **Palworld Mod Uploader**, which is software run from Steam. A local test build needs no upload. A dev build that is uploaded goes out with `DebugMode` on, which makes every subscriber's loader reinstall the mod at each launch until the next release.
 4. Restart Palworld. The host reinstalls from the item folder at launch. A subscribed machine reinstalls once Steam has downloaded the upload; for a multiplayer test, check the version under **Options → Mod Management** on both machines before testing together.
 5. If the player-facing description changed, paste `.docs\workshop-description.txt` into the Workshop page's description by hand. The uploader does not carry it, and the stage does not include it.
@@ -174,10 +174,14 @@ An alias's description is a static English copy of the text the game builds for 
 
 ### Settings
 
-`Scripts\settings.lua` holds the two switches that are safe to change. Each is documented in the file.
+`Scripts\settings.lua` holds the switches that are safe to change. Each is documented in the file.
 
+- `debug`: debug mode. `stage.ps1` sets it `true` for a dev build and `false` for a release. On, it adds `DEBUG:` trace lines to `UE4SS.log` and arms `debug_faults`.
 - `conveyor_extraction`: the Pal Disassembly Conveyor's implants. `false` registers none of its hooks; implants already owed from an earlier session are still delivered.
 - `surgery_ui_gate`: the Edit-button gate on the Surgery screen, which refuses a click that cannot succeed. It is a kill switch for the one part of the mod that writes to a widget while the screen is open; with it off, the transaction still checks every rule and unwinds, but the operation's gold is not refunded.
+- `debug_faults`: injected failures for testing the crash-recovery paths: a failed journal write, a stop as if the game had crashed after a given journal row, a failed implant refund, and an exchange that cannot be resolved. It is a list of scenarios used in order, one per Surgery exchange of this mod's, so a single game launch can run every scenario in turn; the count starts again at each launch. Ignored unless `debug` is `true`.
+
+`Scripts\lp\config.lua` is the only reader of the file. It reads each value at the moment it is used, so a value changed while the game runs takes effect: the gate at its next frame, the conveyor at its next firing (turned on after load, its hooks are registered at the next map load), debug at its next log line. A value of the wrong type is logged once and its default used; if the file fails to load, every switch takes its default.
 
 The file is installed with the rest of `Scripts\`, so the loader overwrites an edit made in the game folder at its next reinstall.
 
@@ -188,7 +192,7 @@ The file is installed with the rest of `Scripts\`, so the loader overwrites an e
 | `node tools\luacheck.js` | Parses every Lua file under `Scripts\`. Syntax only. |
 | `luacheck Scripts` | Static analysis: undefined globals, unused variables, shadowing. Uses `.luacheckrc`. |
 | `lua tools\ledger_test.lua` | Test of the mod: the pending-delivery ledger's file format and who it delivers to, with the engine stubbed out. |
-| `.\tools\stage.ps1` | Checks `Info.json`, sets its version and `DebugMode` (dev build by default, release with `-Publish`), then mirrors what `Info.json` names into the Workshop item folder, ready to upload. Takes `-Publish`, `-DryRun`, `-Force`, `-GameRoot` and `-WorkshopRoot`. |
+| `.\tools\stage.ps1` | Checks `Info.json`, sets its version and `DebugMode` (dev build by default, release with `-Publish`) and writes `DebugMode` onto every `stage:DebugMode` line, then mirrors what `Info.json` names into the Workshop item folder, ready to upload. Takes `-Publish`, `-DryRun`, `-Force`, `-GameRoot` and `-WorkshopRoot`. |
 | `.\tools\test_staging.ps1` | Test of `stage.ps1`: runs a copy against throwaway repo, Workshop and game folders in `%TEMP%` and checks versions, checks, item-folder detection, the stale stop, `-Force`, the stale deletion under `-Publish`, and `-DryRun`. Never touches the real game or Workshop folders. `-Keep` leaves the temp folders for inspection. |
 
 The player-facing sections at the top of this README and `.docs\workshop-description.txt` describe the same mod for two audiences, so a change to how the mod plays goes into both.
