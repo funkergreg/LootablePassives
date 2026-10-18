@@ -4,7 +4,7 @@ This is the Lootable Passives Palworld mod's development repository. General use
 
 ## Mod description
 
-The mod description is uploaded manually to Steam from [workshop-description.txt](workshop-description.txt) as the Steam Workshop Description; all user-facing mod description is maintained there (not in this README.md) for single-point-of-change.
+The mod description is uploaded manually to Steam from [workshop-description.txt](workshop-description.txt) as the Steam Workshop Description; all user-facing mod description is maintained there (not in this README.md) for single-point-of-change (shall not be copied into this README.md or any other document).
 
 ## Mod Development
 
@@ -252,5 +252,3 @@ The file is installed with the rest of `Scripts\`, so the loader overwrites an e
 | `.\tools\stage.ps1` | Checks `Info.json`, sets its version and `DebugMode` (dev build by default, minor release with `-Minor`, major release with `-Major`), writes `DebugMode` onto every `stage:DebugMode` line, and on a release redraws the thumbnail, then mirrors what `Info.json` names into the Workshop item folder, ready to upload. Takes `-Minor`, `-Major`, `-DryRun`, `-Force`, `-GameRoot` and `-WorkshopRoot`. |
 | `.\tools\test_staging.ps1` | Test of `stage.ps1`: runs a copy against throwaway repo, Workshop and game folders in `%TEMP%` and checks versions, checks, item-folder detection, the stale stop, `-Force`, both release runs and their stale deletion and thumbnail draw, the refusal of `-Minor` with `-Major`, and `-DryRun`. Never touches the real game or Workshop folders. `-Keep` leaves the temp folders for inspection. |
 | `python tools\draw_thumbnail.py <output> <label>` | Draws `<label>` under the title of `assets\thumbnail-base.png` and writes it to `<output>`. `stage.ps1 -Minor` and `-Major` run it; run it by hand only to preview a label. |
-
-The player-facing sections at the top of this README and `.docs\workshop-description.txt` describe the same mod for two audiences, so a change to how the mod plays goes into both.

@@ -24,7 +24,7 @@ This repo contains a Palworld mod.
 | package.json | declares luaparse for tools/luacheck.js | dev only-do not ship |
 | CLAUDE.md | Agent guidance | dev only-do not ship |
 | README.md | GitHub page for the development repo | dev only-do not ship |
-| .docs/workshop-description.txt | Steam Workshop page text, pasted by hand | dev only-do not ship |
+| workshop-description.txt | Steam Workshop page text, pasted by hand; SPOC for mod description | dev only-do not ship |
 | LICENSE | license | ships |
 | Info.json | Steam Workshop package manifest | ships |
 | thumbnail.png | Workshop thumbnail: `assets/thumbnail-base.png` with the release version as `vMAJOR.MINOR` drawn under the title by `tools/draw_thumbnail.py`, which `stage.ps1 -Minor` and `-Major` run; the parameters are in `README.md`'s `The release thumbnail` section | ships |
