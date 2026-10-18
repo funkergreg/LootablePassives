@@ -52,15 +52,18 @@ return {
     surgery_ui_gate = true,
 
     -- Injected failures for testing the recovery paths, as a list of
-    -- scenarios used in order, one per Surgery exchange: the first exchange of
-    -- this mod's runs under scenario 1, the next under scenario 2, and so on,
-    -- and every exchange after the last runs with no faults. The count starts
-    -- again at 1 each time the game starts. A request that turns out to be a
-    -- vanilla operation does not use up a scenario. Ignored unless debug is
-    -- true. Each fault logs a "DEBUG FAULT:" line when it fires.
+    -- scenarios. Each names the kind of Surgery exchange it waits for:
+    --   on = "one"      Extract One
+    --   on = "all"      Extract All
+    --   on = "implant"  an implant from a disposable module
+    -- and the next exchange of that kind takes the first unused scenario for
+    -- it, so scenarios of different kinds can be run in any order. A scenario
+    -- with no "on" is taken by an exchange of any kind. Each is used once per
+    -- game start; an exchange of a kind with none left runs with no faults, and
+    -- a vanilla operation never takes one. Ignored unless debug is true. Each
+    -- fault logs a "DEBUG FAULT:" line when it fires.
     --
-    -- A scenario is a table of any of these faults; {} is an exchange with
-    -- none:
+    -- Beside "on", a scenario holds any of these faults:
     --   fail_journal_write = "<row>"  that row's write fails without the file
     --                                 being opened, so the row before it stays
     --                                 on disk
@@ -69,24 +72,12 @@ return {
     --   fail_refund = true            an implant refund's direct grant fails,
     --                                 so the module is recorded as owed in the
     --                                 pending-grant ledger
-    --   fail_resolve = true           every resolve attempt finds nothing, so
-    --                                 the exchange runs out of attempts and
-    --                                 takes the stranded-marker path
+    --   fail_resolve = true           every resolve attempt's result is
+    --                                 discarded, so the exchange runs out of
+    --                                 attempts and takes the stranded-marker
+    --                                 path
     -- A row is named "<state>/<phase>" as lp/journal.lua writes it:
     -- "prepared/marker", "granted/marker", "prepared/loop", "granted/loop",
     -- "prepared/implant", "prepared/stranded".
-    debug_faults = {
-        -- 1. Extract One on a filled slot.
-        { fail_journal_write = "granted/marker" },
-        -- 2. Extract All on a Pal with three or more extractable passives.
-        { fail_journal_write = "granted/loop" },
-        -- 3. An implant.
-        { fail_journal_write = "prepared/implant", fail_refund = true },
-        -- 4. Extract One on a filled slot. Leaves a stranded marker and row.
-        { fail_resolve = true },
-        -- 5. Extract One on a filled slot of a Pal other than 4's. Replays 4's
-        --    row first, then stops with its own row on disk for the next map
-        --    load.
-        { halt_after_journal = "prepared/marker" },
-    },
+    debug_faults = {},
 }

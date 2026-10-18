@@ -154,7 +154,7 @@ repo --stage.ps1--> <Workshop content>\1623730\<item id>\ --loader, at launch-->
 ### Settings and debug mode
 
 - `Scripts/lp/config.lua` is the only module that reads `Scripts/settings.lua`. Other modules call its getters (`debug_on`, `conveyor_on`, `gate_on`, `fault`), which read the value on every call, so a setting changed at runtime takes effect at its next use. Add a new setting there, with a default and the type it must have, and describe in `settings.lua` what happens when it changes at runtime.
-- Debug-only trace lines go through `config.debug_log`, which prints only when `debug` is true. Injected failures (`debug_faults`) are a list of scenarios, one per Surgery exchange, used in order. A scenario is active only while its exchange's finalize runs, and is used up only when the exchange turns out to be the mod's. They are read through `config.fault`, which returns the unarmed default outside an exchange or unless `debug` is true, so a release build (`debug = false`) cannot fire one.
+- Debug-only trace lines go through `config.debug_log`, which prints only when `debug` is true. Injected failures (`debug_faults`) are a list of scenarios, each naming in `on` the exchange kind it waits for (`one`, `all`, `implant`). An exchange claims the first unused scenario of its kind when it first resolves as the mod's, and that scenario is active only while the exchange's finalize runs. They are read through `config.fault`, which returns the unarmed default outside an exchange or unless `debug` is true, so a release build (`debug = false`) cannot fire one.
 
 ### Errors and warnings
 

@@ -66,13 +66,14 @@ end
 --------------------------------------------------------------------------------
 -- Fault scenarios
 --
--- debug_faults is a list of scenarios, one per exchange, used in order. The
--- cursor names the next unused one and starts at 1 at every load of the mod.
--- An exchange is handed the cursor's index when it is captured
--- (peek_scenario), runs each attempt with that scenario active
--- (begin_scenario/end_scenario), and moves the cursor on only once it turns out
--- to be one of this mod's operations (advance_scenario). fault() reads the
--- active scenario, so nothing outside an exchange sees a fault.
+-- debug_faults is a list of scenarios. Each names the operation kind it waits
+-- for in its "on" field -- "one", "all" or "implant", as lp/ids.lua's
+-- EXTRACTION_MODES values -- and an exchange of that kind claims the first
+-- unused scenario for it once the exchange is known to be this mod's
+-- (claim_scenario). A scenario with no "on" matches any kind. Each is used once
+-- per load of the mod. The exchange runs each attempt with its scenario active
+-- (begin_scenario/end_scenario); fault() reads the active scenario, so nothing
+-- outside an exchange sees a fault.
 --------------------------------------------------------------------------------
 
 -- Every fault settings.lua documents, with its unarmed value.
@@ -83,7 +84,11 @@ local FAULT_DEFAULTS = {
     fail_resolve = false,
 }
 
-local cursor = 1
+-- The values "on" may take.
+local KINDS = { one = true, all = true, implant = true }
+
+-- Scenario index -> true once claimed.
+local used = {}
 local active, active_index = nil, nil
 
 -- The scenario list, or EMPTY when it is absent or not a table.
@@ -91,11 +96,19 @@ local function scenarios()
     return typed(settings_table(), "debug_faults", "table", EMPTY, "debug_faults")
 end
 
--- The cursor's index when debug is on and a scenario table stands there; nil
--- otherwise.
-local function peek_scenario()
-    if debug_on() and type(scenarios()[cursor]) == "table" then
-        return cursor
+-- Claims and returns the index of the first unused scenario whose "on" is mode
+-- or absent, when debug is on; nil when there is none.
+local function claim_scenario(mode)
+    if not debug_on() then
+        return nil
+    end
+    for index, scenario in ipairs(scenarios()) do
+        if not used[index] and type(scenario) == "table"
+            and (scenario.on == nil or scenario.on == mode)
+        then
+            used[index] = true
+            return index
+        end
     end
     return nil
 end
@@ -116,15 +129,6 @@ local function end_scenario()
     active, active_index = nil, nil
 end
 
--- Moves the cursor past index when it is the cursor's. Returns whether it did.
-local function advance_scenario(index)
-    if index ~= nil and index == cursor then
-        cursor = cursor + 1
-        return true
-    end
-    return false
-end
-
 -- The active scenario's value for name, typed as default is; default when no
 -- scenario is active or debug is off.
 local function fault(name, default)
@@ -135,9 +139,10 @@ local function fault(name, default)
         string.format("debug_faults[%d].%s", active_index, name))
 end
 
--- Scenario index as "name=value" for each fault it arms, sorted and joined by
--- ", "; "no faults" when it arms none, "none" when there is no scenario there.
--- An unknown name is listed with a "?" prefix.
+-- Scenario index as "on <kind>: name=value, ...", the faults sorted; "no
+-- faults" in place of the list when it arms none, "none" when there is no
+-- scenario there. An unknown fault name, or an "on" that is not a kind, is
+-- listed with a "?" prefix.
 local function describe_scenario(index)
     local scenario = index and scenarios()[index]
     if type(scenario) ~= "table" then
@@ -146,24 +151,33 @@ local function describe_scenario(index)
     local armed = {}
     for name, value in pairs(scenario) do
         local default = FAULT_DEFAULTS[name]
-        if default == nil then
-            armed[#armed + 1] = "?" .. tostring(name) .. "=" .. tostring(value)
-        elseif value ~= default then
-            armed[#armed + 1] = name .. "=" .. tostring(value)
+        if name ~= "on" then
+            if default == nil then
+                armed[#armed + 1] = "?" .. tostring(name) .. "=" .. tostring(value)
+            elseif value ~= default then
+                armed[#armed + 1] = name .. "=" .. tostring(value)
+            end
         end
     end
     table.sort(armed)
-    return #armed > 0 and table.concat(armed, ", ") or "no faults"
+    local on = scenario.on
+    local kind = on == nil and "any" or (KINDS[on] and on or "?" .. tostring(on))
+    return string.format("on %s: %s", kind, #armed > 0 and table.concat(armed, ", ") or "no faults")
 end
 
--- One line for the startup log: the scenario count and the next one.
+-- One line for the startup log: every scenario with its index, and which are
+-- used.
 local function describe_plan()
-    local count = #scenarios()
-    if count == 0 then
+    local list = scenarios()
+    if #list == 0 then
         return "no fault scenarios"
     end
-    return string.format("%d fault scenario(s); next is %d of %d: %s", count, cursor, count,
-        describe_scenario(cursor))
+    local parts = {}
+    for index = 1, #list do
+        parts[index] = string.format("%d (%s%s)", index, describe_scenario(index),
+            used[index] and ", used" or "")
+    end
+    return string.format("%d fault scenario(s): %s", #list, table.concat(parts, "; "))
 end
 
 -- Logs message with a "DEBUG: " prefix when debug is on.
@@ -198,8 +212,8 @@ local HALT = setmetatable({}, {
 
 return {
     HALT = HALT,
-    advance_scenario = advance_scenario,
     begin_scenario = begin_scenario,
+    claim_scenario = claim_scenario,
     conveyor_on = conveyor_on,
     debug_log = debug_log,
     debug_on = debug_on,
@@ -211,5 +225,4 @@ return {
     gate_on = gate_on,
     journal_write_fails = journal_write_fails,
     journal_write_halts = journal_write_halts,
-    peek_scenario = peek_scenario,
 }

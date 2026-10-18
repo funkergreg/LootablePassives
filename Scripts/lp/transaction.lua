@@ -24,11 +24,10 @@ local HALT = config.HALT
 local debug_log = config.debug_log
 local fault = config.fault
 local fault_log = config.fault_log
-local advance_scenario = config.advance_scenario
 local begin_scenario = config.begin_scenario
+local claim_scenario = config.claim_scenario
 local describe_scenario = config.describe_scenario
 local end_scenario = config.end_scenario
-local peek_scenario = config.peek_scenario
 local IMPLANT_TARGET = ids.IMPLANT_TARGET
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local clear_journal = journal.clear_journal
@@ -120,7 +119,7 @@ end
 -- all; a page that is present and yielded nothing returns nil instead. Any other
 -- request, including one whose requester cannot be identified, goes straight to
 -- the snapshot: the recorded tab page is the local player's.
-local function capture_record_inner(request_player_id)
+local function capture_record(request_player_id)
     local is_local = is_local_request(request_player_id)
     debug_log(string.format("capture: requester=%s local=%s is_local=%s",
         tostring(player_id_number(request_player_id)), tostring(local_player_id()),
@@ -144,20 +143,6 @@ local function capture_record_inner(request_player_id)
     end
     debug_log(string.format("capture: server snapshot of %d Pals", #fallback.snapshots))
     return fallback
-end
-
--- capture_record_inner's record, stamped with the fault scenario it will run
--- under (config.peek_scenario), or nil.
-local function capture_record(request_player_id)
-    local record = capture_record_inner(request_player_id)
-    if record ~= nil then
-        record.scenario = peek_scenario()
-        if record.scenario ~= nil then
-            debug_log(string.format("this request runs under fault scenario %d: %s",
-                record.scenario, describe_scenario(record.scenario)))
-        end
-    end
-    return record
 end
 
 -- How a passive list neither detector matched has moved since the snapshot:
@@ -199,10 +184,6 @@ end
 -- already happened, so retrying cannot turn it into one of ours.
 local function resolve_record(record)
     if record == nil or record.snapshots == nil then
-        return nil, false
-    end
-    if fault("fail_resolve", false) then
-        fault_log("resolve attempt finds nothing on purpose")
         return nil, false
     end
 
@@ -542,21 +523,35 @@ local function schedule_finalize(record, attempt, delay_ms)
     run_later(delay_ms, run_finalize, record, attempt)
 end
 
--- Moves the fault scenario cursor past record.scenario, once the exchange is
--- known to be one of this mod's, and logs it.
-local function use_scenario(record)
-    if advance_scenario(record.scenario) then
-        debug_log(string.format("fault scenario %d used by this exchange", record.scenario))
+-- On the first attempt that resolves the record, claims the fault scenario for
+-- its mode (config.claim_scenario), stores it on the record and makes it
+-- active. A record that already has one keeps it.
+local function claim_for(record, mode)
+    if record.scenario_claimed then
+        return
+    end
+    record.scenario_claimed = true
+    record.scenario = claim_scenario(mode)
+    if record.scenario ~= nil then
+        begin_scenario(record.scenario)
+        debug_log(string.format("this %s exchange runs under fault scenario %d (%s)", mode,
+            record.scenario, describe_scenario(record.scenario)))
+    else
+        debug_log(string.format("no fault scenario left for this %s exchange", mode))
     end
 end
 
 function finalize_extraction(record, attempt)
     local resolved, vanilla = resolve_record(record)
     if resolved ~= nil then
-        use_scenario(record)
+        claim_for(record, resolved.mode)
         debug_log(string.format("resolve attempt %d: marker %s (%s) replaced %s%s", attempt,
             tostring(resolved.lock), tostring(resolved.mode), tostring(resolved.passive_id),
             resolved.stray and ", stray" or ""))
+        if fault("fail_resolve", false) then
+            fault_log("resolve attempt result discarded on purpose")
+            resolved = nil
+        end
     elseif attempt == 1 or attempt == RESOLVE_ATTEMPTS or vanilla then
         debug_log(string.format("resolve attempt %d of %d: nothing matched (vanilla=%s)",
             attempt, RESOLVE_ATTEMPTS, tostring(vanilla)))
@@ -579,7 +574,6 @@ function finalize_extraction(record, attempt)
                 log("No marker appeared, so this was not one of our operations; "
                     .. "nothing was changed.")
             else
-                use_scenario(record)
                 -- The selected slot's passive is named only when its count
                 -- fell, so recovery puts back a passive the swap removed and
                 -- otherwise only removes the marker.
