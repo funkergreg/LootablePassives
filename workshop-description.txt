@@ -77,6 +77,8 @@ Full source available on GitHub: https://github.com/funkergreg/LootablePassives
 [*]Fixed a likely cause of a crash when leaving a world, such as exiting to the title screen: the mod's delayed work now always runs on the game thread.
 [*]Fixed passives appearing twice in the Palbox search and sort list.
 [*]The Surgery Table's passive list now shows each passive's own description for the disposable-implant entries, instead of placeholder text.
+[*]Added runtime checking and safety for settings; Explicit debug mode flag added to settings
+[*]Misc. bugfixes, most related to potential item grant losses
 [/list]
 
 [h3]1.1.0[/h3]
