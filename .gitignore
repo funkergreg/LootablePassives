@@ -29,6 +29,7 @@ desktop.ini
 .workshop.json
 
 # Screenshot and text used in dev and testing
+.docs/TODO.md
 .docs/*.png
 .docs/**/*.png
 .docs/*.txt
