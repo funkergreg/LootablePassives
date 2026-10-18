@@ -18,6 +18,7 @@ This repository is the mod's source, not the shipped mod. The mod is distributed
 - **Palworld Mod Uploader**, a free tool in your Steam library, and the mod's Workshop item folder, which its **Create New Mod** makes (see [Starting a mod](#starting-a-mod))
 - Node.js, plus `npm install` in the repository root for the `luaparse` package the parse check needs; `package.json` declares it
 - Lua 5.5 and luacheck 1.2 on `PATH`; Scoop installs both into your user profile without admin rights
+- Python 3 as `python` on `PATH`, with Pillow (`python -m pip install --user pillow`), for the release thumbnail that `stage.ps1 -Minor` and `-Major` draw
 
 ### Repository layout
 
@@ -27,10 +28,11 @@ This repository is the mod's source, not the shipped mod. The mod is distributed
 | `PalSchemaMods\LootablePassives\` | JSON data patches: items, DataTable rows, English strings | yes |
 | `Info.json` | Workshop package manifest | yes |
 | `LICENSE`, `thumbnail.png` | Package metadata | yes |
+| `assets\thumbnail-base.png` | The thumbnail without a version label; `thumbnail.png` is this with the release version drawn under the title | no |
 | `README.md` | This page: the development repo's documentation | no |
 | `.docs\workshop-description.txt` | The Steam Workshop page text, in Steam's BBCode | no |
 | `.docs\crash-watch.md` | The working notes document: the open crash watch, its evidence, and how to triage a recurrence | no |
-| `tools\` | `stage.ps1`, `test_staging.ps1`, `luacheck.js`, `ledger_test.lua` | no |
+| `tools\` | `stage.ps1`, `test_staging.ps1`, `draw_thumbnail.py`, `luacheck.js`, `ledger_test.lua` | no |
 | `package.json` | Declares `luaparse` for `tools\luacheck.js` | no |
 | `.luacheckrc`, `.luarc.json` | Declare UE4SS's injected globals for luacheck and the Lua language server | no |
 
@@ -99,7 +101,7 @@ This mod names the three PalSchema folders individually, without a trailing `/`,
 
 ### The edit, check, release loop
 
-There is no build step. The repository is the working copy. A plain `stage.ps1` is a local test build: it raises the patch number (`1.1.1` → `1.1.2`), sets `DebugMode` true, and ships nothing; the host machine installs it at its next launch. A multiplayer test also uploads that stage, so that a second, subscribed machine joining the host runs the same version. Only `stage.ps1 -Publish` makes a shipping release: it raises the minor number and resets the patch to 0 (`1.1.2` → `1.2.0`), the version form of a shipped release.
+There is no build step. The repository is the working copy. A plain `stage.ps1`, with no flag, is a local test build: it raises the patch number (`1.1.1` → `1.1.2`), sets `DebugMode` true, and ships nothing; the host machine installs it at its next launch. The patch bump is what makes the loader install it, as described below the version table. A multiplayer test also uploads that stage, so that a second, subscribed machine joining the host runs the same version. Only `stage.ps1 -Minor` and `stage.ps1 -Major` make a shipping release. `-Minor` raises the minor number and resets the patch to 0 (`1.1.2` → `1.2.0`). `-Major` raises the major number and resets the minor and patch to 0 (`1.2.3` → `2.0.0`). Apart from the version they behave the same, and a patch of 0 is the version form of a shipped release.
 
 ```powershell
 # edit the JSON under PalSchemaMods\ or the Lua under Scripts\, then:
@@ -108,7 +110,8 @@ luacheck Scripts                # static analysis; the baseline is 0 warnings / 
 lua tools\ledger_test.lua       # after any change to Scripts\lp\ledger.lua
 .\tools\test_staging.ps1          # after any change to tools\stage.ps1
 .\tools\stage.ps1               # local test build: patch + 1, DebugMode on; add -DryRun to preview
-.\tools\stage.ps1 -Publish      # release: minor + 1, patch 0, DebugMode off; deletes stale files
+.\tools\stage.ps1 -Minor        # minor release: minor + 1, patch 0, DebugMode off; redraws the thumbnail; deletes stale files
+.\tools\stage.ps1 -Major        # major release: major + 1, minor 0, patch 0; otherwise the same as -Minor
 # for a multiplayer test or a release: Upload To Steam from Palworld Mod Uploader
 # restart Palworld (on both machines for a multiplayer test), check the version, test, read the log
 ```
@@ -118,12 +121,15 @@ lua tools\ledger_test.lua       # after any change to Scripts\lp\ledger.lua
 | Run | `Version` | `DebugMode` and `debug` | Example |
 | --- | --- | --- | --- |
 | `.\tools\stage.ps1` | patch + 1 | `true` | `1.1.0` → `1.1.1` |
-| `.\tools\stage.ps1 -Publish` | minor + 1, patch `0` | `false` | `1.1.3` → `1.2.0` |
+| `.\tools\stage.ps1 -Minor` | minor + 1, patch `0` | `false` | `1.1.3` → `1.2.0` |
+| `.\tools\stage.ps1 -Major` | major + 1, minor `0`, patch `0` | `false` | `1.2.3` → `2.0.0` |
 
-Only a release has patch `0`. Raise the major version by editing `Info.json` by hand; the next stage counts on from there.
+Only a release has patch `0`. Giving `-Minor` and `-Major` together stops the run with nothing written.
 
-1. Preview the stage if you want: add `-DryRun` to either command. It prints the next version and changes nothing.
-2. Stage a dev build with `.\tools\stage.ps1`, or a release with `.\tools\stage.ps1 -Publish`. Commit the rewritten `Info.json` and `Scripts\settings.lua` with the change they carry.
+The default run, with no flag, is an explicit patch update, and the patch bump is not optional, even for a stage that is only tested locally and never uploaded. At launch the loader reinstalls a mod when the item folder's `Version` differs from the installed copy's (see [How a staged build reaches the game](#how-a-staged-build-reaches-the-game)). Without a new version, a changed build can sit in the item folder while the game keeps running the old one. A subscribed machine relies on that version change alone. On the host, the dev build's `DebugMode` true also makes the loader reinstall at every launch, but the patch bump is still what gives each test build a version of its own, which you can check under **Options → Mod Management** to confirm which build the game loaded.
+
+1. Preview the stage if you want: add `-DryRun` to any of the three commands. It prints the next version and changes nothing.
+2. Stage a dev build with `.\tools\stage.ps1`, or a release with `.\tools\stage.ps1 -Minor` or `.\tools\stage.ps1 -Major`. A release also redraws `thumbnail.png` with its version first (see [The release thumbnail](#the-release-thumbnail)). Commit the rewritten `Info.json` and `Scripts\settings.lua`, and for a release `thumbnail.png`, with the change they carry.
 3. For a release, or a multiplayer test, upload from **Palworld Mod Uploader**, which is software run from Steam. A local test build needs no upload. A dev build that is uploaded goes out with `DebugMode` on, which makes every subscriber's loader reinstall the mod at each launch until the next release.
 4. Restart Palworld. The host reinstalls from the item folder at launch. A subscribed machine reinstalls once Steam has downloaded the upload; for a multiplayer test, check the version under **Options → Mod Management** on both machines before testing together.
 5. If the player-facing description changed, paste `.docs\workshop-description.txt` into the Workshop page's description by hand. The uploader does not carry it, and the stage does not include it.
@@ -131,6 +137,53 @@ Only a release has patch `0`. Raise the major version by editing `Info.json` by 
 UE4SS hot reload is disabled, and the loader installs only at launch, so a running game does not pick up a change until it restarts.
 
 The mod must be enabled under **Options → Mod Management** for the loader to install it. `stage.ps1` warns when it, or one of its `Dependencies`, is not.
+
+### The release thumbnail
+
+The shipped `thumbnail.png` is `assets\thumbnail-base.png` with the release version drawn under the title as `vMAJOR.MINOR`, for example `v1.2`. The patch number is left off because a release always has patch `0`. Always draw from the base and never edit the base itself; it is the title art with no version on it.
+
+#### Label parameters
+
+These were measured from the base image's title text (512 × 512 px), so that the label matches it:
+
+| Parameter | Value | Where it comes from |
+| --- | --- | --- |
+| Font | Arial Black, `C:\Windows\Fonts\ariblk.ttf` | The closest installed match; the title's font is not an installed font |
+| Size | 58 pt | The smallest size whose digit `1` is 43 px tall, the title's letter height |
+| Fill | RGB `253, 237, 8` | The median colour of the title's yellow pixels |
+| Top of the digits | y = 284 px | The bottom of "PASSIVES" (253) plus the 31 px gap between the two title lines |
+| Horizontal centre | x = 258 px | The centre of both title lines |
+| Outline | Black, about 3 px | The text mask under a 7 px max filter |
+| Shadow | Black at 85 % opacity, offset 3 px right and 4 px down, Gaussian blur radius 2 | The outline widened 1 px further, then offset and blurred |
+
+Layers are drawn shadow first, then the outline, then the yellow fill.
+
+These values are the constants at the top of `tools\draw_thumbnail.py`.
+
+#### How it is drawn
+
+Both release runs draw it, `stage.ps1 -Minor` and `stage.ps1 -Major`. The stage works out the release version before anything else, and when `tools\draw_thumbnail.py` exists beside it, runs that script first in the write step:
+
+```powershell
+python tools\draw_thumbnail.py <repo>\thumbnail.png v1.3
+```
+
+The label is the release version without its patch number: `v1.3` from `-Minor` on `1.2.x`, and `v2.0` from `-Major`. The output path is the `Thumbnail` that `Info.json` names. The script always reads `assets\thumbnail-base.png`, never writes it, and refuses an output path equal to it. Then the stage writes `Info.json` and copies the new thumbnail with everything else.
+
+- `-Minor -DryRun` or `-Major -DryRun` prints the `draw` line with the label it would draw, and draws nothing.
+- A dev build (`stage.ps1` with neither flag) never draws, so `thumbnail.png` keeps the last release's label.
+- If the script exits nonzero, for example because Pillow is missing, the run stops with nothing written. If `python` is not on `PATH`, the run's checks stop it before that.
+- A repository with no `tools\draw_thumbnail.py` stages its thumbnail as it is, which is what keeps `stage.ps1` free of anything specific to this mod.
+
+To preview a label without staging, draw it somewhere outside the repository:
+
+```powershell
+python tools\draw_thumbnail.py $env:TEMP\preview.png v1.3
+```
+
+After a release, open `thumbnail.png`, check the label sits centred under "PASSIVES", and commit it with `Info.json`. `git status` should list `thumbnail.png` as modified and never `assets\thumbnail-base.png`.
+
+The measurements above hold only for this base image. If the title art is replaced, measure the new title again and update the table and the script's constants.
 
 ### How a staged build reaches the game
 
@@ -141,7 +194,7 @@ repo  --stage.ps1-->  <Workshop content>\1623730\<item id>\  --loader, at launch
 
 - **Finding the item folder.** `stage.ps1` uses the one folder under the Workshop content directory whose `Info.json` has this repository's `PackageName`, and stops if there is none or more than one.
 - **What it stages.** `Info.json`, the `Thumbnail` file, `LICENSE`, and every `InstallRule` target, and nothing else. It refuses an `Info.json` the uploader would accept but the game would not install, warns about a target missing from the repository, and prints where each rule installs. It overwrites the item folder's `Info.json` with the repository's, and never touches the uploader's `.workshop.json`.
-- **A mirror.** Before copying anything, it compares the item folder with the files about to be staged. A file the stage does not have stops the run with nothing changed. After you delete a file from the repository, run the next stage with `-Force`, which deletes those files and any folder left empty. `-Publish` does the same deletion without `-Force`, so a release is always an exact mirror of the repository. At the next reinstall the file is in the old manifest and not in the new install; check the game folder the first time you rely on that.
+- **A mirror.** Before copying anything, it compares the item folder with the files about to be staged. A file the stage does not have stops the run with nothing changed. After you delete a file from the repository, run the next stage with `-Force`, which deletes those files and any folder left empty. `-Minor` and `-Major` do the same deletion without `-Force`, so a release is always an exact mirror of the repository. At the next reinstall the file is in the old manifest and not in the new install; check the game folder the first time you rely on that.
 - **When the loader reinstalls.** At launch it compares `Version` in the item folder's `Info.json` with the installed copy in `<Palworld>\Mods\ManagedMods\LootablePassives\`, as plain strings. When they differ, or when `DebugMode` is true, it removes what its `InstallManifest.json` lists and copies the `InstallRule` targets in again. A subscribed machine does the same after Steam downloads an upload. Every stage raises the version, so the first launch after each stage installs it. `stage.ps1` warns if the new version equals the last upload, which a subscribed machine would not reinstall.
 - **The host installs whatever is staged.** Its next launch installs the staged copy whether or not it was uploaded. That is what makes a plain stage a local test build; for a multiplayer test, upload it too, or the subscribed machine is on an older version than the host.
 - **Only the loader writes the game folders.** For a `Lua` rule it also adds the `<PackageName> : 1` line to UE4SS's `mods.txt`, which is what starts the Lua half.
@@ -196,7 +249,8 @@ The file is installed with the rest of `Scripts\`, so the loader overwrites an e
 | `node tools\luacheck.js` | Parses every Lua file under `Scripts\`. Syntax only. |
 | `luacheck Scripts` | Static analysis: undefined globals, unused variables, shadowing. Uses `.luacheckrc`. |
 | `lua tools\ledger_test.lua` | Test of the mod: the pending-delivery ledger's file format and who it delivers to, with the engine stubbed out. |
-| `.\tools\stage.ps1` | Checks `Info.json`, sets its version and `DebugMode` (dev build by default, release with `-Publish`) and writes `DebugMode` onto every `stage:DebugMode` line, then mirrors what `Info.json` names into the Workshop item folder, ready to upload. Takes `-Publish`, `-DryRun`, `-Force`, `-GameRoot` and `-WorkshopRoot`. |
-| `.\tools\test_staging.ps1` | Test of `stage.ps1`: runs a copy against throwaway repo, Workshop and game folders in `%TEMP%` and checks versions, checks, item-folder detection, the stale stop, `-Force`, the stale deletion under `-Publish`, and `-DryRun`. Never touches the real game or Workshop folders. `-Keep` leaves the temp folders for inspection. |
+| `.\tools\stage.ps1` | Checks `Info.json`, sets its version and `DebugMode` (dev build by default, minor release with `-Minor`, major release with `-Major`), writes `DebugMode` onto every `stage:DebugMode` line, and on a release redraws the thumbnail, then mirrors what `Info.json` names into the Workshop item folder, ready to upload. Takes `-Minor`, `-Major`, `-DryRun`, `-Force`, `-GameRoot` and `-WorkshopRoot`. |
+| `.\tools\test_staging.ps1` | Test of `stage.ps1`: runs a copy against throwaway repo, Workshop and game folders in `%TEMP%` and checks versions, checks, item-folder detection, the stale stop, `-Force`, both release runs and their stale deletion and thumbnail draw, the refusal of `-Minor` with `-Major`, and `-DryRun`. Never touches the real game or Workshop folders. `-Keep` leaves the temp folders for inspection. |
+| `python tools\draw_thumbnail.py <output> <label>` | Draws `<label>` under the title of `assets\thumbnail-base.png` and writes it to `<output>`. `stage.ps1 -Minor` and `-Major` run it; run it by hand only to preview a label. |
 
 The player-facing sections at the top of this README and `.docs\workshop-description.txt` describe the same mod for two audiences, so a change to how the mod plays goes into both.

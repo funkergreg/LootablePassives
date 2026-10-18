@@ -20,14 +20,15 @@ This repo contains a Palworld mod.
 | --- | --- | --- |
 | Scripts/ | Lua runtime (main.lua, settings.lua, lp/*.lua) | ships |
 | PalSchemaMods/LootablePassives/ | JSON data patches: items, DataTable rows, English strings | ships |
-| tools/ | stage.ps1, test_staging.ps1, luacheck.js, ledger_test.lua | dev only-do not ship |
+| tools/ | stage.ps1, test_staging.ps1, draw_thumbnail.py, luacheck.js, ledger_test.lua | dev only-do not ship |
 | package.json | declares luaparse for tools/luacheck.js | dev only-do not ship |
 | CLAUDE.md | Agent guidance | dev only-do not ship |
 | README.md | GitHub page for the development repo | dev only-do not ship |
 | .docs/workshop-description.txt | Steam Workshop page text, pasted by hand | dev only-do not ship |
 | LICENSE | license | ships |
 | Info.json | Steam Workshop package manifest | ships |
-| thumbnail.png | Workshop thumbnail | ships |
+| thumbnail.png | Workshop thumbnail: `assets/thumbnail-base.png` with the release version as `vMAJOR.MINOR` drawn under the title by `tools/draw_thumbnail.py`, which `stage.ps1 -Minor` and `-Major` run; the parameters are in `README.md`'s `The release thumbnail` section | ships |
+| assets/thumbnail-base.png | the thumbnail with no version label; the base each release's `thumbnail.png` is drawn from, never edited | dev only-do not ship |
 
 - **What ships is decided by `Info.json`.** `stage.ps1` stages `Info.json`, the `Thumbnail` file, `LICENSE` when present, and every `InstallRule` `Targets` path, and nothing else. A new shipped folder is added by adding it to `Targets`; there is no list in the tools.
 
@@ -96,13 +97,14 @@ luacheck Scripts                  # static analysis
 lua tools\ledger_test.lua         # after any lp/ledger.lua edit
 .\tools\test_staging.ps1            # after any tools/stage.ps1 edit
 .\tools\stage.ps1                 # local test build: patch + 1, DebugMode true; ships nothing
-.\tools\stage.ps1 -Publish        # shipping release: minor + 1, patch 0, DebugMode false
+.\tools\stage.ps1 -Minor          # minor release: minor + 1, patch 0, DebugMode false
+.\tools\stage.ps1 -Major          # major release: major + 1, minor 0, patch 0, DebugMode false
 # ... restart Palworld (upload first for a multiplayer test), read the log ...
 ```
 
 - Staging is not optional and it is not automatic: the game loads only what the loader copied out of the item folder, so an unstaged repo edit is just an untested repo edit. `stage.ps1 -DryRun` first if you want to see what moves and the next version.
 - **Uploading is the user's step, done by hand in Palworld Mod Uploader.** An agent stages; it does not upload or claim a stage has been uploaded.
-- **A file the stage does not have stops the run.** The stage is a mirror, and the check that makes it one runs before anything is copied: a file in the item folder with no counterpart in the staged set is listed, and the run exits 1 with nothing changed (exit 0 under `-DryRun`). `-Force` deletes those files, and any directory left empty, instead of stopping. Delete a Lua module or a JSON patch from the repo and the next dev stage is `-Force`. `-Publish` implies `-Force`, so a release is always an exact mirror of the repo.
+- **A file the stage does not have stops the run.** The stage is a mirror, and the check that makes it one runs before anything is copied: a file in the item folder with no counterpart in the staged set is listed, and the run exits 1 with nothing changed (exit 0 under `-DryRun`). `-Force` deletes those files, and any directory left empty, instead of stopping. Delete a Lua module or a JSON patch from the repo and the next dev stage is `-Force`. `-Minor` and `-Major` imply `-Force`, so a release is always an exact mirror of the repo.
 - Read `UE4SS.log` filtered on:
   - `[LootablePassives]` for the mod's own messages, which trace the code paths reached
   - `PalSchema` for confirmation that the JSON loaded
@@ -118,8 +120,10 @@ lua tools\ledger_test.lua         # after any lp/ledger.lua edit
   - `ledger_test.lua` is a behaviour test for one insertion, not a data verifier: it stubs `lp.inventory` and asserts the ledger's TSV round-trip and which candidate a row is delivered to. It exists because that logic is the only part of the mod with no engine call in it.
 - .\tools\test_staging.ps1 tests the stage script. Run after ANY tools/stage.ps1 edit, and add a case for any behaviour you add. It runs a copy of `stage.ps1` against throwaway folders in `%TEMP%` and never touches the real game or Workshop folders.
 - .\tools\stage.ps1 is the only repo -> game path. Run it before every functional runtime test. Its header documents every check and option; the rules an agent must keep:
-  - **Plain `stage.ps1` is the local test build, and it is safe and proper to run before any test regardless of git state.** It increments the third (patch) part of `Version` and sets `DebugMode` true. It does not ship anything.
-  - **`-Publish` is the only shipping build.** It increments the second (minor) part, sets the patch to 0 and `DebugMode` false. `major.minor.0` is the version form of a shipped release; a nonzero patch is a local test build.
+  - **Plain `stage.ps1` is the local test build, and it is safe and proper to run before any test regardless of git state.** It increments the third (patch) part of `Version` and sets `DebugMode` true. It does not ship anything. The patch bump is required, not cosmetic: the loader reinstalls when the item folder's `Version` differs from the installed copy's, so a changed build with an unchanged version can be left uninstalled, and a subscribed machine has no other trigger. `DebugMode` true is a second trigger on the host, but only the version identifies under **Options → Mod Management** which build the game loaded. Never stage a test build by any route that leaves `Version` alone.
+  - **`-Minor` and `-Major` are the only shipping builds.** `-Minor` increments the second (minor) part and sets the patch to 0. `-Major` increments the first (major) part and sets the minor and patch to 0. Both set `DebugMode` false and otherwise behave the same; giving both stops the run. `major.minor.0` is the version form of a shipped release; a nonzero patch is a local test build.
+  - **In the script, never name a variable `$major` or `$minor`.** PowerShell variable names are case-insensitive, so those are the `-Major` and `-Minor` switches, and assigning a number to one fails every run.
+  - **A release run redraws the thumbnail.** When `tools/draw_thumbnail.py` exists, the release run calls `python tools\draw_thumbnail.py <Thumbnail path> v<major>.<minor>` before writing anything else, and a nonzero exit stops the run with nothing written. The stage computes the version and the label; the draw script owns the art and reads only `assets/thumbnail-base.png`. Without the script the thumbnail stages as it is, which keeps `stage.ps1` mod-agnostic. Commit the redrawn `thumbnail.png` with the release.
   - Every run that stages rewrites `Version` and `DebugMode` **in the repo's `Info.json`**, and writes the same `DebugMode` value onto every staged text-file line tagged `stage:DebugMode` **in the repo's copy**. Here that is the `debug` line in `Scripts/settings.lua`. Commit the rewritten files with the change they carry.
   - The `stage:DebugMode` tag is how a mod opts a runtime debug switch into the stage without the script naming any file. Don't write the literal tag anywhere else in a shipped text file: a tagged line with no `true`/`false` before the tag stops the run.
   - `-DryRun`, a failed check, and a stop on stale files all write nothing.
@@ -133,6 +137,7 @@ Lua and luacheck are installed with Scoop, into the user profile, with no admin 
 - Lua 5.5 (lua, luac on PATH) — for quick local sanity checks
 - luacheck 1.2.0 — a real static analyzer (undefined globals, unused vars, shadowing), stronger than this repo's tools/luacheck.js, which is parse-only
 - luaparse — the parser `tools/luacheck.js` uses, declared in `package.json`
+- Python 3 (`python` on PATH) with Pillow, installed with `python -m pip install --user pillow` — for `tools/draw_thumbnail.py`
 - .luacheckrc — declares UE4SS's injected globals (RegisterHook, ExecuteInGameThreadWithDelay, FindAllOf, etc.) so luacheck stops flagging the mod's own API as "undefined". Without it `luacheck Scripts` reports dozens of false positives; with it, only real findings.
 - .luarc.json — the same global list for LuaLS, so the in-editor language server and the CLI checker agree.
 

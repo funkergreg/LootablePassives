@@ -170,12 +170,68 @@ try {
     Test-That '.workshop.json is untouched' ((Get-Content -Raw (Join-Path $fx.Item '.workshop.json')) -eq $workshopBefore) $run
     Test-That 'a target named by a client and a server rule is staged once' (([regex]::Matches($run.Out, 'stage  Scripts')).Count -eq 1) $run
 
-    # Release: minor + 1, patch 0, DebugMode false.
-    $run = Invoke-Stage $fx @('-Publish')
+    # Minor release: minor + 1, patch 0, DebugMode false.
+    $run = Invoke-Stage $fx @('-Minor')
     $info = Get-RepoInfo $fx
-    Test-That 'publish exits 0' ($run.Exit -eq 0) $run
-    Test-That 'publish writes Version 1.3.0' ($info.Version -eq '1.3.0') $run
-    Test-That 'publish writes DebugMode false' ($info.DebugMode -eq $false) $run
+    Test-That '-Minor exits 0' ($run.Exit -eq 0) $run
+    Test-That '-Minor writes Version 1.3.0' ($info.Version -eq '1.3.0') $run
+    Test-That '-Minor writes DebugMode false' ($info.DebugMode -eq $false) $run
+    Test-That '-Minor without a draw script stages the thumbnail as it is' (
+        (Get-Content -Raw (Join-Path $fx.Item 'thumbnail.png')) -eq 'repo thumbnail.png') $run
+
+    # A draw script beside stage.ps1 redraws the thumbnail on -Minor only,
+    # with the repo Thumbnail path and the release label.
+    $fx = New-Fixture
+    $draw = Join-Path $fx.Repo 'tools\draw_thumbnail.py'
+    Write-File $draw "import sys`nopen(sys.argv[1], 'w').write('drawn ' + sys.argv[2] + ' at ' + sys.argv[1])`n"
+    $repoThumbnail = Join-Path $fx.Repo 'thumbnail.png'
+    $run = Invoke-Stage $fx
+    Test-That 'dev stage does not run the draw script' ((Get-Content -Raw $repoThumbnail) -eq 'repo thumbnail.png') $run
+    $repoBefore = Get-Snapshot $fx.Repo
+    $run = Invoke-Stage $fx @('-Minor', '-DryRun')
+    Test-That '-Minor -DryRun prints the draw' ($run.Out -match "draw   thumbnail\.png 'v1\.3'") $run
+    Test-That '-Minor -DryRun does not run the draw script' ((Get-Snapshot $fx.Repo) -eq $repoBefore) $run
+    $run = Invoke-Stage $fx @('-Minor')
+    Test-That '-Minor with a draw script exits 0' ($run.Exit -eq 0) $run
+    Test-That '-Minor draws the release label on the repo thumbnail' (
+        (Get-Content -Raw $repoThumbnail) -eq "drawn v1.3 at $repoThumbnail") $run
+    Test-That '-Minor stages the drawn thumbnail' (
+        (Get-FileHash $repoThumbnail).Hash -eq (Get-FileHash (Join-Path $fx.Item 'thumbnail.png')).Hash) $run
+
+    # A draw script that fails stops the -Minor run with nothing written.
+    $fx = New-Fixture
+    Write-File (Join-Path $fx.Repo 'tools\draw_thumbnail.py') "import sys`nsys.exit(3)`n"
+    $repoBefore = Get-Snapshot $fx.Repo
+    $itemBefore = Get-Snapshot $fx.Item
+    $run = Invoke-Stage $fx @('-Minor')
+    Test-That 'failed draw stops the -Minor run with exit 1' ($run.Exit -eq 1 -and $run.Out -match 'exited 3') $run
+    Test-That 'failed draw leaves the repo unchanged' ((Get-Snapshot $fx.Repo) -eq $repoBefore) $run
+    Test-That 'failed draw leaves the item folder unchanged' ((Get-Snapshot $fx.Item) -eq $itemBefore) $run
+
+    # Major release: major + 1, minor and patch 0, DebugMode false, the
+    # thumbnail drawn with v<major>.0, and stale files deleted without -Force.
+    $infoTable = New-Info; $infoTable.Version = '1.2.5'; $infoTable.DebugMode = $true
+    $fx = New-Fixture -Info $infoTable -ItemFiles @('Scripts\old.lua')
+    Write-File (Join-Path $fx.Repo 'tools\draw_thumbnail.py') "import sys`nopen(sys.argv[1], 'w').write('drawn ' + sys.argv[2])`n"
+    $run = Invoke-Stage $fx @('-Major', '-DryRun')
+    Test-That '-Major -DryRun prints the next version' ($run.Out -match 'major release  Version 1\.2\.5 -> 2\.0\.0') $run
+    Test-That '-Major -DryRun prints the draw' ($run.Out -match "draw   thumbnail\.png 'v2\.0'") $run
+    $run = Invoke-Stage $fx @('-Major')
+    $info = Get-RepoInfo $fx
+    Test-That '-Major exits 0' ($run.Exit -eq 0) $run
+    Test-That '-Major writes Version 2.0.0' ($info.Version -eq '2.0.0') $run
+    Test-That '-Major writes DebugMode false' ($info.DebugMode -eq $false) $run
+    Test-That '-Major draws v2.0 on the thumbnail and stages it' (
+        (Get-Content -Raw (Join-Path $fx.Item 'thumbnail.png')) -eq 'drawn v2.0') $run
+    Test-That '-Major deletes the stale file' (-not (Test-Path (Join-Path $fx.Item 'Scripts\old.lua'))) $run
+
+    # -Minor and -Major together stop the run with nothing written.
+    $fx = New-Fixture
+    $repoBefore = Get-Snapshot $fx.Repo
+    $itemBefore = Get-Snapshot $fx.Item
+    $run = Invoke-Stage $fx @('-Minor', '-Major')
+    Test-That 'refuses: -Minor and -Major together' (
+        $run.Exit -ne 0 -and $run.Out -match 'both given' -and (Get-Snapshot $fx.Repo) -eq $repoBefore -and (Get-Snapshot $fx.Item) -eq $itemBefore) $run
 
     # stage:DebugMode lines follow DebugMode in the repo and the item folder;
     # untagged lines, and a boolean after the tag, are left alone.
@@ -191,8 +247,8 @@ try {
     Test-That 'staged tagged file matches the repo' (
         (Get-FileHash (Join-Path $fx.Repo $settingsRel)).Hash -eq (Get-FileHash (Join-Path $fx.Item $settingsRel)).Hash) $run
     Test-That 'dev stage reports the tagged write' ($run.Out -match 'write  Scripts\\settings\.lua stage:DebugMode true \(1 line') $run
-    $run = Invoke-Stage $fx @('-Publish')
-    Test-That 'publish writes false on the tagged line' (
+    $run = Invoke-Stage $fx @('-Minor')
+    Test-That '-Minor writes false on the tagged line' (
         (Get-Content -Raw (Join-Path $fx.Item $settingsRel)) -match '(?m)^    debug = false, -- stage:DebugMode true\r$') $run
     $repoBefore = Get-Snapshot $fx.Repo
     $run = Invoke-Stage $fx @('-DryRun')
@@ -236,16 +292,16 @@ try {
     Test-That '-Force exits 0' ($run.Exit -eq 0) $run
     Test-That '-Force deletes the stale file' (-not (Test-Path (Join-Path $fx.Item 'Scripts\old.lua'))) $run
 
-    # -Publish deletes stale files without -Force, and a directory left empty.
+    # -Minor deletes stale files without -Force, and a directory left empty.
     $fx = New-Fixture -ItemFiles @('Scripts\old.lua', 'Retired\gone.json')
-    $run = Invoke-Stage $fx @('-Publish', '-DryRun')
-    Test-That 'stale publish under -DryRun exits 0' ($run.Exit -eq 0) $run
-    Test-That 'stale publish under -DryRun keeps the stale file' (Test-Path (Join-Path $fx.Item 'Scripts\old.lua')) $run
-    $run = Invoke-Stage $fx @('-Publish')
-    Test-That 'stale publish exits 0' ($run.Exit -eq 0) $run
-    Test-That 'publish deletes the stale file' (-not (Test-Path (Join-Path $fx.Item 'Scripts\old.lua'))) $run
-    Test-That 'publish removes a directory left empty' (-not (Test-Path (Join-Path $fx.Item 'Retired'))) $run
-    Test-That 'stale publish writes a release version' ((Get-RepoInfo $fx).Version -eq '1.3.0') $run
+    $run = Invoke-Stage $fx @('-Minor', '-DryRun')
+    Test-That 'stale -Minor under -DryRun exits 0' ($run.Exit -eq 0) $run
+    Test-That 'stale -Minor under -DryRun keeps the stale file' (Test-Path (Join-Path $fx.Item 'Scripts\old.lua')) $run
+    $run = Invoke-Stage $fx @('-Minor')
+    Test-That 'stale -Minor exits 0' ($run.Exit -eq 0) $run
+    Test-That '-Minor deletes the stale file' (-not (Test-Path (Join-Path $fx.Item 'Scripts\old.lua'))) $run
+    Test-That '-Minor removes a directory left empty' (-not (Test-Path (Join-Path $fx.Item 'Retired'))) $run
+    Test-That 'stale -Minor writes a release version' ((Get-RepoInfo $fx).Version -eq '1.3.0') $run
 
     # A first stage into a Create New Mod folder: the template's main.lua is
     # overwritten and its empty type folders are removed.

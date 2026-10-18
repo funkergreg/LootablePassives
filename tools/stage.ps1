@@ -21,9 +21,26 @@
     Every run that stages rewrites Version (<major>.<minor>.<patch>) and
     DebugMode in the REPO's Info.json, then stages that file verbatim:
       default    patch + 1, DebugMode true. A dev build.
-      -Publish   minor + 1, patch 0, DebugMode false. A release.
-    Only a release has patch 0. -DryRun prints the next version and writes
-    nothing. A run stopped by a check or by stale files writes nothing either.
+      -Minor     minor + 1, patch 0, DebugMode false. A minor release.
+      -Major     major + 1, minor 0, patch 0, DebugMode false. A major release.
+    The default run is an explicit patch update, needed even for a build only
+    tested locally: the loader reinstalls when Version differs from the
+    installed copy's, so every run changes Version. DebugMode true also makes
+    the loader reinstall, on the host only; a subscribed machine has only the
+    version change.
+    -Minor and -Major are the two release runs and do the same thing apart
+    from the version; giving both stops the run. Only a release has patch 0.
+    -DryRun prints the next version and writes nothing. A run stopped by a
+    check or by stale files writes nothing either.
+
+    Under a release run, when tools\draw_thumbnail.py sits beside this script,
+    the run calls
+        python tools\draw_thumbnail.py <repo Thumbnail path> v<major>.<minor>
+    with the release version, before writing anything else, and stages the
+    Thumbnail it writes. The draw script decides what is drawn and from what
+    base. A nonzero exit stops the run with nothing else written. Without the
+    script, or on a dev build, the Thumbnail is staged as it is. With the
+    script present, python not on PATH stops a release run as a check.
 
     The same DebugMode value is written into every staged text file line tagged
     with stage:DebugMode: the first true or false on that line, before the tag,
@@ -50,8 +67,8 @@
     This is a MIRROR, and the check that makes it one runs first: a file in the
     item folder that the staged set does not have stops the run before anything
     is copied. Left alone it would be uploaded to subscribers. -Force deletes
-    those files, and any directory left empty, instead of stopping. -Publish
-    does the same, so a release is always an exact mirror of the repo.
+    those files, and any directory left empty, instead of stopping. -Minor and
+    -Major do the same, so a release is always an exact mirror of the repo.
 
     Six checks run on the repo's Info.json before anything is copied, because
     the uploader validates almost nothing and everything it misses fails
@@ -72,9 +89,14 @@
     package or one of its Dependencies, since the loader installs nothing in
     either case. The loader writes UE4SS's mods.txt entry itself.
 
-.PARAMETER Publish
-    Stage a release: minor + 1, patch 0, DebugMode false, and false on every
-    stage:DebugMode line. Implies -Force.
+.PARAMETER Minor
+    Stage a minor release: minor + 1, patch 0, DebugMode false, and false on
+    every stage:DebugMode line. Implies -Force. Redraws the Thumbnail with
+    tools\draw_thumbnail.py when that script exists. Not with -Major.
+
+.PARAMETER Major
+    Stage a major release: major + 1, minor 0, patch 0. Otherwise the same as
+    -Minor. Not with -Minor.
 
 .PARAMETER GameRoot
     Palworld install root. Defaults to the usual Steam location.
@@ -93,11 +115,13 @@
 .EXAMPLE
     .\tools\stage.ps1 -DryRun
     .\tools\stage.ps1
-    .\tools\stage.ps1 -Publish
+    .\tools\stage.ps1 -Minor
+    .\tools\stage.ps1 -Major
 #>
 [CmdletBinding()]
 param(
-    [switch] $Publish,
+    [switch] $Minor,
+    [switch] $Major,
     [string] $GameRoot = "C:\Program Files (x86)\Steam\steamapps\common\Palworld",
     [string] $WorkshopRoot,
     [switch] $DryRun,
@@ -105,6 +129,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($Minor -and $Major) {
+    throw "-Minor and -Major were both given. Give one: -Minor for minor + 1, -Major for major + 1."
+}
+
+# True on either release run, -Minor or -Major.
+$release = $Minor -or $Major
 
 $repo = Split-Path -Parent $PSScriptRoot
 
@@ -137,6 +168,10 @@ $DEBUG_TAGGED_LINE = '(?m)^(?<head>[^\r\n]*?)\b(?<value>true|false)\b(?<tail>[^\
 
 # Matches any line holding the tag.
 $DEBUG_TAG_LINE = '(?m)^[^\r\n]*' + [regex]::Escape($DEBUG_TAG)
+
+# The optional script, beside this one, that a release run calls to draw the
+# release label on the Thumbnail.
+$DRAW_THUMBNAIL = 'draw_thumbnail.py'
 
 # Extensions of the staged files searched for the tag.
 $TEXT_EXTENSIONS = @('.lua', '.json', '.ini', '.txt', '.cfg', '.toml', '.yaml', '.yml', '.xml')
@@ -244,6 +279,37 @@ $versionMatches = [regex]::Matches($infoText, $VERSION_MEMBER)
 if ($versionMatches.Count -ne 1) {
     $problems += "Version '$($info.Version)' must appear exactly once, as <major>.<minor>.<patch> with whole numbers, for it to be incremented."
 }
+else {
+    # The version and DebugMode this run stages. -Major: major + 1, minor 0,
+    # patch 0. -Minor: minor + 1, patch 0. Either release: DebugMode false, the
+    # thumbnail label v<major>.<minor>, and -Force. Otherwise: patch + 1,
+    # DebugMode true, no label.
+    # PowerShell names are case-insensitive, so these must not be $major or
+    # $minor, which are the -Major and -Minor switches.
+    $v = $versionMatches[0].Groups
+    $versionMajor = [int]$v[2].Value
+    $versionMinor = [int]$v[3].Value
+    $versionPatch = [int]$v[4].Value
+    if ($Major) {
+        $versionMajor++; $versionMinor = 0; $versionPatch = 0
+    }
+    elseif ($Minor) {
+        $versionMinor++; $versionPatch = 0
+    }
+    else {
+        $versionPatch++
+    }
+    $newVersion = "$versionMajor.$versionMinor.$versionPatch"
+    if ($release) {
+        $newDebug = 'false'
+        $thumbnailLabel = "v$versionMajor.$versionMinor"
+        $Force = $true
+    }
+    else {
+        $newDebug = 'true'
+        $thumbnailLabel = $null
+    }
+}
 
 if ([regex]::Matches($infoText, $DEBUG_MEMBER).Count -ne 1) {
     $problems += "DebugMode must appear exactly once, as true or false, for it to be set."
@@ -297,6 +363,15 @@ elseif (-not (Test-Path -LiteralPath (Join-Path $repo $thumbnail) -PathType Leaf
 }
 else {
     $ship += $thumbnail
+}
+
+# On a release run, a draw script beside this one redraws the Thumbnail with the
+# release label before it is staged. Without the script the Thumbnail is staged
+# as it is. With it, python must be on PATH.
+$drawThumbnail = Join-Path $PSScriptRoot $DRAW_THUMBNAIL
+$drawThumbnailOn = $release -and (Test-Path -LiteralPath $drawThumbnail -PathType Leaf)
+if ($drawThumbnailOn -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
+    $problems += "tools\$DRAW_THUMBNAIL is present but python is not on PATH, so the release thumbnail cannot be drawn."
 }
 
 if (Test-Path -LiteralPath (Join-Path $repo 'LICENSE') -PathType Leaf) { $ship += 'LICENSE' }
@@ -371,22 +446,8 @@ if ($problems.Count -gt 0) {
     exit 1
 }
 
-# The version and DebugMode this run stages, and the repo's Info.json text with
-# both in place of the old values. -Publish: minor + 1, patch 0, DebugMode false.
-# Otherwise: patch + 1, DebugMode true.
-$v = $versionMatches[0].Groups
-$major = [int]$v[2].Value
-$minor = [int]$v[3].Value
-$patch = [int]$v[4].Value
-if ($Publish) {
-    $newVersion = "$major.$($minor + 1).0"
-    $newDebug = 'false'
-    $Force = $true
-}
-else {
-    $newVersion = "$major.$minor.$($patch + 1)"
-    $newDebug = 'true'
-}
+# The repo's Info.json text with the new Version and DebugMode in place of the
+# old values.
 $newInfoText = [regex]::Replace($infoText, $VERSION_MEMBER, '${1}' + $newVersion + '${5}')
 $newInfoText = [regex]::Replace($newInfoText, $DEBUG_MEMBER, '${1}' + $newDebug)
 
@@ -479,7 +540,7 @@ if ($stale.Count -gt 0 -and -not $Force) {
 Write-Host "  $repo"
 Write-Host "    -> $Destination"
 Write-Host ""
-$kind = if ($Publish) { 'release' } else { 'dev build' }
+$kind = if ($Major) { 'major release' } elseif ($Minor) { 'minor release' } else { 'dev build' }
 Write-Host "  $kind  Version $($info.Version) -> $newVersion, DebugMode $($info.DebugMode.ToString().ToLower()) -> $newDebug"
 
 # Prints, for each client InstallRule target, the game directory it lands in,
@@ -509,8 +570,21 @@ foreach ($rule in @($info.InstallRule)) {
 }
 Write-Host ""
 
-# The repo's Info.json and stage:DebugMode lines take the new values first, so
-# the copy below stages them.
+# The repo's Thumbnail, Info.json and stage:DebugMode lines take the new values
+# first, so the copy below stages them. The Thumbnail is drawn before anything
+# else is written; a failed draw stops the run with the repo and item folder
+# unchanged.
+if ($drawThumbnailOn) {
+    Write-Host "    draw   $thumbnail '$thumbnailLabel' (tools\$DRAW_THUMBNAIL)"
+    if (-not $DryRun) {
+        & python $drawThumbnail (Join-Path $repo $thumbnail) $thumbnailLabel
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Warning "tools\$DRAW_THUMBNAIL exited $LASTEXITCODE. Nothing was staged."
+            exit 1
+        }
+    }
+}
 Write-Host "    write  Info.json Version $newVersion, DebugMode $newDebug"
 if (-not $DryRun) {
     [System.IO.File]::WriteAllText($infoPath, $newInfoText, (New-Object System.Text.UTF8Encoding $false))
