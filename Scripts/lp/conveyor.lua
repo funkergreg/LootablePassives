@@ -53,6 +53,7 @@ local passives = require("lp.passives")
 local ledger = require("lp.ledger")
 local hooks = require("lp.hooks")
 local role = require("lp.role")
+local host = require("lp.host")
 
 local array_count = util.array_count
 local field = util.field
@@ -212,7 +213,8 @@ local function on_consumed(entry)
     end
     ledger.owe(entry.owner, owed_items)
 
-    local delivered, owed, spilled, held = ledger.flush()
+    local delivered, owed, spilled, held, deliveries = ledger.flush()
+    host.tell_grants("now", deliveries)
     local summary = string.format("Disassembly yielded %d module(s): %s.",
         #names, table.concat(names, ", "))
     if held > 0 then

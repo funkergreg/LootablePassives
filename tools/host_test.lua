@@ -52,6 +52,39 @@ check("a settings text is not a notice", host.parse_notice(host.format_payload(t
 check("a notice is not a settings text", host.parse_payload(host.NOTICE_PREFIX .. "x"), nil)
 check("nil is not a notice", host.parse_notice(nil), nil)
 
+-- 1c. Grant reports: kind and items round-trip, and nothing else is one.
+local grant_text = host.format_grant("owed", { { "LP_Implant_SwimSpeed_up_2", 2 },
+    { "PalPassiveSkillChange_Consumable_PAL_ALLAttack_up3", 1 } })
+check("grant text format", grant_text, "LootablePassives grant owed LP_Implant_SwimSpeed_up_2x2 "
+    .. "PalPassiveSkillChange_Consumable_PAL_ALLAttack_up3x1")
+local grant = host.parse_grant(grant_text)
+check("grant kind", grant and grant.kind, "owed")
+check("grant item count", grant and #grant.items, 2)
+check("grant first item", grant and grant.items[1][1], "LP_Implant_SwimSpeed_up_2")
+check("grant first count", grant and grant.items[1][2], 2)
+check("grant id ending in a digit", grant and grant.items[2][1],
+    "PalPassiveSkillChange_Consumable_PAL_ALLAttack_up3")
+check("a grant with no items is not one", host.parse_grant("LootablePassives grant now "), nil)
+check("a malformed item is not one", host.parse_grant("LootablePassives grant now LP_Implant_A"),
+    nil)
+check("a notice is not a grant", host.parse_grant(host.NOTICE_PREFIX .. "x"), nil)
+check("a grant is not a notice", host.parse_notice(grant_text), nil)
+check("a grant is not a settings text", host.parse_payload(grant_text), nil)
+
+-- 1d. Setting changes: name and value round-trip, and nothing else is one.
+check("setting text format", host.format_setting("surgery_ui_gate", false),
+    "LootablePassives setting surgery_ui_gate=false")
+local setting_name, setting_value = host.parse_setting(host.format_setting("debug", true))
+check("setting name", setting_name, "debug")
+check("setting value", setting_value, true)
+check("a setting with no value is not one", host.parse_setting("LootablePassives setting debug="),
+    nil)
+check("a setting of another type is not one",
+    host.parse_setting("LootablePassives setting debug=1"), nil)
+check("a grant is not a setting", host.parse_setting(grant_text), nil)
+check("a setting is not a settings text",
+    host.parse_payload(host.format_setting("surgery_extraction", true)), nil)
+
 -- 2. The covered set: both markers, every alias, every direct route, and no
 --    vanilla passive or module.
 local covered, markers, aliases, direct = 0, 0, 0, 0

@@ -196,7 +196,8 @@ function attempt_flush()
     local authoritative = is_authority()
 
     if authoritative then
-        local delivered, owed = ledger.flush()
+        local delivered, owed, _, _, deliveries = ledger.flush()
+        host.tell_grants("owed", deliveries)
         if delivered > 0 then
             log(string.format("Delivered %d module(s) owed from an earlier session; %d still owed.",
                 delivered, owed))
@@ -302,7 +303,8 @@ conveyor.apply()
 
 -- A setting changed while the game runs. Every other setting is read at its
 -- next use.
-options.on_changed(function(name)
+options.on_changed(function(name, value)
+    host.tell_setting(name, value)
     if name == "conveyor_extraction" then
         conveyor.apply()
     end
@@ -329,7 +331,8 @@ joins.on_joined(function()
     if ledger.total_owed() == 0 then
         return
     end
-    local delivered, owed = ledger.flush()
+    local delivered, owed, _, _, deliveries = ledger.flush()
+    host.tell_grants("owed", deliveries)
     if delivered > 0 then
         log(string.format("Delivered %d owed module(s) when a player joined; %d still owed.",
             delivered, owed))

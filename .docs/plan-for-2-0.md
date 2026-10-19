@@ -372,20 +372,21 @@ Read this first when resuming.
 - **Where things stand.**
   - **Code:** 1.3-A to 1.3-I are coded (see each status section), with every offline check passing; the code is uncommitted.
   - **Acceptance session 1 is done** (its results sections, under 1.3-H): 1.3-G's handshake, hiding and on-screen notice, and 1.3-H's cleanup all pass on the dedicated server, after two crash fixes (1.2.6, 1.2.7) and the host notices (1.2.8).
+  - **Acceptance session 2 is done** (dev 1.2.9 to 1.2.11): conveyor queue, delivery on join, snapshot timing, the server backstop and recovery at boot pass. It added the client grant reports.
   - **No planned code is left.** What remains is the acceptance listed under "Remaining work" below, any fixes it finds, the docs cleanup, and the release (1.3-K). 1.3-J is not started and not needed.
 - **Decided (round 10):**
   - Runtime testing is acceptance testing, run once the code is complete.
   - 1.3-B step 4 is dropped.
-  - The "tested on a dedicated server" wording waits for the docs cleanup in 1.3-K.
-- **Repo state:** the last commit is `683568d`, from before implementation. Everything since is uncommitted: the 1.3-A to 1.3-I code, the new tests, the docs and this plan. `Info.json` and `Scripts/config.lua` are at dev `1.2.8` with `DebugMode`/`debug` true; the release stage resets them.
-- **The last staged build is dev 1.2.8.** The game and the local server both run it. The next stage needs no `-Force` unless a file is deleted.
+  - The "tested on a dedicated server" wording waited for general testing; it was written once the dedicated-server acceptance finished (2026-10-19, developer's call), with the uninstall steps.
+- **Repo state:** the last commit is `65d31ee`, the 1.3 code through acceptance session 1. Session 2's changes (the grant reports, the snapshot timing line, the docs and this plan) are uncommitted. `Info.json` and `Scripts/config.lua` are at a dev version with `DebugMode`/`debug` true; the release stage resets them.
+- **The last staged build is dev 1.2.14,** with `faults.lua` empty. The server's installed `config.lua` was left at `debug = false` and the client's BMM has `debug = false` saved; a server restart restores the server's `true`, and the client's needs BMM. The next stage needs no `-Force` unless a file is deleted.
 - **The dev rig.**
   - `PalServer\Mods\PalModSettings.ini` points `WorkshopRootDir` at the client's Workshop content folder, with the three `ActiveModList` lines, so `stage.ps1` feeds both machines.
   - The server runs the developer's world `9F2509B44E9A564ACFF601A9DB9A81EC`, with the host's UID swapped to `EFC7480B…`. **That world is now a test world** (developer, 2026-10-18): it was kept after the cleanup rather than restored. The developer plays on their self-hosted world.
   - **Backups** in `C:\Users\greg_\PalworldBackups\`: `2026-10-18-pre-server-move`, `2026-10-18-server-pre-uid-swap`, and `2026-10-18-server-pre-cleanup-test` (the server world before any cleanup, 622 LP implants in place), each with a `MANIFEST.md5`.
   - **Changing a server setting while it runs:** edit `PalServer\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\config.lua`. A debug build applies the edit within 5 s (`options.watch_file`), and a restart resets the file to the staged one.
   - The client's `UE4SS-settings.ini` has `bUseUObjectArrayCache = false`.
-- **Logs** in `.docs\` (gitignored): the probe logs `probe-*.log`, and acceptance session 1's `accept1-*.log`, crash reports included.
+- **Logs** in `.docs\` (gitignored): the probe logs `probe-*.log`, acceptance session 1's `accept1-*.log`, crash reports included, and session 2's `accept2-*.log`.
 - **The probe code is deleted.** The approach is in `README.md`, "Probing the game with debug keys"; the calls it proved are below.
 
 #### Remaining work
@@ -394,19 +395,12 @@ Read this first when resuming.
 
 **Acceptance on the dedicated server** (the rig is ready; one player is enough):
 
-1. **1.3-A, recovery at boot.**
-   - Arm `{ on = "one", halt_after_journal = "granted/marker" }` in `Scripts/lp/faults.lua` and stage.
-   - Run an Extract One, which stops with its journal row on disk. Restart the server.
-   - Expect `Recovered interrupted exchange …` in the server log at boot, before anyone joins.
-2. **1.3-B, conveyor timing.** One Pal, then a queue of three. Expect one `Disassembly yielded` line per Pal fed in, and no "close to complete" warning.
-3. **1.3-D, delivery on join.**
-   - Arm `{ on = "implant", fail_refund = true }` and trigger a refund: a duplicate insert with the Edit gate off, so the transaction refuses it. The module is then owed.
-   - Leave and rejoin. Expect `Delivered … when a player joined`.
-4. **1.3-E, release logging.** Set `debug = false` in the server's `config.lua` while it runs (the watch stops itself), and do the same on the client through Better Mod Manager. One Extract One should log one line on each machine. Count them.
-5. **1.3-G, the rest.**
-   - Keyboard and controller navigation over the collapsed list.
-   - **The unconfirmed path:** take `LootablePassives` out of the server's `ActiveModList` and restart. The modded client should hide the operations and show the "has not confirmed" message.
-6. **1.3-C step 4.** Measure `snapshot_all` on the server. That needs a timing debug line around it (`os.clock`), a small code change.
+Done in session 2 (see "Acceptance session 2" under 1.3-H): conveyor timing, delivery on join, the `snapshot_all` measurement, the server backstop for all three route kinds, recovery at boot, release logging, the setting-change relay, and the grant reports for the conveyor, Extract One, Extract All and debug off. Also done:
+
+- **1.3-G navigation** (developer): keyboard and controller navigation over the collapsed list both work.
+- **The owed-delivery client line: dropped** (developer): overtaken by events. The grant reports were seen working throughout session 2, and the owed kind shares their sending path.
+
+Also done in session 2: the 1.3-G unconfirmed path, and the uninstall procedure (cleanup first). **The dedicated-server acceptance list is complete.** To put the rig back: restore `ActiveModList=LootablePassives` in the server's `PalModSettings.ini`, restore the world from the backup if wanted, and restart.
 
 **Acceptance on the self-hosted world** (single player or listen host):
 
@@ -417,14 +411,16 @@ Read this first when resuming.
    - BMM no longer writes `Scripts\` or `mods.txt`.
    - Clean up the old Auto-mode files if BMM re-applies them.
 2. **`surgery_extraction` off locally.** The list hides, and the gate and the server backstop (with `surgery_ui_gate` off) refuse an extraction, an alias implant and a direct-route implant.
-3. **The cleanup through BMM on a listen host.** One implant in an inventory, a chest and a guild chest, plus a ledger debt. Back up first.
+3. **The cleanup through BMM on a listen host,** which is also the Workshop text's "Single player, or hosting co-op from your game" uninstall procedure, written before it was tested (developer's call). Follow those steps as written: one implant in an inventory, a chest and a guild chest, plus a ledger debt; then disable the mod and re-enter the world. Back up first.
 
 **Needs a second player** (a second machine or a friend; ask the developer):
 
 1. **1.3-C step 7:** two Extract Ones at the same moment on different Pals, and an Extract All during another player's conveyor run.
 2. **The test matrix's listen-host rows,** including a client without the mod.
 
-**Then 1.3-K:** the docs cleanup (the dedicated-server wording, and a re-read of the Workshop text, `README.md` and `CLAUDE.md` against what testing changed), the checks, the `-Minor` stage, and the commit, by the developer's call.
+**Then 1.3-K:** check `Scripts/lp/faults.lua` is `return {}` (it ships), a re-read of the Workshop text, `README.md` and `CLAUDE.md` against what the remaining testing changed, the checks, the `-Minor` stage, and the commit, by the developer's call.
+
+**Docs written from session 2 (2026-10-19):** the Workshop text's Multiplayer section now states what was tested on a dedicated server, replacing "reported NOT TO WORK ON DEDICATED SERVER HOSTING"; its Uninstalling section has two procedures, both starting with the item removal (dedicated server through `config.lua` and `ActiveModList`, tested; single player or co-op host through Better Mod Manager or `config.lua`, not yet tested); the Known Issues have the price mismatch on an unmodded host; the changelog says so. `README.md` has the loader's `ActiveModList` behaviour and the join crash; `CLAUDE.md`'s uninstall note has the crash.
 
 #### Engine calls proven by the probes (use these in 1.3-A to 1.3-H)
 
@@ -955,6 +951,55 @@ The detail is in [Proposed restructure](#proposed-restructure) and [Draft UI tex
   - **The world was kept** in its cleaned state (developer's choice), and the pre-cleanup backup stays in `PalworldBackups`.
 - **Resumed at step 3** on dev 1.2.6: the client restarts and rejoins; the server keeps running 1.2.5, whose server code is unchanged, with `surgery_extraction = false` still in its file. On joining, the client should hear `surgery=0` and the list should hide.
 
+#### Acceptance session 2: faults and timing on the dedicated server (dev build 1.2.9, 2026-10-18/19)
+
+Setup: `faults.lua` armed with `{ on = "implant", fail_refund = true }` and two `{ on = "one", halt_after_journal = "granted/marker" }`, plus a debug timing line on the server snapshot. Logs: `.docsccept2-*.log`.
+
+- **1.3-B conveyor timing, queue of three: pass.** Three `consumed` lines at rates 1.0031, 1.0016 and 1.0012, about 1.7 s apart, and one `Disassembly yielded` line per Pal: 4 + 3 + 4 = 11 modules, all in the player's inventory. No "close to complete" warning. A single Pal was seen in session 1.
+- **1.3-C step 4, `snapshot_all` on the server: measured.** 1,760 Pals in 94 ms, then 1,730 Pals in 60 ms and 61 ms, once per remote Surgery request. Tolerable; no registry needed for 1.3.0.
+- **The game itself refuses a duplicate passive,** even through an alias route: with `surgery_ui_gate` off, Edit stayed disabled for an implant of a passive the Pal already had, and the client logged no `Edit blocked` line. The server's duplicate check in `finalize_implant` is a second line that a player cannot reach this way.
+- **The server backstop on a dedicated server: pass for both route kinds.** The client's list was built while the host had `surgery_extraction` on; it was then turned off with the screen open and `surgery_ui_gate` off, so Edit stayed lit.
+  - **Direct route (Legend):** `refused implanting Legend … Undone=true, module refunded`. The Pal was left without Legend and the module was back after reopening the screen.
+  - **Vanilla consumable route (Demon God, `PAL_ALLAttack_up3`):** `A passive list changed with no marker, so this was not one of our operations`. Correct: the game's own implants are outside `surgery_extraction`, and their entries are not hidden.
+  - **Alias route (Ace Swimmer, `SwimSpeed_up_2`):** claimed fault scenario 1, `DEBUG FAULT: direct refund … skipped`, `recorded it as owed`, `refused implanting SwimSpeed_up_2 … Alias undone=true, module owed`. The ledger file held one row for the player.
+  - **UI wrinkle:** after the server undid an implant, the open Surgery screen still showed the passive on the Pal. The client logged one `OnPassiveUpdate` (the add) and none for the undo. Reopening the screen shows the true state. Matches the known Edit-button redraw issue in the Workshop text's known issues; not fixed.
+  - Reopening the screen with the host off hid 15 entries (`off_host`) and showed the on-screen notice.
+- **1.3-D delivery on join: pass.** Leaving to the title and rejoining: `Delivered 1 owed module(s) when a player joined; 0 still owed.` 3 s after the join, the in-game item notification, the module count back at 2, and the ledger file deleted.
+- **Finding: the client's log recorded none of the grants.** Grants happen on the server, so a player on a dedicated server has nothing in their own log. **Added in 1.2.10 (developer's request):** grant reports from the host.
+  - `host.tell_grants(kind, deliveries)` sends `LootablePassives grant <kind> <item id>x<count> …` through the same RPC to the remote player each delivery went to. The host's own player is skipped; they read the host's log.
+  - Kind `owed`, from both ledger flushes in `main.lua` (world entry and join): the client always logs `The host delivered N module(s) owed to you from earlier: …`.
+  - Kind `now`, from the conveyor's flush and from every exchange's grants and refunds (`note_granted` and `report_granted` in `lp/transaction.lua`, sent after each `run_finalize`): the client logs `The host granted you N module(s): …` only when its own `debug` is true.
+  - `ledger.flush` returns the deliveries as a fifth value. `host_test` checks the text's round trip.
+- **The grant reports, in game:**
+  - **Conveyor (1.2.10): pass.** `The host granted you 4 module(s): …` on the client 0.02 s after the disassembly.
+  - **Extract One: missed in 1.2.10, fixed in 1.2.11.** `finalize_extraction` replaces its capture record with the resolved one (`record = resolved`), so the grant was noted on a table `run_finalize` did not report. Both now share one `granted` list. In 1.2.11 an Extract One logged `The host granted you 1 module(s): LP_Implant_SwimSpeed_up_1 x1.` on the client, even with the exchange halted by a fault.
+  - Not yet seen: an owed delivery logging `The host delivered …` on the client, and the `debug` off case.
+- **1.3-G unconfirmed path and the uninstall: pass, after a finding.**
+  - **Taking the mod out of the server's `ActiveModList`** made the loader set `LootablePassives : 0` in `mods.txt` and delete the data files, leaving empty folders. PalSchema then printed `Loading mod: LootablePassives` with no rows after it, which was first misread as the data half still loading.
+  - **The server crashed on every join without the mod,** both with that loader removal and with the mod's installed folders deleted by hand: `EXCEPTION_ACCESS_VIOLATION reading 0x68` on the game thread, the same stack each time, about 6 s after the client entered the world. The world itself loaded. No Lua of this mod ran on the server, and the client sends the server nothing at join. Cause: the joining player's save held `LP_Implant_*` items unknown to a server without the mod's data. PalSchema warns at every start that it cannot find `FPalPlayerRecordDataRepInfoArrayThreadSafe_IntVal::ApplyDataMap` and so cannot clean invalid items from player data. Logs: `.docs\accept2-server-e-datahalf-crash.log`, `accept2-server-f-nomod-crash.log`, `accept2-crash-datahalf.log`.
+  - **Control:** with the mod back on the server, the same join worked.
+  - **The cleanup, then the uninstall:** the cleanup removed 20 implants (17 in inventories, 3 in chests, 12 stacks) in about 22 s and cleared itself; the server autosaved after it. With the mod then removed from the server, the same player joined without a crash. **The uninstall needs the cleanup first;** the Workshop text's Uninstalling section now says so, and asks for every player holding implants to be online during the removal (whether an offline player's inventory is reached was not tested).
+  - **The client on an unmodded host:** no host message; on opening the Surgery list, 7 entries hidden (`unconfirmed`) and the notice "this world's host has not confirmed it runs this mod (1.3.0 or later), so its Surgery operations are hidden." The game's own operations worked as vanilla: the consumable implants were free to insert, and the server log stayed clean.
+  - **Known issue, added to the Workshop text:** the client lists the mod's repriced vanilla operations, but the unmodded host charges the game's prices: Ferocious's recipe operation was listed at 5,000 and cost 50,000.
+  - **The test world is now unmodded on the server** and cleaned of the mod's implants; the developer plans to restore from the backup.
+- **1.3-A recovery at boot: pass.** Two Extract Ones halted at `granted/marker`, Pal A kept in the party and Pal B moved to the base as a worker. The server restart (with 1.2.11 installed over the journal) logged `Recovered interrupted exchange of … (marker/granted) after entering the world.` for both, 5 s after the world loaded and before anyone joined, and deleted the journal. On joining, both Pals had an empty slot and no marker, and the modules were in the inventory. **A dedicated server loads offline players' party Pals with the world,** so recovery at world entry reaches them and no join-time pass is needed.
+- **Left on the test world:** one Pal with an `LP_ExtractOne` marker and a `granted/marker` row, from the 1.2.11 grant check; the next server start recovers it.
+- `faults.lua` is back to `return {}` from 1.2.12.
+- **Extract All grant report: pass.** One `grant now` text listing all four modules, logged on the client as `The host granted you 4 module(s): …`.
+- **Finding: Better Mod Manager showed Debug logging OFF in a dev build running with `debug = true`.** `debug` was registered with the shipped default (false) and left out of the startup hand-off, so BMM showed its default. **Fixed in 1.2.13:** `debug` is registered with the build's own `config.lua` value as its default (`registered_defaults` in `lp/options.lua`), so BMM shows a dev build's debug as on and a release's as off, and saves only a change the player makes; `reconcile` no longer special-cases it. `options_test` checks the registered default and that a saved `debug = false` wins over a dev build's `true`.
+- **Added in 1.2.14 (developer's request): setting changes as DEBUG lines, relayed from the host.**
+  - `options.change` logs `DEBUG: Setting <name> is now <value>.` only when `debug` is on before or after the change; it was an info line on every machine.
+  - `host.tell_setting(name, value)`, an `on_changed` listener in `main.lua`, sends `LootablePassives setting <name>=<value>` to every remote controller while the host's `debug` is on. A client logs `DEBUG: The host's setting <name> is now <value>.` only when its own `debug` is on. So a client sees the host's changes only with both on, and its own changes with its own on.
+  - `host_test` checks the text's round trip.
+- **1.2.14 run, both machines restarted: pass.**
+  - The server start recovered the 1.2.11 grant-check Pal (`Recovered interrupted exchange of SwimSpeed_up_1`).
+  - BMM showed Debug logging ON in the dev build.
+  - **Host change, both debug on:** server `DEBUG: Setting surgery_ui_gate is now false.`, client `DEBUG: The host's setting surgery_ui_gate is now false.`
+  - **Client changes in BMM:** `DEBUG:` lines for Surgery button check off and on, and for `debug` off. `ModConfig.LootablePassives.lua` then held only `{["debug"]=false}`, and the installed `config.lua` read `debug = false`.
+  - **Host change, client debug off:** sent by the server, nothing logged on the client.
+  - **Host debug off:** logged on the server and not relayed, since the host's debug is off once it applies.
+- **1.3-E release logging: pass.** With `debug` off on both machines, one Extract One logged exactly one line on each: server `Extracted PAL_sadist into LP_Implant_PAL_sadist for player 256 (server snapshot).`, client `Surgery LP_ExtractOne finished; the Pal now has [].` No grant report line on the client.
+
 ### 1.3-I. Docs: Workshop text, README and CLAUDE.md
 
 1. **`workshop-description.txt`:**
@@ -1005,7 +1050,7 @@ To be turned into BBCode at execution. Every step was verified on the dev rig on
 #### 1.3-I status: done, pending acceptance
 
 - **`workshop-description.txt`:**
-  - Added "every player should run the same version", the client hiding and join delivery. **"Reported NOT TO WORK ON DEDICATED SERVER HOSTING" stays** until the docs-cleanup step in 1.3-K (round 10).
+  - Added "every player should run the same version", the client hiding and join delivery. "Reported NOT TO WORK ON DEDICATED SERVER HOSTING" stayed until the dedicated-server acceptance finished, and was then replaced (2026-10-19).
   - New sections: the dedicated-server install steps (as drafted, BBCode); "Settings" (every setting, BMM or `config.lua`, the reset on update stated plainly); "Removing this mod's items from the world (experimental, host only)", including the manual `config.lua` route.
   - BMM is listed as optional; "Pal Surgery Table" and "Disposable Implant" are used throughout; the 1.3.0 changelog is added.
 - **The Edit-button coloring known issue is kept:** nothing in 1.3.0 is verified to fix it.

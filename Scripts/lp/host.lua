@@ -10,7 +10,12 @@
 -- reports true for is skipped: a listen host reads its own settings.
 --
 -- The host also sends notices, NOTICE_PREFIX and a message, which a client
--- logs and shows on screen through lp/notice.lua.
+-- logs and shows on screen through lp/notice.lua, and grant reports,
+-- GRANT_PREFIX, a kind and the modules it put in that player's inventory,
+-- which a client logs: kind "owed" always, kind "now" only when the client's
+-- own debug setting is true. While the host's debug setting is true, each of
+-- its runtime setting changes is sent too, SETTING_PREFIX and name=value,
+-- which a client logs only when its own debug setting is true.
 --
 -- On a client, a hook on the same function reads the text, which arrives as
 -- its second argument. A text with neither prefix is not this mod's and is
@@ -39,6 +44,16 @@ local PAYLOAD_VERSION = "1"
 
 -- A message from the host for its players to read, sent through the same RPC.
 local NOTICE_PREFIX = "LootablePassives notice "
+
+-- What the host put in this player's inventory: GRANT_PREFIX, a kind ("now"
+-- for a grant as the exchange or disassembly happens, "owed" for a delivery of
+-- modules owed from earlier), then one <item id>x<count> per module type,
+-- space-separated.
+local GRANT_PREFIX = "LootablePassives grant "
+
+-- A runtime change of one of the host's settings: SETTING_PREFIX, then
+-- <name>=true or <name>=false.
+local SETTING_PREFIX = "LootablePassives setting "
 
 local RECEIVE_HOOK = "/Script/Pal.PalPlayerController:Debug_ReceiveCheatCommand_ToClient"
 
@@ -84,6 +99,56 @@ local function parse_notice(text)
     end
     local message = text:sub(#NOTICE_PREFIX + 1)
     return message ~= "" and message or nil
+end
+
+-- The grant report text for kind and items, a list of { item_id, count }.
+local function format_grant(kind, items)
+    local parts = {}
+    for index, item in ipairs(items) do
+        parts[index] = string.format("%sx%d", item[1], item[2])
+    end
+    return GRANT_PREFIX .. kind .. " " .. table.concat(parts, " ")
+end
+
+-- { kind = string, items = { { item_id, count }, ... } } from a grant report,
+-- or nil when text is not one or names no item.
+local function parse_grant(text)
+    if type(text) ~= "string" or text:sub(1, #GRANT_PREFIX) ~= GRANT_PREFIX then
+        return nil
+    end
+    local kind, rest = text:sub(#GRANT_PREFIX + 1):match("^(%a+) (.*)$")
+    if kind == nil then
+        return nil
+    end
+    local items = {}
+    for token in rest:gmatch("%S+") do
+        local item_id, count = token:match("^(.+)x(%d+)$")
+        if item_id == nil then
+            return nil
+        end
+        items[#items + 1] = { item_id, tonumber(count) }
+    end
+    if #items == 0 then
+        return nil
+    end
+    return { kind = kind, items = items }
+end
+
+-- The setting-change text for name and value, a boolean.
+local function format_setting(name, value)
+    return string.format("%s%s=%s", SETTING_PREFIX, name, tostring(value))
+end
+
+-- name, value from a setting-change text, or nil when text is not one.
+local function parse_setting(text)
+    if type(text) ~= "string" or text:sub(1, #SETTING_PREFIX) ~= SETTING_PREFIX then
+        return nil
+    end
+    local name, value = text:sub(#SETTING_PREFIX + 1):match("^([%w_]+)=(%a+)$")
+    if value ~= "true" and value ~= "false" then
+        return nil
+    end
+    return name, value == "true"
 end
 
 --------------------------------------------------------------------------------
@@ -172,9 +237,87 @@ local function broadcast(message)
     end
 end
 
+-- Reports deliveries, a list of { uid = <PlayerUId key>, item_id, count }, to
+-- each remote player they went to, as one grant report of kind per player. A
+-- delivery to this machine's own player, or with no uid, is not sent: that
+-- player reads this machine's log.
+local function tell_grants(kind, deliveries)
+    if deliveries == nil or #deliveries == 0 or not role.is_authority() then
+        return
+    end
+    local by_uid, order = {}, {}
+    for _, delivery in ipairs(deliveries) do
+        local uid = delivery.uid
+        if uid ~= nil then
+            local items = by_uid[uid]
+            if items == nil then
+                items = { counts = {}, list = {} }
+                by_uid[uid] = items
+                order[#order + 1] = uid
+            end
+            local item_id = delivery.item_id
+            if items.counts[item_id] == nil then
+                items.counts[item_id] = 0
+                items.list[#items.list + 1] = item_id
+            end
+            items.counts[item_id] = items.counts[item_id] + (delivery.count or 1)
+        end
+    end
+    if #order == 0 then
+        return
+    end
+    local controllers = remote_controllers()
+    for _, uid in ipairs(order) do
+        local items = by_uid[uid]
+        local listed = {}
+        for index, item_id in ipairs(items.list) do
+            listed[index] = { item_id, items.counts[item_id] }
+        end
+        for _, entry in ipairs(controllers) do
+            if entry.uid == uid then
+                send(entry.controller, format_grant(kind, listed))
+                break
+            end
+        end
+    end
+end
+
+-- Sends a runtime change of this host's setting name to every remote
+-- controller, only while this host's debug setting is true.
+local function tell_setting(name, value)
+    if not role.is_authority() or not options.debug_on() then
+        return
+    end
+    local text = format_setting(name, value)
+    for _, entry in ipairs(remote_controllers()) do
+        send(entry.controller, text)
+    end
+end
+
 --------------------------------------------------------------------------------
 -- Receiving, on a client
 --------------------------------------------------------------------------------
+
+-- The modules of a grant report as "<item id> x<count>, ...", and their total.
+local function describe_items(items)
+    local parts, total = {}, 0
+    for index, item in ipairs(items) do
+        parts[index] = string.format("%s x%d", item[1], item[2])
+        total = total + item[2]
+    end
+    return table.concat(parts, ", "), total
+end
+
+-- Logs a grant report: "owed" always, any other kind only under debug.
+local function log_grant(grant)
+    local listed, total = describe_items(grant.items)
+    if grant.kind == "owed" then
+        log(string.format("The host delivered %d module(s) owed to you from earlier: %s.", total,
+            listed))
+    else
+        debug_log(string.format("The host granted you %d module(s): %s.", total, listed))
+    end
+end
 
 -- Host notices received and not yet shown. The receiver only queues them;
 -- show_notices runs on the next game-thread tick.
@@ -202,6 +345,17 @@ local function on_receive(_, message)
     local converted, text = pcall(_call_to_string, value)
     if not converted then
         text = type(value) == "string" and value or nil
+    end
+    local setting_name, setting_value = parse_setting(text)
+    if setting_name ~= nil then
+        debug_log(string.format("The host's setting %s is now %s.", setting_name,
+            tostring(setting_value)))
+        return
+    end
+    local grant = parse_grant(text)
+    if grant ~= nil then
+        log_grant(grant)
+        return
     end
     local notice_text = parse_notice(text)
     if notice_text ~= nil then
@@ -279,12 +433,18 @@ return {
     NOTICE_PREFIX = NOTICE_PREFIX,
     broadcast = broadcast,
     forget = forget,
+    format_grant = format_grant,
     format_payload = format_payload,
+    format_setting = format_setting,
     install = install,
+    parse_grant = parse_grant,
     parse_notice = parse_notice,
     parse_payload = parse_payload,
+    parse_setting = parse_setting,
     refusal = refusal,
     send_to_all = send_to_all,
     send_to_player = send_to_player,
     surgery_allowed = surgery_allowed,
+    tell_grants = tell_grants,
+    tell_setting = tell_setting,
 }

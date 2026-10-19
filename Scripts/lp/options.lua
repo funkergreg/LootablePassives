@@ -159,13 +159,17 @@ local bmm = nil
 
 -- Applies one boolean setting: the live table, then config.lua, then the
 -- listeners. Does nothing for an unknown name, a non-boolean value, or a value
--- the setting already has.
+-- the setting already has. Logs the change as a DEBUG line when debug is on
+-- before or after it, so turning debug itself off is logged too.
 local function change(name, value)
     if DEFAULTS[name] == nil or type(value) ~= "boolean" or flag(name) == value then
         return
     end
+    local was_debug = debug_on()
     live[name] = value
-    log(string.format("Setting %s is now %s.", name, tostring(value)))
+    if was_debug or debug_on() then
+        log(string.format("DEBUG: Setting %s is now %s.", name, tostring(value)))
+    end
     write_back({ [name] = value })
     for _, listener in ipairs(listeners) do
         local succeeded, raised = pcall(listener, name, value)
@@ -293,15 +297,28 @@ local function mod_folder()
     return util.SCRIPT_DIRECTORY:match("^(.*)[\\/][^\\/]+[\\/]$") or util.SCRIPT_DIRECTORY
 end
 
--- Each setting's value from the two sources at startup. A value Better Mod
--- Manager has saved (one that differs from the shipped default) wins, and is
--- written into config.lua. Otherwise a config.lua value that differs from the
--- shipped default is handed to Better Mod Manager, except debug, whose
--- config.lua value is the build's and is not saved for later builds.
----@param handle table
-local function reconcile(handle)
-    local changes = {}
+-- The default each setting is registered with in Better Mod Manager: the
+-- shipped one from DEFAULTS, except debug, whose default is this build's
+-- config.lua value as read at load (true in a dev build, false in a release).
+-- Better Mod Manager shows that value and saves only a change from it.
+local function registered_defaults()
+    local defaults = {}
     for name, default in pairs(DEFAULTS) do
+        defaults[name] = default
+    end
+    defaults.debug = flag("debug")
+    return defaults
+end
+
+-- Each setting's value from the two sources at startup. A value Better Mod
+-- Manager has saved (one that differs from its registered default) wins, and
+-- is written into config.lua. Otherwise a config.lua value that differs from
+-- the registered default is handed to Better Mod Manager.
+---@param handle table
+---@param defaults table
+local function reconcile(handle, defaults)
+    local changes = {}
+    for name, default in pairs(defaults) do
         local saved = handle.values[name]
         local current = flag(name)
         if type(saved) == "boolean" and saved ~= default then
@@ -309,7 +326,7 @@ local function reconcile(handle)
                 live[name] = saved
                 changes[name] = saved
             end
-        elseif current ~= default and name ~= "debug" then
+        elseif current ~= default then
             pcall(handle.set, name, current)
         end
     end
@@ -333,6 +350,12 @@ local function register_with_bmm()
             .. "menu: " .. tostring(module))
         return
     end
+    local defaults = registered_defaults()
+    for _, entry in ipairs(OPTIONS) do
+        if entry.key ~= nil then
+            entry.default = defaults[entry.key]
+        end
+    end
     local registered, handle = pcall(module.register, {
         id = BMM_ID,
         name = "Lootable Passives",
@@ -348,7 +371,7 @@ local function register_with_bmm()
         return
     end
     bmm = handle
-    reconcile(handle)
+    reconcile(handle, defaults)
 end
 
 --------------------------------------------------------------------------------

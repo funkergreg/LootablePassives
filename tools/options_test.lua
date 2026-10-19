@@ -154,7 +154,8 @@ return {
 
 -- 5a. A value saved in Better Mod Manager wins over config.lua and is written
 --     into it; a config.lua value differing from the default is handed to
---     Better Mod Manager, debug excepted.
+--     Better Mod Manager. debug is registered with the file's value as its
+--     default, so it is not handed over.
 SAVED = { surgery_extraction = false }
 SET = {}
 local edited = SHIPPED:gsub("(\n%s*surgery_ui_gate%s*=%s*)true", "%1false")
@@ -179,7 +180,9 @@ local by_key = {}
 for _, option in ipairs(REGISTERED.options) do
     if option.key then by_key[option.key] = option end
 end
-check("debug default is false", by_key.debug and by_key.debug.default, false)
+check("debug default is the file's value", by_key.debug and by_key.debug.default, true)
+check("surgery default is the shipped one", by_key.surgery_ui_gate
+    and by_key.surgery_ui_gate.default, true)
 check("conveyor default is true", by_key.conveyor_extraction and by_key.conveyor_extraction.default,
     true)
 check("removal depends on experimental",
@@ -200,6 +203,18 @@ check("onChange written back",
 SET = {}
 options.set("experimental_features", true)
 check("set handed to Better Mod Manager", table.concat(SET, ","), "experimental_features=true")
+
+-- 5d. debug turned off in Better Mod Manager during a dev build wins over the
+--     build's true, and is written into config.lua.
+SAVED = { debug = false }
+SET = {}
+options = fresh_options(SHIPPED:gsub("(\n%s*debug%s*=%s*)%a+", "%1true"))
+options.register_with_bmm()
+check("saved debug off wins over the build's on", options.debug_on(), false)
+check("saved debug off written into config.lua",
+    value_line(read_file(MOD_SCRIPTS .. "config.lua"), "debug"),
+    "    debug = false, -- stage:DebugMode")
+check("nothing handed over", table.concat(SET, ","), "")
 
 -- 6. Debug builds: an edit to config.lua while the game runs is applied at the
 --    next poll. The scheduler is a stand-in that runs one poll per call.

@@ -22,6 +22,7 @@ local inventory = require("lp.inventory")
 local ledger = require("lp.ledger")
 local recovery = require("lp.recovery")
 local local_click = require("lp.local_click")
+local host = require("lp.host")
 local is_valid = util.is_valid
 local log = util.log
 local run_later = util.run_later
@@ -70,8 +71,12 @@ local settle_before_exchange = recovery.settle_before_exchange
 -- OwnerPlayerUId. resolve_record refuses when more than one snapshot shows a
 -- marker swap, which is what keeps two players' simultaneous requests apart.
 local function snapshot_server_parameters(request_player_id)
+    local started = os.clock()
+    local snapshots = snapshot_all()
+    debug_log(string.format("server snapshot: %d Pal(s) read in %.1f ms", #snapshots,
+        (os.clock() - started) * 1000))
     return {
-        snapshots = snapshot_all(),
+        snapshots = snapshots,
         request_player_id = request_player_id,
         mode_source = "server snapshot",
     }
@@ -144,6 +149,37 @@ local function unmatched_change(before_ids, after_ids)
         end
     end
     return "vanilla"
+end
+
+--------------------------------------------------------------------------------
+-- Grant reports
+--------------------------------------------------------------------------------
+
+-- Adds item_id to record.granted, the modules this exchange has put in the
+-- requester's inventory and not yet reported.
+local function note_granted(record, item_id)
+    local granted = record.granted
+    if granted == nil then
+        granted = {}
+        record.granted = granted
+    end
+    granted[#granted + 1] = item_id
+end
+
+-- Sends record.granted to the requester through host.tell_grants as kind
+-- "now", then empties it. Does nothing when nothing was granted.
+local function report_granted(record)
+    local granted = record.granted
+    if granted == nil or #granted == 0 then
+        return
+    end
+    local uid = player_uid(record.request_player_id)
+    local deliveries = {}
+    for index = #granted, 1, -1 do
+        deliveries[index] = { uid = uid, item_id = granted[index], count = 1 }
+        granted[index] = nil
+    end
+    host.tell_grants("now", deliveries)
 end
 
 --------------------------------------------------------------------------------
@@ -376,6 +412,9 @@ local function extract_additional(record, passive_id, item_id, bag)
         return false, false
     end
     local granted, reason = add_implant(bag, item_id)
+    if granted then
+        note_granted(record, item_id)
+    end
     if not granted then
         -- The passive is kept. The row on disk still reads prepared, which
         -- recovery acts on by removing the marker and nothing else.
@@ -449,23 +488,24 @@ end
 -- when it went into a filled slot -- and refunds one module for target. Returns
 -- whether the Pal is back as it was, and refund_module's answer. Every abort in
 -- finalize_implant calls it.
-local function refund_module(request_player_id, item_id)
+local function refund_module(record, item_id)
     if fault("fail_refund", false) then
         fault_log("direct refund of " .. item_id .. " skipped on purpose")
     else
-        local bag = find_inventory(request_player_id)
+        local bag = find_inventory(record.request_player_id)
         if is_valid(bag) and add_implant(bag, item_id) then
+            note_granted(record, item_id)
             return "refunded"
         end
     end
-    ledger.owe(player_uid(request_player_id), { item_id })
+    ledger.owe(player_uid(record.request_player_id), { item_id })
     log(string.format("Could not refund %s directly; recorded it as owed.", item_id))
     return "owed"
 end
 
 local function unwind_alias(record, target)
     local undone = undo_swap(record.parameter, record.passive_id, record.lock)
-    return undone, refund_module(record.request_player_id, module_for(target))
+    return undone, refund_module(record, module_for(target))
 end
 
 -- A resolved record whose marker is an alias: replaces the alias with
@@ -611,7 +651,7 @@ local function refuse_direct_route(record)
         return
     end
     local undone = undo_swap(snapshot.parameter, removed, added)
-    local refund = refund_module(record.request_player_id, module_for(added))
+    local refund = refund_module(record, module_for(added))
     log(string.format(
         "WARNING: refused implanting %s for player %s: surgery_extraction is off on this host. "
         .. "Undone=%s, module %s; the gold was spent. The requesting game has no Surgery check "
@@ -629,6 +669,7 @@ local function run_finalize(record, attempt)
     begin_scenario(record.scenario)
     local succeeded, raised = pcall(finalize_extraction, record, attempt)
     end_scenario()
+    report_granted(record)
     if succeeded then
         return
     end
@@ -720,6 +761,10 @@ function finalize_extraction(record, attempt)
         end
         return
     end
+    -- One granted list for both tables: run_finalize reports the capture
+    -- record's, and everything below notes grants on resolved.
+    record.granted = record.granted or {}
+    resolved.granted = record.granted
     record = resolved
 
     -- Implant insertion, handled before the two extraction checks below: the
@@ -780,6 +825,9 @@ function finalize_extraction(record, attempt)
         return
     end
     local granted, reason = add_implant(bag, record.item_id)
+    if granted then
+        note_granted(record, record.item_id)
+    end
     if not granted then
         log(string.format("ERROR: implant grant failed for %s (%s); %s.",
             record.passive_id, tostring(reason), restore_on_abort(record, "keep")))

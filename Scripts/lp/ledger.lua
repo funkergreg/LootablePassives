@@ -244,7 +244,9 @@ local function sync_after_flush(rows)
     end
 end
 
--- Delivers every row it can. Returns delivered, owed, spilled, held.
+-- Delivers every row it can. Returns delivered, owed, spilled, held, and the
+-- deliveries made, as a list of { uid = <recipient's PlayerUId key>, item_id,
+-- count }.
 --
 -- Each row goes to ordered_for's first candidate that add_modules succeeds on;
 -- a failure moves to the next candidate and a row with no candidates is counted
@@ -256,17 +258,18 @@ local function flush()
         sync_after_flush(rows)
     end
     if #rows == 0 then
-        return 0, 0, 0, 0
+        return 0, 0, 0, 0, {}
     end
     local candidates = inventory.delivery_candidates()
     if #candidates == 0 then
         -- Distinct from every candidate failing, so it gets its own line.
         local owed = total_owed()
         log(string.format("No player inventory available; %d module(s) stay owed.", owed))
-        return 0, owed, 0, 0
+        return 0, owed, 0, 0, {}
     end
 
     local delivered, spilled, held = 0, 0, 0
+    local deliveries = {}
     -- The rows not delivered, in the order pending_rows sorted them, which is
     -- what persist takes; built here so the rewrite below does not sort again.
     local remaining = {}
@@ -292,6 +295,8 @@ local function flush()
                     end
                 end
                 delivered = delivered + row.count
+                deliveries[#deliveries + 1] = { uid = candidate.uid, item_id = row.item_id,
+                    count = row.count }
                 if detail == "spilled" then
                     spilled = spilled + row.count
                 end
@@ -316,7 +321,7 @@ local function flush()
     if #remaining < #rows then
         sync_after_flush(remaining)
     end
-    return delivered, total_owed(), spilled, held
+    return delivered, total_owed(), spilled, held, deliveries
 end
 
 -- Drops every debt whose item id matches(item_id) is true, for every owner,
