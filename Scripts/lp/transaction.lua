@@ -724,10 +724,20 @@ function finalize_extraction(record, attempt)
         if vanilla and not surgery_on() then
             refuse_direct_route(record)
         elseif vanilla then
-            -- The same outcome as running out of attempts with no marker, on
-            -- the first attempt that sees the change.
-            debug_log("A passive list changed with no marker, so this was not one of our "
-                .. "operations; nothing was changed.")
+            -- A direct route installs its passive with no marker, so the game
+            -- completed it and spent the module; it is logged and left as is.
+            -- Any other change is the same outcome as running out of attempts
+            -- with no marker, on the first attempt that sees the change.
+            local snapshot, added = direct_route_change(record)
+            if snapshot ~= nil then
+                debug_log(string.format(
+                    "Implanted %s through its direct route for player %s (%s); the game spent "
+                    .. "its module.", added, tostring(player_id_number(record.request_player_id)),
+                    record.mode_source))
+            else
+                debug_log("A passive list changed with no marker, so this was not one of our "
+                    .. "operations; nothing was changed.")
+            end
         elseif attempt < RESOLVE_ATTEMPTS then
             schedule_finalize(record, attempt + 1, RESOLVE_INTERVAL_MS)
         else

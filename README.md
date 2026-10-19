@@ -120,7 +120,7 @@ lua tools\host_test.lua         # after any change to Scripts\lp\host.lua, passi
 # restart Palworld (on both machines for a multiplayer test), check the version, test, read the log
 ```
 
-`stage.ps1` writes `Version` and `DebugMode` into the repository's `Info.json` and then stages that file unchanged, so the repository always matches what was last staged. It writes the same `DebugMode` value onto every staged line tagged `stage:DebugMode`, which in this mod is the `debug` line in `Scripts\settings.lua`:
+`stage.ps1` writes `Version` and `DebugMode` into the repository's `Info.json` and then stages that file unchanged, so the repository always matches what was last staged. It writes the same `DebugMode` value onto every staged line tagged `stage:DebugMode`, which in this mod is the `debug` line in `Scripts\config.lua`:
 
 | Run | `Version` | `DebugMode` and `debug` | Example |
 | --- | --- | --- | --- |
@@ -133,7 +133,7 @@ Only a release has patch `0`. Giving `-Minor` and `-Major` together stops the ru
 The default run, with no flag, is an explicit patch update, and the patch bump is not optional, even for a stage that is only tested locally and never uploaded. At launch the loader reinstalls a mod when the item folder's `Version` differs from the installed copy's (see [How a staged build reaches the game](#how-a-staged-build-reaches-the-game)). Without a new version, a changed build can sit in the item folder while the game keeps running the old one. A subscribed machine relies on that version change alone. On the host, the dev build's `DebugMode` true also makes the loader reinstall at every launch, but the patch bump is still what gives each test build a version of its own, which you can check under **Options → Mod Management** to confirm which build the game loaded.
 
 1. Preview the stage if you want: add `-DryRun` to any of the three commands. It prints the next version and changes nothing.
-2. Stage a dev build with `.\tools\stage.ps1`, or a release with `.\tools\stage.ps1 -Minor` or `.\tools\stage.ps1 -Major`. A release also redraws `thumbnail.png` with its version first (see [The release thumbnail](#the-release-thumbnail)). Commit the rewritten `Info.json` and `Scripts\settings.lua`, and for a release `thumbnail.png`, with the change they carry.
+2. Stage a dev build with `.\tools\stage.ps1`, or a release with `.\tools\stage.ps1 -Minor` or `.\tools\stage.ps1 -Major`. A release also redraws `thumbnail.png` with its version first (see [The release thumbnail](#the-release-thumbnail)). Commit the rewritten `Info.json` and `Scripts\config.lua`, and for a release `thumbnail.png`, with the change they carry.
 3. For a release, or a multiplayer test, upload from **Palworld Mod Uploader**, which is software run from Steam. A local test build needs no upload. A dev build that is uploaded goes out with `DebugMode` on, which makes every subscriber's loader reinstall the mod at each launch until the next release.
 4. Restart Palworld. The host reinstalls from the item folder at launch. A subscribed machine reinstalls once Steam has downloaded the upload; for a multiplayer test, check the version under **Options → Mod Management** on both machines before testing together.
 5. If the player-facing description changed, paste `workshop-description.txt` into the Workshop page's description by hand. The uploader does not carry it, and the stage does not include it.
@@ -238,7 +238,7 @@ A question about the engine is easier to answer in a running game than in a log 
 
 How a probe is built:
 
-- **One module, loaded only in a debug build.** `main.lua` does `if debug_on() then require("lp.probe").install(hooks, MOD_ROOT) end`. A release build never loads it, and deleting the file and that line removes it completely.
+- **One module, loaded only in a debug build.** Add `if options.debug_on() then require("lp.probe").install(hooks) end` to `main.lua`. A release build never loads it, and deleting the file and that line removes it completely.
 - **One key per action, with a modifier.** `RegisterKeyBind(Key.F12, { ModifierKey.CONTROL }, callback)`. Ctrl+F9 to Ctrl+F12 were free. The installed Keybinds mod already uses Ctrl+Numpad6, Ctrl+J and Ctrl+H for its dumpers. `Key` and `ModifierKey` are declared in `.luacheckrc` and `.luarc.json`.
 - **The key callback only schedules.** A keybind callback is not a game-thread hook, so it hands its work to the game thread. Wrap the work once, at load, with `util.coalescer(work, 0)`, and register that function. Repeated presses then queue at most one pass, and no closure is built per press.
 - **A toggle keeps its state in the module.** One key that flips something on and flips it back on the next press, such as collapsing the mod's entries in the Surgery list, is the quickest way to compare the two states side by side.
@@ -273,7 +273,7 @@ An alias's description is a static English copy of the text the game builds for 
 - `conveyor_extraction`: the Pal Disassembly Conveyor's implants. The host's value counts. Off removes the conveyor hooks; implants already owed are still delivered.
 - `surgery_ui_gate`: the Edit-button gate on the Surgery screen, which refuses a click that cannot succeed. It is a kill switch for the one part of the mod that writes to a widget while the screen is open; with it off, the transaction still checks every rule and unwinds, but the operation's gold is not refunded.
 - `debug`: debug mode. `stage.ps1` sets it `true` for a dev build and `false` for a release. On, it adds `DEBUG:` trace lines to `UE4SS.log` and arms the injected failures in `Scripts\lp\faults.lua`.
-- `experimental_features` and `remove_mod_items`: the host's item cleanup. The removal runs only while both are true, and clears `remove_mod_items` itself when it succeeds.
+- `advanced_features` and `remove_mod_items`: the host's item cleanup, labelled **Enable advanced features** and **Remove all mod items** in Better Mod Manager. The removal runs only while both are true, and clears `remove_mod_items` itself when it succeeds.
 
 `Scripts\lp\options.lua` is the only reader of the file. It reads it once at load into a live table, and every getter reads that table when it is used, so a change takes effect: the gate at its next frame, the conveyor at once (its hooks are added or removed), debug at its next log line. A value of the wrong type is logged once and its default used; if the file fails to load, every setting takes its default.
 
@@ -290,7 +290,7 @@ An alias's description is a static English copy of the text the game builds for 
 | `lua tools\ledger_test.lua` | Test of the mod: the pending-delivery ledger's file format and who it delivers to, with the engine stubbed out. |
 | `lua tools\journal_test.lua` | Test of the mod: the recovery journal's one row per Pal, and its migration from the older single-row format. |
 | `lua tools\exchange_test.lua` | Test of the mod: which Pal each of several Surgery exchanges in flight at once is matched to, with the engine stubbed out. |
-| `lua tools\host_test.lua` | Test of the mod: the host handshake's text, and the 117 Surgery operations the `surgery_extraction` setting covers. |
+| `lua tools\host_test.lua` | Test of the mod: the round trip of the texts the host sends (settings, notices, grant reports, setting changes), and the 117 Surgery operations the `surgery_extraction` setting covers. |
 | `lua tools\options_test.lua` | Test of the mod: settings changes written back into `config.lua`, and the startup reconciliation with Better Mod Manager, against a throwaway folder. |
 | `.\tools\stage.ps1` | Checks `Info.json`, sets its version and `DebugMode` (dev build by default, minor release with `-Minor`, major release with `-Major`), writes `DebugMode` onto every `stage:DebugMode` line, and on a release redraws the thumbnail, then mirrors what `Info.json` names into the Workshop item folder, ready to upload. Takes `-Minor`, `-Major`, `-DryRun`, `-Force`, `-GameRoot` and `-WorkshopRoot`. |
 | `.\tools\test_staging.ps1` | Test of `stage.ps1`: runs a copy against throwaway repo, Workshop and game folders in `%TEMP%` and checks versions, checks, item-folder detection, the stale stop, `-Force`, both release runs and their stale deletion and thumbnail draw, the refusal of `-Minor` with `-Major`, and `-DryRun`. Never touches the real game or Workshop folders. `-Keep` leaves the temp folders for inspection. |

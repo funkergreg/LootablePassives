@@ -133,8 +133,9 @@ end
 local schedule_refresh = coalescer(consume_pending_refresh, 0)
 
 -- The click, on the peer that made it. The handle argument is not read: the Pal
--- comes from the recorded tab page. Logs nothing for a vanilla passive id, and
--- does nothing where role.has_ui() is false.
+-- comes from the recorded tab page. Logs nothing for a vanilla passive id
+-- (a direct route only under debug), and does nothing where role.has_ui() is
+-- false.
 local function on_local_request(_, _, skill_index, passive_skill)
     if has_ui() then
         begin_local_exchange(name_to_string(passive_skill), unwrap(skill_index))
@@ -311,7 +312,7 @@ options.on_changed(function(name, value)
     if name == "surgery_extraction" or name == "conveyor_extraction" then
         host.send_to_all()
     end
-    if name == "remove_mod_items" or name == "experimental_features" then
+    if name == "remove_mod_items" or name == "advanced_features" then
         cleanup.request("the setting changed")
     end
 end)

@@ -1,14 +1,14 @@
 -- Lootable Passives settings.
 --
--- Edit this file with the game or the dedicated server stopped; the change
--- applies at the next start. Better Mod Manager, when installed, changes these
--- while the game runs and saves each change into this file too.
+-- Edit with the game or the dedicated server stopped; a change applies at the
+-- next start. Better Mod Manager, when installed, changes these while the game
+-- runs and saves each change here too.
 --
--- A mod update replaces this file and restores the defaults below. Settings
--- changed through Better Mod Manager are kept across updates.
+-- A mod update replaces this file with the defaults below. Changes made in
+-- Better Mod Manager are kept across updates.
 return {
-    -- Extract One, Extract All and every implant this mod adds to the Pal
-    -- Surgery Table. Set by the host in multiplayer. Default true.
+    -- Extract One, Extract All and this mod's implants at the Pal Surgery
+    -- Table. Set by the host in multiplayer. Default true.
     surgery_extraction = true,
 
     -- Pals fed to the Disassembly Conveyor also yield implants of their
@@ -19,16 +19,17 @@ return {
     -- if the Surgery screen misbehaves. Default true.
     surgery_ui_gate = true,
 
-    -- Adds DEBUG trace lines to UE4SS.log. Leave off unless reporting a bug.
+    -- Adds DEBUG lines to UE4SS.log. Leave off unless reporting a bug.
     -- Default false.
     debug = true, -- stage:DebugMode
 
-    -- Unlocks the host tool below. Default false.
-    experimental_features = false,
+    -- Unlocks remove_mod_items below. Default false.
+    advanced_features = false,
 
-    -- Host only, and only while experimental_features is true: removes every
-    -- Lootable Passives implant from the inventories and chests loaded in the
-    -- world when the world is entered, then sets itself back to false. Pals
-    -- keep their passives. Default false.
+    -- WARNING: destructive. Required before uninstalling this mod. Host only,
+    -- and only while advanced_features is true: removes every Lootable
+    -- Passives implant from the inventories and chests loaded in the world,
+    -- which takes about 25 seconds, shows the count in a game notice, then
+    -- sets itself back to false. Pals keep their passives. Default false.
     remove_mod_items = false,
 }

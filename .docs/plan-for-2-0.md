@@ -365,12 +365,15 @@ This is a draft for iteration and is not approved.
 
 The sections are in the proposed execution order. Each is meant to be stageable and testable by itself.
 
-### Session handoff (updated 2026-10-18, after acceptance session 1)
+### Session handoff (updated 2026-10-19, acceptance complete, before the release)
 
 Read this first when resuming.
 
 - **Where things stand.**
-  - **Code:** 1.3-A to 1.3-I are coded (see each status section), with every offline check passing; the code is uncommitted.
+  - **Acceptance is complete.** The dedicated-server list and the self-hosted list passed; the two-player tests are skipped for 1.3.0 (developer, 2026-10-19), who will test two players informally after the release.
+  - **Next: the developer's separate code-quality analysis, then 1.3-K together,** including checking that a release install comes up with `debug = false` despite BMM's file-mode store (see `.docs/better-mod-manager-file-mode-report.md`).
+  - **Not yet run in game:** the DEBUG line for a direct-route implant (added after the last stage, 1.2.14). The next stage carries it; check it during 1.3-K's stage or a last dev stage.
+  - **Code:** 1.3-A to 1.3-I are coded (see each status section), with every offline check passing.
   - **Acceptance session 1 is done** (its results sections, under 1.3-H): 1.3-G's handshake, hiding and on-screen notice, and 1.3-H's cleanup all pass on the dedicated server, after two crash fixes (1.2.6, 1.2.7) and the host notices (1.2.8).
   - **Acceptance session 2 is done** (dev 1.2.9 to 1.2.11): conveyor queue, delivery on join, snapshot timing, the server backstop and recovery at boot pass. It added the client grant reports.
   - **No planned code is left.** What remains is the acceptance listed under "Remaining work" below, any fixes it finds, the docs cleanup, and the release (1.3-K). 1.3-J is not started and not needed.
@@ -404,21 +407,35 @@ Also done in session 2: the 1.3-G unconfirmed path, and the uninstall procedure 
 
 **Acceptance on the self-hosted world** (single player or listen host):
 
-1. **1.3-F with Better Mod Manager.**
-   - The "Supported" page shows short text, and a toggle applies live.
-   - A change shows up in the installed `config.lua` within a second, with comments and the stage tag intact.
-   - `ModConfig.LootablePassives.lua` holds the non-default values.
-   - BMM no longer writes `Scripts\` or `mods.txt`.
-   - Clean up the old Auto-mode files if BMM re-applies them.
-2. **`surgery_extraction` off locally.** The list hides, and the gate and the server backstop (with `surgery_ui_gate` off) refuse an extraction, an alias implant and a direct-route implant.
-3. **The cleanup through BMM on a listen host,** which is also the Workshop text's "Single player, or hosting co-op from your game" uninstall procedure, written before it was tested (developer's call). Follow those steps as written: one implant in an inventory, a chest and a guild chest, plus a ledger debt; then disable the mod and re-enter the world. Back up first.
+1. **1.3-F with Better Mod Manager: done (2026-10-19, co-op host, dev 1.2.14),** with one finding.
+   - The page shows Debug logging ON in the dev build; toggles of debug, Conveyor extraction and Surgery extraction applied at once with a `DEBUG: Setting … is now …` line each; the installed `config.lua` kept its comments and the `stage:DebugMode` tag; `ModConfig.LootablePassives.lua` returned to `return {}` once every value was back at its default.
+   - **Finding: BMM's file mode still co-manages `config.lua`.** At every start, `filemods.repair` runs over every Lua mod listed in `mods.txt` (`findExternalMods` in BMM's `menu.lua`), registered or not. `locate` finds `Scripts/config.lua` (BMM's `LUA_FILES` also lists `config.lua` and `Scripts/settings.lua`), and `reconcile` compares it with BMM's store `ModConfig.file.LootablePassives.lua` and may rewrite it through `writeAtomic`, which leaves `config.lua.bak` beside it. At the 01:24 launch it wrote `debug = true` back over the registered page's saved `false`. It does not write `mods.txt` for this mod.
+   - **Effect:** for players its store holds release values only, and on an update it restores the player's earlier values, as the registered page does. On a machine that ran dev builds, the store holds `debug = "true"` and restores it into a release's `config.lua` on the update. BMM's only opt-out in code is a `Scripts/shared.hash` marker file, undocumented; not used. Worth reporting to BMM's author: file mode should skip a mod that registered through `modconfig.lua`.
+   - **Cleaned on the dev machine:** `ModConfig.file.LootablePassives.lua` (and `.bak`), `BetterModManager.profile.LootablePassives.lua` (built from the old `settings.lua`), and the installed `Scripts\config.lua.bak` and `Scripts\settings.lua.bak`, which are outside the loader's manifest. BMM recreates its store at the next start with that build's values; at the release stage, check a release install comes up with `debug = false`.
+2. **`surgery_extraction` off locally: done (2026-10-19, co-op host `9F2509B4…`, dev 1.2.14).**
+   - Off in BMM: the host logged "Surgery extraction is off in this mod's settings, so its Surgery operations are hidden." and the list hid them. Back on: two Extract Ones, an Extract All, and four implants on the emptied Pal (a vanilla consumable, a recipe, the direct route `Deffence_up2`, the alias `Stamina_Up_2`) all worked, with normal gold.
+   - **The backstop with the gate off is not reachable on a host:** opening the menu to reach BMM drops the Surgery screen's selection, so no click can follow the setting change. Passed on the strength of the dedicated-server run in session 2, which covered all three route kinds (developer's call).
+   - **Observability gap, open:** a direct-route implant on the host's own game logs nothing; `on_local_request` treats it as a vanilla passive id. Only marker and alias exchanges log a `Surgery … finished` line.
+3. **The cleanup through BMM on a listen host, as the Workshop text's "Single player, or hosting co-op from your game" uninstall procedure: pass (2026-10-19, `9F2509B4…`, dev 1.2.14).**
+   - Backed up first to `PalworldBackups\2026-10-19-local-pre-uninstall-test\` (67 files, `MANIFEST.md5`), and restored from it afterwards, verified 67 of 67.
+   - Turned on in BMM: found 631 implants (14 in inventories, 617 in chests, 0 in guild chests; 80 stacks) in 5,185 loaded containers, removed all in 29 s, cleared `remove_mod_items` itself, showed the message. The game autosaved 78 s later.
+   - Disabled under **Options → Mod Management**, restarted, entered the world: loaded normally, inventory held only vanilla implants, vanilla operations at vanilla prices (consumables free, the table's recipes 10,000, the arena and bounty recipes 50,000), and a conveyor run gave no implants. BMM listed the mod as inactive.
+   - **What the client's disable leaves:** the loader deleted the data half (an empty `translations` folder remains, and PalSchema printed `Loading mod: LootablePassives` with no rows) and set `LootablePassives : 0` in `mods.txt`, but kept the Lua files and the `ManagedMods` record.
+   - **BMM's file mode wrote the disabled mod's `config.lua`** (`surgery_ui_gate` false to true, with a new `.bak`) and recreated its store; with the mod not running, BMM treats it as a plain file mod. Harmless while the mod is off.
+   - Not covered: an implant in a guild chest (none was there), and a ledger debt (needs a fault; the server run covered the ledger).
 
-**Needs a second player** (a second machine or a friend; ask the developer):
+**Needs a second player: skipped for 1.3.0** (developer, 2026-10-19). The client-server relationship was tested extensively on the dedicated server; the developer will test two players informally after the release.
 
 1. **1.3-C step 7:** two Extract Ones at the same moment on different Pals, and an Extract All during another player's conveyor run.
 2. **The test matrix's listen-host rows,** including a client without the mod.
 
-**Then 1.3-K:** check `Scripts/lp/faults.lua` is `return {}` (it ships), a re-read of the Workshop text, `README.md` and `CLAUDE.md` against what the remaining testing changed, the checks, the `-Minor` stage, and the commit, by the developer's call.
+**Done after the acceptance (2026-10-19, not yet staged):**
+
+- **Direct-route implants are logged under debug** (developer's request, closing the gap found in self-hosted test 2). `finalize_extraction`'s vanilla branch asks `direct_route_change` and, when one Pal gained a direct-route passive, logs `Implanted <passive> through its direct route for player <id> (<source>); the game spent its module.` instead of the "not one of our operations" line; this covers a dedicated server and a host's own click. On the clicking game, `begin_local_exchange` logs `Requested the direct-route implant <passive> on slot <n>; the game completes it, so the panel is not tracked.`
+- **`.docs/better-mod-manager-file-mode-report.md`:** a detailed report of BMM's file mode co-managing `config.lua`, for its author, to be linked from a private message if he follows up on the developer's general post.
+- **1.3-K's checks so far:** `faults.lua` is `return {}`; `README.md` and `CLAUDE.md` re-read (three stale `settings.lua` references, the probe how-to's `main.lua` line, and the host test's description fixed); `luacheck.js`, `luacheck Scripts` (0/0), the five Lua tests and `test_staging.ps1` all pass.
+
+**Then 1.3-K,** after the developer's code-quality analysis: rerun the checks if code changed, confirm `Scripts/lp/faults.lua` is `return {}` (it ships), the `-Minor` stage, a release install checked for `debug = false` on the developer's machine (BMM's file-mode store may restore `true`), and the commit, by the developer's call.
 
 **Docs written from session 2 (2026-10-19):** the Workshop text's Multiplayer section now states what was tested on a dedicated server, replacing "reported NOT TO WORK ON DEDICATED SERVER HOSTING"; its Uninstalling section has two procedures, both starting with the item removal (dedicated server through `config.lua` and `ActiveModList`, tested; single player or co-op host through Better Mod Manager or `config.lua`, not yet tested); the Known Issues have the price mismatch on an unmodded host; the changelog says so. `README.md` has the loader's `ActiveModList` behaviour and the join crash; `CLAUDE.md`'s uninstall note has the crash.
 

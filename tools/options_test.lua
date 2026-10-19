@@ -110,7 +110,7 @@ text = read_file(MOD_SCRIPTS .. "config.lua")
 check("debug rewritten, stage tag kept", value_line(text, "debug"),
     "    debug = " .. tostring(flipped) .. ", -- stage:DebugMode")
 
-options.set("experimental_features", true)
+options.set("advanced_features", true)
 options.set("remove_mod_items", true)
 check("removal requested once both are true", options.removal_requested(), true)
 options.set("remove_mod_items", false)
@@ -175,7 +175,7 @@ check("file edit kept live", options.gate_on(), false)
 check("debug from the file, not handed over", options.debug_on(), true)
 
 -- 5b. Every option has its shipped default, and the removal depends on the
---     experimental switch.
+--     advanced switch.
 local by_key = {}
 for _, option in ipairs(REGISTERED.options) do
     if option.key then by_key[option.key] = option end
@@ -185,8 +185,8 @@ check("surgery default is the shipped one", by_key.surgery_ui_gate
     and by_key.surgery_ui_gate.default, true)
 check("conveyor default is true", by_key.conveyor_extraction and by_key.conveyor_extraction.default,
     true)
-check("removal depends on experimental",
-    by_key.remove_mod_items and by_key.remove_mod_items.dependsOn, "experimental_features")
+check("removal depends on advanced",
+    by_key.remove_mod_items and by_key.remove_mod_items.dependsOn, "advanced_features")
 local longest = 0
 for _, option in pairs(by_key) do
     longest = math.max(longest, #(option.description or ""))
@@ -201,8 +201,8 @@ check("onChange written back",
     value_line(read_file(MOD_SCRIPTS .. "config.lua"), "conveyor_extraction"),
     "    conveyor_extraction = false,")
 SET = {}
-options.set("experimental_features", true)
-check("set handed to Better Mod Manager", table.concat(SET, ","), "experimental_features=true")
+options.set("advanced_features", true)
+check("set handed to Better Mod Manager", table.concat(SET, ","), "advanced_features=true")
 
 -- 5d. debug turned off in Better Mod Manager during a dev build wins over the
 --     build's true, and is written into config.lua.

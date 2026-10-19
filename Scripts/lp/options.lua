@@ -28,7 +28,7 @@ local DEFAULTS = {
     conveyor_extraction = true,
     surgery_ui_gate = true,
     debug = false,
-    experimental_features = false,
+    advanced_features = false,
     remove_mod_items = false,
 }
 
@@ -88,13 +88,13 @@ local function surgery_on()
     return flag("surgery_extraction")
 end
 
-local function experimental_on()
-    return flag("experimental_features")
+local function advanced_on()
+    return flag("advanced_features")
 end
 
--- True while both experimental_features and remove_mod_items are true.
+-- True while both advanced_features and remove_mod_items are true.
 local function removal_requested()
-    return experimental_on() and flag("remove_mod_items")
+    return advanced_on() and flag("remove_mod_items")
 end
 
 -- Logs message with a "DEBUG: " prefix when debug is on.
@@ -269,8 +269,8 @@ end
 local OPTIONS = {
     { type = "header", label = "Extraction" },
     option("surgery_extraction", "Surgery extraction",
-        "Extract One, Extract All and the implants this mod adds to the Surgery Table. "
-        .. "Set by the host in multiplayer."),
+        "Extract One, Extract All and this mod's implants at the Surgery Table. Set by the "
+        .. "host in multiplayer."),
     option("conveyor_extraction", "Conveyor extraction",
         "Pals fed to the Disassembly Conveyor also yield implants of their passives. "
         .. "Set by the host in multiplayer."),
@@ -279,13 +279,13 @@ local OPTIONS = {
         "Blocks the Edit button when the operation cannot work. Turn off if the Surgery "
         .. "screen misbehaves."),
     option("debug", "Debug logging",
-        "Adds DEBUG trace lines to UE4SS.log. Leave off unless reporting a bug."),
+        "Adds DEBUG lines to UE4SS.log. Leave off unless reporting a bug."),
     { type = "header", label = "Host tools" },
-    option("experimental_features", "Enable experimental features (like mod item removal)",
-        "Unlocks the host tool below."),
-    option("remove_mod_items", "Remove ALL items created by this mod from the game world?",
-        "Host only. Removes this mod's implants from loaded inventories and chests, then "
-        .. "unchecks itself.", "experimental_features"),
+    option("advanced_features", "Enable advanced features",
+        "Unlocks Remove all mod items, below."),
+    option("remove_mod_items", "Remove all mod items",
+        "WARNING: destructive. Required before uninstalling. Takes about 25 s, shows a "
+        .. "notice, then turns off.", "advanced_features"),
 }
 
 local function on_bmm_change(name, value)
@@ -530,7 +530,7 @@ return {
     describe_plan = describe_plan,
     describe_scenario = describe_scenario,
     end_scenario = end_scenario,
-    experimental_on = experimental_on,
+    advanced_on = advanced_on,
     fault = fault,
     fault_log = fault_log,
     gate_on = gate_on,

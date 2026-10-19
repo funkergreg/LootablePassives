@@ -30,6 +30,7 @@ local first_marker = passives.first_marker
 local get_skill_ids = passives.get_skill_ids
 local has_skill = passives.has_skill
 local is_covered = passives.is_covered
+local is_direct_route = passives.is_direct_route
 local is_extractable = passives.is_extractable
 local surgery_allowed = host.surgery_allowed
 
@@ -871,11 +872,16 @@ end
 schedule_exchange_poll = coalescer(run_exchange_poll, EXCHANGE_POLL_MS)
 
 -- Called from main.lua's hook on the model's RequestChangePassiveSkill with the
--- requested passive id and slot index. Records nothing for a vanilla passive id.
+-- requested passive id and slot index. Records nothing for any other passive
+-- id; a direct route's is logged under debug.
 -- The Pal is the recorded tab page's CachedCharacter, read now.
 local function begin_local_exchange(passive_id, slot_index)
     local mode = EXTRACTION_MODES[passive_id]
     if mode == nil then
+        if is_direct_route(passive_id) then
+            debug_log(string.format("Requested the direct-route implant %s on slot %s; the game "
+                .. "completes it, so the panel is not tracked.", passive_id, tostring(slot_index)))
+        end
         return
     end
     local page = current_page()
