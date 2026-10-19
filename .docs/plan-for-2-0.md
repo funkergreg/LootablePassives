@@ -365,9 +365,58 @@ This is a draft for iteration and is not approved.
 
 The sections are in the proposed execution order. Each is meant to be stageable and testable by itself.
 
-### Decisions, rounds 4 to 6 (2026-10-18)
+### Session handoff (2026-10-18, before implementation)
 
-1. **Conveyor post-callbacks are in,** with a probe first and an in-game check (1.3-B).
+Read this first when resuming.
+
+- **Where things stand.** Research, planning and every 1.3-0 probe are done. **Nothing in 1.3-A to 1.3-K is implemented yet.** The next step is **1.3-A, role detection and the module split.**
+- **Repo state, uncommitted:**
+  - `CLAUDE.md`: the deployment-versus-runtime-write rule, the dedicated-server log path, and a pointer to the debug-key probe approach.
+  - `README.md`: the new section "Probing the game with debug keys".
+  - `.luacheckrc` and `.luarc.json`: the globals `Key` and `ModifierKey`, kept for future probes.
+  - `Info.json` and `Scripts/settings.lua`: rewritten by dev stages to `1.2.2` with `DebugMode`/`debug` true. That is expected; the release stage resets them.
+  - This plan.
+- **The probe code is deleted.** `Scripts/lp/probe.lua` was deleted with `git rm`, and its `require` removed from `main.lua`. The approach is documented in `README.md`, "Probing the game with debug keys". The calls it proved are kept below as patterns for the implementation. Don't restore the file.
+- **Probe logs:** `.docs/probe-client-singleplayer-1.2.1.log`, `.docs/probe-server-dedicated-1.2.1.log`, `.docs/probe-client-dedicated-1.2.1.log` and `.docs/probe-client-list-1.2.2.log`, all gitignored.
+- **The dev rig is ready.**
+  - `PalServer\Mods\PalModSettings.ini` points `WorkshopRootDir` at the client's Workshop content folder, with the three `ActiveModList` lines, so `stage.ps1` feeds both machines.
+  - The server runs the developer's world `9F2509B44E9A564ACFF601A9DB9A81EC`, with the host's UID swapped to `EFC7480B…`.
+  - The client's `UE4SS-settings.ini` is back to `bUseUObjectArrayCache = false`.
+- **The last staged build is dev 1.2.2.** It is identical to 1.2.0's behaviour apart from the deleted probe. The Workshop item folder still holds `Scripts\lp\probe.lua` from that stage, so **the next stage must be `.\tools\stage.ps1 -Force`**. A plain stage stops on the stale file.
+
+#### Engine calls proven by the probes (use these in 1.3-A to 1.3-H)
+
+Each was run in game on 2026-10-18, game v1.0.5.102999, UE4SS `2281fa31`.
+
+- **Static library calls through the class default object,** with a world context:
+
+  ```lua
+  local function _call_one(object, name, argument) return object[name](object, argument) end
+  local utility = StaticFindObject("/Script/Pal.Default__PalUtility")   -- validate with IsValid
+  local context = FindFirstOf("PalGameStateInGame")                     -- nil at the title screen
+  local ok, is_dedicated = pcall(_call_one, utility, "IsDedicatedServer", context)
+  ```
+
+  - `IsServer`, `IsDedicatedServer`, `IsClientDedicatedServer`, `IsMultiplayer` and `GetNetMode` all answer.
+  - `GetNetMode` returns an FString; read it with `:ToString()`. The values are `Standalone`, `ListenServer`, `DedicatedServer` and `Client`.
+  - `/Script/Engine.Default__KismetSystemLibrary` gives the same answers.
+  - The `GameInstance` (`FindFirstOf("PalGameInstance")`) also works as a context and exists at the title screen. There it reads `Standalone`, so don't decide a role there.
+  - `PalGameStateInGame.bIsDedicatedServer` is a readable, replicated bool.
+- **The server-to-client handshake:** `pcall(_call_one, controller, "Debug_ReceiveCheatCommand_ToClient", text)` on an `APalPlayerController`, with a plain Lua string for the FString.
+  - **To receive it,** the client registers `RegisterHook("/Script/Pal.PalPlayerController:Debug_ReceiveCheatCommand_ToClient", fn)` at load. The text arrives as the second callback argument; unwrap it, then `:ToString()`.
+  - **It is invisible to the player.**
+  - **It arrived about 2.6 s after the send,** which was itself 3 s after the join trigger.
+- **The join trigger is `RegisterHook("/Script/Pal.PalPlayerState:OnCompleteLoadWorldPartitionAndAdjustCharacter_InServer", fn)`.** Its context is the joining `BP_PalPlayerState_C`, whose `PlayerUId` field reads with `util.guid_key`. It fires **twice** per join and must be debounced. It does not fire for a listen host's own entry.
+- **Hiding a Surgery list entry:** `pcall(_call_one, entry, "SetVisibility", 1)`, where `ESlateVisibility.Collapsed` is 1 and `Visible` is 0 (`UMG_enums.hpp:48`).
+  - **What an entry is:** a `WBP_OperatingTable_ItemList_C` whose `GetParent()` is the list's `ScrollBox`.
+  - **What to read from it:** its `PassiveId` and `ConsumeItemId` NameProperties, through `util.name_to_string(util.field(entry, "PassiveId"))`.
+- **Reading item containers:** a `PalItemContainer`'s `ItemSlotArray` → each `UPalItemSlot`'s `ItemId.StaticId` (FName) and `StackCount`. Also `bIsGuildChestContainer` and `OwnerMapObjectInstanceId`. Walking all of them in one frame blocks for 2.5-3.2 s, so slice it.
+- **Writing the installed `Scripts\` folder works on both machines** (`util.is_writable` on a temporary file there).
+- **Key binds work on the client:** `RegisterKeyBind(Key.F12, { ModifierKey.CONTROL }, fn)`, with `fn` a `util.coalescer` built at load.
+
+### Decisions, rounds 4 to 9 (2026-10-18)
+
+1. **Conveyor: keep the pre-callbacks and remove the projection** (round 8, replacing round 4's post-callbacks). The probe showed that post-callbacks see only the removal (1.3-B step 2).
 2. **Layout:** `lp/config.lua` becomes `lp/options.lua`, and `passive_items.lua` moves to `lp/`.
 3. **Nothing is deferred.** The handshake, concurrency, the module split and ledger delivery are all 1.3.0 work.
 4. **What `surgery_extraction` covers.** "Off" stops every Surgery operation this mod adds (round 6):
@@ -382,6 +431,7 @@ The sections are in the proposed execution order. Each is meant to be stageable 
    - **"Remove ALL items created by this mod from the game world?"** is the request. It depends on the first, and only the mod clears it, and only on success.
 7. **Handshake first, no fallback planned** (round 6). The handshake has to be solved before any fallback is considered. If it works, it delivers what the client needs to block before the gold charge, so nothing past it is planned. If the 1.3-0 probe finds no route, stop and replan with the developer.
 8. **The mod saves runtime setting changes into its installed `config.lua`** (round 7). The "only the loader writes the game folders" rule is this repo's, and it governs deployment, not the mod's own config and runtime files; `CLAUDE.md` was updated to say so. A reinstall, which every version update causes, resets settings to the shipped defaults. That is accepted, and documented for players as known behaviour.
+9. **Probing approach kept, probe code deleted** (round 9). The debug-key probe approach is documented in `README.md`, "Probing the game with debug keys", and in `CLAUDE.md`. `Scripts/lp/probe.lua` was deleted.
 
 ### 1.3-0. Test rig and probes
 
@@ -422,7 +472,7 @@ The sections are in the proposed execution order. Each is meant to be stageable 
 
 #### Probes before the code that depends on them
 
-**Built 2026-10-18 as `Scripts/lp/probe.lua`.** `main.lua` loads it only when `debug` is true. Every line it writes is prefixed `PROBE`. It was first staged as dev build 1.2.1.
+**Built 2026-10-18 as `Scripts/lp/probe.lua`, and deleted once its answers were recorded.** `main.lua` loads it only when `debug` is true. Every line it writes is prefixed `PROBE`. It was first staged as dev build 1.2.1.
 
 - **What it does at load:**
   - logs whether the mod's `Scripts\` folder is writable;
@@ -439,6 +489,95 @@ The sections are in the proposed execution order. Each is meant to be stageable 
 1. **Single player:** load the world, wait 10 s, open the Surgery Table, and click two different passives in the list. Run a conveyor with one Pal, then a queue of three. Press Ctrl+F9 and Ctrl+F10.
 2. **Dedicated server:** start PalServer, join, wait 10 s, then run one conveyor Pal and press Ctrl+F9 and Ctrl+F10 on the client. Note anything shown on screen when joining.
 3. **Collect** both `UE4SS.log` files before restarting anything.
+
+#### Probe results: single player and self-hosted, dev build 1.2.1 (2026-10-18)
+
+The log is copied to `C:\Users\greg_\PalworldBackups\probe-logs\client-singleplayer-1.2.1.log`.
+
+- **Net mode: answered, and both world contexts work.** The GameState and the GameInstance gave the same answers:
+
+  | Where | PalUtility | Kismet | `bIsDedicatedServer` |
+  | --- | --- | --- | --- |
+  | Title screen | `IsServer=true IsMultiplayer=false GetNetMode=Standalone` | `IsStandalone=true` | no `PalGameStateInGame` yet |
+  | The developer's world (multiplayer-enabled, playing alone) | `IsServer=true IsDedicatedServer=false IsMultiplayer=true GetNetMode=ListenServer` | `IsServer=true IsStandalone=false` | `false` |
+
+  - **The title screen reads as a server.** So `role.lua` must not decide anything before a `PalGameStateInGame` exists, and must re-evaluate on each map load.
+  - **A world opened for multiplayer is a listen server even with nobody else in it,** so "single player" and "listen host" are the same role for the mod.
+  - **`GetNetMode` returns the plain strings `Standalone` and `ListenServer`.** `DedicatedServer` and `Client` are still to be seen.
+- **Blueprint hook timing: the callback runs after the function body,** as the UE4SS docs say. Evidence: selecting `PAL_ALLAttack_up3` after `PAL_ALLAttack_up1` logged the argument `ConsumeItemId=PalPassiveSkillChange_Consumable_PAL_ALLAttack_up3`, with the screen's `CachedConsumeItemId` already equal to it. The next selection back to `None` showed `None` in both. The `main.lua:90-94` comment is wrong and gets corrected in 1.3-B.
+- **Conveyor timing: post-callbacks are not the fix. Removing the projection is.** One Pal, then a queue of four, gave five consumptions, all detected correctly.
+  - **In every firing of `OnProceedConvertProcess`, the pre and post callbacks see the same rates.** That hook's body does not advance the rate in a way the callbacks can see.
+  - **The completing rate is visible in the `OnUpdateCharacterContainer` pre-callback,** at 1.0016, 1.0027, 1.0027, 1.0001 and 1.0028, with the Pal still in the queue. The removal then happens inside that function's body, which also calls `OnProceedConvertProcess` while it runs. The existing pre-callback sees the Pal gone in that inner call, and decides "consumed" from the ≥ 1.0 rate it stored a moment earlier.
+  - **A post-callback would see only the removal,** and would have to guess the rate from the last proceed firing (≤ 0.9993). That is the guess the projection exists for.
+  - **Approved for 1.3-B (round 8):** keep the pre-callbacks, and remove the `STEP_MARGIN` projection, since the container pre-callback always carries the ≥ 1.0 rate. Keep a fallback log line for any Pal that leaves below 0.999 after having passed 0.97, so a missed completion shows in the log instead of being silently treated as a withdrawal.
+- **Container reach: the scan works, but it is too slow for one frame.**
+  - **The first scan found 5359 `PalItemContainer` objects, the second 5312.** Containers stream in and out with world partition, so a container far away may not be loaded.
+  - **A full scan blocked the game thread for about 3.2 s.** The cleanup in 1.3-H must therefore walk the containers in slices across frames.
+  - **LP items were in 4 containers:** two with no owner map object, holding 8 and 11 (probably the player's inventory containers), and two chests holding 312 and 291. That makes 622 items in 83 stacks. One guild chest exists; it held no LP items.
+  - **For 1.3-H:** `UPalItemContainerManager.ItemContainerMap_InServer` (Pal.hpp) may be the complete list on the server. Probe it on the dedicated server before relying on `FindAllOf`.
+- **Join triggers: neither fired for the host's own entry into the world.** That is expected if both are about *remote* players joining; the dedicated-server run decides it. The handshake was not sent (Ctrl+F11 was not pressed, and on a listen host it would reach only the host itself).
+- **An Extract All "failure" reported by the developer was not confirmed.** The developer ran an Extract All straight after two Extract Ones, without closing the Surgery screen in between, and saw neither modules arrive nor passives leave the Pal.
+  - **The log shows that exchange succeeding.** At 20:28:45 it extracted all three passives and left the Pal with `[]`.
+  - **What the panel did.** It still drew the old passives plus the marker when the exchange finished. The mod's refresh re-bound the detail, logging `[]`, and the panel was closed about 1.5 s later.
+  - **Three later Extract Alls (20:37-20:38) also succeeded.**
+  - **Counted as unverified.** If it recurs, check the Pal in the Palbox and the inventory before closing the table, and keep the log. If it is a display problem, it belongs with the "Edit button coloring" known issue and 1.3-E's panel work.
+- **Write access: the client's installed `Scripts\` folder is writable** (`...\Palworld\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\`). The server is still to be checked.
+
+#### Probe results: dedicated server and its client, dev build 1.2.1 (2026-10-18)
+
+The logs are `.docs/probe-server-dedicated-1.2.1.log` and `.docs/probe-client-dedicated-1.2.1.log`. Both are gitignored through `*.log`.
+
+- **Net mode: all four roles are now identified.**
+
+  | Machine | PalUtility | Kismet | `bIsDedicatedServer` |
+  | --- | --- | --- | --- |
+  | Dedicated server, at boot (no players) and after a join | `IsServer=true IsDedicatedServer=true IsMultiplayer=true GetNetMode=DedicatedServer` | `IsServer=true IsDedicatedServer=true` | `true` |
+  | Client of the dedicated server | `IsServer=false IsClientDedicatedServer=true IsMultiplayer=true GetNetMode=Client` | `IsServer=false` | `true` |
+
+  - **The GameState context is available at dedicated-server boot,** 8 s after load and before anyone joins. `role.lua` can therefore decide at boot.
+  - **A client can tell whether its host is dedicated** (`IsClientDedicatedServer`, `bIsDedicatedServer`).
+- **The join trigger is `APalPlayerState::OnCompleteLoadWorldPartitionAndAdjustCharacter_InServer`.** It fired on the server for the joining player, **twice** about 0.17 s apart, on the same PlayerState. Its `PlayerUId` read as `-272152565-0-0-0`, which is `EFC7480B…` as signed int32, the swapped player. Debounce it per PlayerUId.
+  - `AGameModeBase::K2_PostLogin` did **not** fire. Drop it.
+- **The handshake works, and the player sees nothing.**
+  - **Both routes delivered.** The server called `Debug_ReceiveCheatCommand_ToClient` on the one `PalPlayerController`. The client's hook logged `handshake RECEIVED via cheat RPC on BP_PalPlayerController_C …: LP_HANDSHAKE_PROBE surgery=1 conveyor=1 via=cheat n=1`, 2.6 s after the send.
+  - **The dismantle route also arrived,** on component 2, while component 1 ran locally on the server.
+  - **Nothing appeared on the client's screen** (developer's observation).
+  - **Choice for 1.3-G: `APalPlayerController::Debug_ReceiveCheatCommand_ToClient(FString)`.** There is one controller per player, so it targets that player exactly, it carries free text for the host's settings, and it is invisible.
+  - **Sending:** debounce the join trigger, wait about 3 s, then call it on that player's controller, found through the PlayerState's owner or by matching `PlayerUId`. Re-send to every controller when the host changes a setting at runtime.
+- **Container reach on the server: offline players' inventories appear to be loaded.**
+  - **The server holds about 4,700-4,800 `PalItemContainer` objects; the client holds 380.** A full scan took 2.5 s on the server.
+  - **The joined player's inventory is identified.** The server's container with no owner map object went from 4 to 7 LP items across a conveyor run that yielded 3. The client sees the same container as `BP_PalPlayerState_C…PalItemContainer_…` holding 7.
+  - **A second container with no owner map object holds 11 LP items** on the server, in this session and the single-player one. It is not replicated to the joined client. **Most likely it is the offline co-op friend's inventory** (`7A1DBAC5…`), which would mean offline inventories are loaded on the authoritative machine. Confirm in 1.3-H by reading the container's `BelongInfo`, or the owning player state, before relying on it.
+  - **Both chests (312 and 290) match the single-player numbers.** The server sees 2 guild chests.
+- **Write access: the server's installed `Scripts\` folder is writable** (`C:\Program Files (x86)\Steam\steamapps\common\PalServer\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\`). The `config.lua` write-back in 1.3-F works on both machines.
+- **Conveyor on the server:** one Pal was consumed at rate 1.0007 and yielded 3 modules, delivered to the joined player. The same pattern as single player.
+- **Item messages are server-side on a dedicated server.** The client's UE4SS console shows none of the "Extracted…" or "Disassembly yielded…" lines, because those run on the server; read the server log for them. This matters for 1.3-E: the client should log a short outcome line of its own, so a player on a dedicated server has something in their log to report.
+- **The widget hooks' "not installed yet" warnings appeared on the server again** (five lines, including the probe's own). Fixed by 1.3-A.
+
+#### Probe result: hiding Surgery list entries, dev build 1.2.2 (2026-10-18)
+
+The log is `.docs/probe-client-list-1.2.2.log`. The screenshots are `.docs/Screenshot (301).png` to `(303).png`.
+
+- **Collapsing works, and the list closes the gap.** Ctrl+F12 called `SetVisibility(Collapsed)` on 56 `LP_`-prefixed entries.
+  - **The list ended at the last vanilla passive** (Screenshot 301).
+  - **Pressing it again restored them** (303). The list jumped to a mid-scroll position as the layout grew back (302), which is cosmetic.
+  - **Hiding is therefore the 1.3-G method,** and the Edit-button block remains the backstop.
+- **The entries are rebuilt, not reused.**
+  - **The first press** found 108 live entries in the list's `ScrollBox`, plus older instances with `parent=nil`: leftovers of earlier list builds awaiting garbage collection.
+  - **The second press** found a different set, and restored only 39.
+  - **So the hide must be applied every time the list is built,** not once. Hook `WBP_OperatingTable_C:SetupPassiveChangeItem`, whose Blueprint callback runs after the body as the timing probe showed. Take the list from the hook's context, the screen's `WBP_PalCommonScrollList_Item` → its `ScrollBox` children, rather than `FindAllOf`, per the dev tips. Skip entries whose parent is nil.
+- **The list's entries carry the mod's operations in two forms:**
+  - **By `PassiveId`:** `LP_ExtractOne`, `LP_ExtractAll` and the `LP_Insert_*` aliases.
+  - **By `ConsumeItemId` only:** the 61 direct routes have a vanilla `PassiveId` and an `LP_Implant_*` `ConsumeItemId` (`WBP_OperatingTable_ItemList.hpp` line 21).
+
+  The probe matched only the `LP_` prefix. The real filter must match either field, so it covers everything `surgery_extraction` covers.
+- **Not checked yet:** keyboard and controller navigation, and whether the hide survives picking another Pal or reopening the table. Both are verified against the real hook-driven version in 1.3-G.
+
+**Still open from the probe list:**
+
+- **Live View needs `bUseUObjectArrayCache = true`.** On 2026-10-18 the client's `Palworld\Mods\NativeMods\UE4SS\UE4SS-settings.ini` was changed by hand from `false` (the setting UE4SSExperimentalPW ships) to `true`. Its own comment says `false` "can help if you're experiencing a crash on startup". It is a dev-machine-only change, and a UE4SS reinstall reverts it. The game started fine with it on. Live View then showed the class's property definitions rather than instance values, which was hard to use for this check. So the check moved into the probe instead (Ctrl+F12, dev build 1.2.2), and the setting was set back to `false` the same day.
+- **Hiding Surgery list entries.** This is a Live View check, done by hand on the client.
+- **`UPalItemContainerManager.ItemContainerMap_InServer` as the complete container list,** to be checked when 1.3-H is built.
 
 **The probe list, as planned:**
 
@@ -473,8 +612,9 @@ The sections are in the proposed execution order. Each is meant to be stageable 
 ### 1.3-B. Hook mechanics and small fixes
 
 1. **`hooks.register` takes an optional post-callback.** It keeps the `PreId`/`PostId` that `RegisterHook` returns, and gets an `unregister`.
-2. **Conveyor post-callbacks.** Both conveyor `/Script/` hooks are registered with a no-op pre-callback and the real callback as post.
-   - **Remove the `STEP_MARGIN` projection only once the probe shows** that the post-callback sees the finished entry, or its removal.
+2. **Conveyor: remove the `STEP_MARGIN` projection, and keep the pre-callbacks** (round 8). The probe showed that the `OnUpdateCharacterContainer` pre-callback always carries the completing rate (≥ 1.0) before the Pal is removed, while a post-callback would see only the removal.
+   - **Consumed** means the last rate seen is at least `COMPLETE_RATE`.
+   - **Log a warning for any Pal that leaves below `COMPLETE_RATE` after passing 0.97,** a possible missed completion, so it shows in the log instead of passing silently as a withdrawal.
    - **Verify:** one Pal and a queue of three, in single player and on the dedicated server. Count the "Disassembly yielded" lines against the Pals fed in: no misses, no doubles.
 3. **`conveyor_extraction` turned off unregisters the conveyor hooks.** Turned on, it installs them at once (needed by 1.3-F).
 4. **Arm the widget hooks with `NotifyOnNewObject`** on the widget classes, in place of 90 × 1 s polling per map load. Follow the wiki's caution on Blueprint classes: register it after the player controller is up, for example on `ClientRestart`. Merge the handlers per class, since UE4SS allows one registration per class.
@@ -566,7 +706,7 @@ The detail is in [Proposed restructure](#proposed-restructure) and [Draft UI tex
    - **It is sent again when a setting changes at runtime** through BMM on the host.
 2. **The client half records "host confirmed"** and the host's settings. They are reset on each map load, which is when the client joins or leaves a world.
 3. **Until the host is confirmed, or while the host's `surgery_extraction` is off, the client stops the covered operations before they start.**
-   - **Preferred:** the LP operations are left out of the Surgery list (the `WBP_OperatingTable_ItemList_C` / `SetupPassiveChangeItem` lead in "Hiding LP operations from the list").
+   - **Chosen (confirmed by probe on 1.2.2):** the mod's operations are left out of the Surgery list. After each `SetupPassiveChangeItem`, collapse every entry whose `PassiveId` starts with `LP_` or whose `ConsumeItemId` starts with `LP_Implant_`.
    - **Fallback:** the Edit button is blocked by the existing gate.
    - **Either way, the player sees why,** as a message, not a silent no-op.
 4. **On single player and the listen host,** the role is authoritative and the gate reads the local value directly. No handshake is needed.
@@ -667,7 +807,7 @@ To be turned into BBCode at execution. Every step was verified on the dev rig on
    - a dev stage with `-Force`, because files are moved and deleted.
 2. **The test matrix below,** with the logs of both machines for every cell.
 3. **`.\tools\stage.ps1 -Minor` produces 1.3.0** and redraws the thumbnail. Upload by hand, and paste the Workshop text.
-4. **Delete this plan file before publishing.**
+4. **Delete this plan file before publishing.** The probe module is already deleted.
 
 ### Test matrix
 

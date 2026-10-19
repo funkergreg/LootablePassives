@@ -239,11 +239,6 @@ if conveyor_on() then
 end
 schedule_recovery("mod startup")
 
--- The 1.3.0 probes: required and installed only when debug is on at load.
-if debug_on() then
-    require("lp.probe").install(hooks, MOD_ROOT)
-end
-
 -- Reported at load rather than found mid-transaction: every exchange refuses
 -- when its first journal write fails.
 if not journal_is_writable() then

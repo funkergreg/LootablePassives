@@ -212,6 +212,22 @@ A healthy start logs `Loaded 115 extractable passives, 2 extraction operations, 
 
 After a crash, look in `%LOCALAPPDATA%\Pal\Saved\Crashes\`.
 
+### Probing the game with debug keys
+
+A question about the engine is easier to answer in a running game than in a log read after quitting, so this repo uses a throwaway probe module driven by key presses. You press a key in game, the probe does one thing, and you read the result in the UE4SS console or `UE4SS.log` with the game still running. The 1.3.0 probes answered the net-mode, handshake, join, conveyor-timing, container-reach and Surgery-list questions this way, and were then deleted. Write a new one when a new question comes up, and delete it once the answer is recorded.
+
+How a probe is built:
+
+- **One module, loaded only in a debug build.** `main.lua` does `if debug_on() then require("lp.probe").install(hooks, MOD_ROOT) end`. A release build never loads it, and deleting the file and that line removes it completely.
+- **One key per action, with a modifier.** `RegisterKeyBind(Key.F12, { ModifierKey.CONTROL }, callback)`. Ctrl+F9 to Ctrl+F12 were free. The installed Keybinds mod already uses Ctrl+Numpad6, Ctrl+J and Ctrl+H for its dumpers. `Key` and `ModifierKey` are declared in `.luacheckrc` and `.luarc.json`.
+- **The key callback only schedules.** A keybind callback is not a game-thread hook, so it hands its work to the game thread. Wrap the work once, at load, with `util.coalescer(work, 0)`, and register that function. Repeated presses then queue at most one pass, and no closure is built per press.
+- **A toggle keeps its state in the module.** One key that flips something on and flips it back on the next press, such as collapsing the mod's entries in the Surgery list, is the quickest way to compare the two states side by side.
+- **Every line carries a prefix,** for example `PROBE`, so the results can be filtered out of the log in one search.
+- **Log immediately before each engine call** (`PROBE list: calling SetVisibility on entry 4`), so a crash names the call that caused it.
+- **Automatic probes ride on existing events.** Report something 5 s after `RegisterLoadMapPostHook` fires, or when a server-side join hook fires, so a dedicated server, which has no keyboard input for the mod, reports too.
+- **Copy each probe session's logs into `.docs\`** as `probe-<machine>-<what>-<version>.log` before restarting anything; the next launch overwrites `UE4SS.log`. `.gitignore`'s `*.log` keeps them out of commits. A dedicated server keeps its own log at `PalServer\Mods\NativeMods\UE4SS\UE4SS.log`.
+- **Stage it as a dev build** (`.\tools\stage.ps1`) and restart, like any other change.
+
 ### The data half
 
 The JSON under `PalSchemaMods\LootablePassives\` is edited by hand and is the source of truth; nothing generates or validates it, and PalSchema skips a malformed file without an error a player would see.

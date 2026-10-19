@@ -113,7 +113,9 @@ lua tools\ledger_test.lua         # after any lp/ledger.lua edit
   - `[LootablePassives]` for the mod's own messages, which trace the code paths reached
   - `PalSchema` for confirmation that the JSON loaded
   - errors and warnings, for anything failing outright
+- A dedicated server keeps its own log at `PalServer\Mods\NativeMods\UE4SS\UE4SS.log`. On a dedicated server, the server-side lines (extraction, conveyor, ledger) appear there, not in the client's log.
 - After a crash, read, search or filter `%LOCALAPPDATA%/Pal/Saved/Crashes/`.
+- **To answer an engine question in a running game, write a throwaway debug-key probe,** as described in `README.md`'s "Probing the game with debug keys". It is loaded only when `debug` is true, and driven by Ctrl+F-key binds that schedule onto the game thread. Copy its logs into `.docs\` as `*.log`, which is gitignored, before restarting. Delete the probe once its answers are recorded in the plan.
 - **NOTE:** UE4SS hot reload is disabled, and the loader installs only at launch, so a running game will not pick up changes without a restart.
 
 ### Dev Commands
