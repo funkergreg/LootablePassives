@@ -24,7 +24,7 @@ local inventory = require("lp.inventory")
 local log = util.log
 local read_lines = util.read_lines
 local remove_file = util.remove_file
-local write_lines = util.write_lines
+local replace_file = util.replace_file
 local is_module_id = passives.is_module_id
 
 local LEDGER_PATH = util.UE4SS_ROOT .. "LootablePassives_pending.tsv"
@@ -109,7 +109,7 @@ local function persist(rows)
         lines[#lines + 1] = table.concat(
             { LEDGER_VERSION, row.owner, row.item_id, tostring(row.count) }, "\t")
     end
-    return write_lines(LEDGER_PATH, lines, "pending-grant ledger")
+    return replace_file(LEDGER_PATH, lines, "pending-grant ledger")
 end
 
 -- Reads the file once per session. A row is discarded if its stamp is not

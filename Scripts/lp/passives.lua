@@ -50,7 +50,7 @@ for _, target in pairs(ids.IMPLANT_TARGET) do
 end
 local DIRECT_ROUTES = {}
 for passive_id, item_id in pairs(PASSIVE_ITEMS) do
-    if item_id:sub(1, 11) == "LP_Implant_" and not ALIAS_TARGETS[passive_id] then
+    if ids.is_lp_implant(item_id) and not ALIAS_TARGETS[passive_id] then
         DIRECT_ROUTES[passive_id] = true
     end
 end

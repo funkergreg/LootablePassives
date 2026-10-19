@@ -10,20 +10,17 @@
 
 local util = require("lp.util")
 local options = require("lp.options")
+local role = require("lp.role")
 
+local call_one = util.call_one
 local find_first = util.find_first
 local is_valid = util.is_valid
 local log = util.log
 local debug_log = options.debug_log
 
-local UTILITY_PATH = "/Script/Pal.Default__PalUtility"
 local PRIORITY_IMPORTANT = 2
 
 local shown = {}
-
-local function _call_one(object, name, argument)
-    return object[name](object, argument)
-end
 
 local function _call_add_log(manager, text)
     return manager:AddLog(PRIORITY_IMPORTANT, FText(text), {})
@@ -35,11 +32,7 @@ local function log_manager()
     if context == nil then
         return nil
     end
-    local found, utility = pcall(StaticFindObject, UTILITY_PATH)
-    if not found or not is_valid(utility) then
-        return nil
-    end
-    local succeeded, manager = pcall(_call_one, utility, "GetLogManager", context)
+    local succeeded, manager = call_one(role.pal_utility(), "GetLogManager", context)
     if succeeded and is_valid(manager) then
         return manager
     end
@@ -58,13 +51,11 @@ local function once(key, text)
         debug_log("notice: UE4SS provides no FText, so the message is in UE4SS.log only")
         return
     end
-    debug_log("notice: FText is a " .. type(FText))
     local manager = log_manager()
     if manager == nil then
         debug_log("notice: no log manager, so the message is in UE4SS.log only")
         return
     end
-    debug_log("notice: calling UPalLogManager:AddLog")
     local succeeded, raised = pcall(_call_add_log, manager, text)
     if not succeeded then
         debug_log("notice: AddLog raised: " .. tostring(raised))

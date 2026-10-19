@@ -288,26 +288,9 @@ local OPTIONS = {
         .. "notice, then turns off.", "advanced_features"),
 }
 
-local function on_bmm_change(name, value)
-    change(name, value)
-end
-
 -- The mod's folder: the parent of Scripts\.
 local function mod_folder()
     return util.SCRIPT_DIRECTORY:match("^(.*)[\\/][^\\/]+[\\/]$") or util.SCRIPT_DIRECTORY
-end
-
--- The default each setting is registered with in Better Mod Manager: the
--- shipped one from DEFAULTS, except debug, whose default is this build's
--- config.lua value as read at load (true in a dev build, false in a release).
--- Better Mod Manager shows that value and saves only a change from it.
-local function registered_defaults()
-    local defaults = {}
-    for name, default in pairs(DEFAULTS) do
-        defaults[name] = default
-    end
-    defaults.debug = flag("debug")
-    return defaults
 end
 
 -- Each setting's value from the two sources at startup. A value Better Mod
@@ -315,19 +298,21 @@ end
 -- is written into config.lua. Otherwise a config.lua value that differs from
 -- the registered default is handed to Better Mod Manager.
 ---@param handle table
----@param defaults table
-local function reconcile(handle, defaults)
+local function reconcile(handle)
     local changes = {}
-    for name, default in pairs(defaults) do
-        local saved = handle.values[name]
-        local current = flag(name)
-        if type(saved) == "boolean" and saved ~= default then
-            if saved ~= current then
-                live[name] = saved
-                changes[name] = saved
+    for _, entry in ipairs(OPTIONS) do
+        local name, default = entry.key, entry.default
+        if name ~= nil then
+            local saved = handle.values[name]
+            local current = flag(name)
+            if type(saved) == "boolean" and saved ~= default then
+                if saved ~= current then
+                    live[name] = saved
+                    changes[name] = saved
+                end
+            elseif current ~= default then
+                pcall(handle.set, name, current)
             end
-        elseif current ~= default then
-            pcall(handle.set, name, current)
         end
     end
     if next(changes) ~= nil then
@@ -350,10 +335,13 @@ local function register_with_bmm()
             .. "menu: " .. tostring(module))
         return
     end
-    local defaults = registered_defaults()
+    -- Each option was built with its shipped default from DEFAULTS. debug is
+    -- registered with this build's config.lua value as read at load instead (true
+    -- in a dev build, false in a release). Better Mod Manager shows that value
+    -- and saves only a change from it.
     for _, entry in ipairs(OPTIONS) do
-        if entry.key ~= nil then
-            entry.default = defaults[entry.key]
+        if entry.key == "debug" then
+            entry.default = flag("debug")
         end
     end
     local registered, handle = pcall(module.register, {
@@ -363,7 +351,7 @@ local function register_with_bmm()
             .. "the Disassembly Conveyor.",
         folder = mod_folder(),
         options = OPTIONS,
-        onChange = on_bmm_change,
+        onChange = change,
     })
     if not registered or type(handle) ~= "table" then
         log("WARNING: registering with Better Mod Manager failed, so the settings are not in its "
@@ -371,7 +359,7 @@ local function register_with_bmm()
         return
     end
     bmm = handle
-    reconcile(handle, defaults)
+    reconcile(handle)
 end
 
 --------------------------------------------------------------------------------
@@ -402,15 +390,15 @@ local KINDS = { one = true, all = true, implant = true }
 local used = {}
 local active, active_index = nil, nil
 
+-- The scenario list from lp/faults.lua, or EMPTY when it did not load or is not
+-- a table.
 local loaded_faults, fault_list = pcall(require, "lp.faults")
 if not loaded_faults then
     fault_list = EMPTY
-end
-
--- The scenario list from lp/faults.lua, or EMPTY when it did not load or is not
--- a table.
-local function scenarios()
-    return typed({ debug_faults = fault_list }, "debug_faults", "table", EMPTY, "debug_faults")
+elseif type(fault_list) ~= "table" then
+    log("WARNING: lp/faults.lua returned a " .. type(fault_list) .. ", not a table; using no "
+        .. "scenarios.")
+    fault_list = EMPTY
 end
 
 -- Claims and returns the index of the first unused scenario whose "on" is mode
@@ -419,7 +407,7 @@ local function claim_scenario(mode)
     if not debug_on() then
         return nil
     end
-    for index, scenario in ipairs(scenarios()) do
+    for index, scenario in ipairs(fault_list) do
         if not used[index] and type(scenario) == "table"
             and (scenario.on == nil or scenario.on == mode)
         then
@@ -435,7 +423,7 @@ end
 local function begin_scenario(index)
     active, active_index = nil, nil
     if index ~= nil and debug_on() then
-        local scenario = scenarios()[index]
+        local scenario = fault_list[index]
         if type(scenario) == "table" then
             active, active_index = scenario, index
         end
@@ -461,7 +449,7 @@ end
 -- scenario there. An unknown fault name, or an "on" that is not a kind, is
 -- listed with a "?" prefix.
 local function describe_scenario(index)
-    local scenario = index and scenarios()[index]
+    local scenario = index and fault_list[index]
     if type(scenario) ~= "table" then
         return "none"
     end
@@ -485,7 +473,7 @@ end
 -- One line for the startup log: every scenario with its index, and which are
 -- used.
 local function describe_plan()
-    local list = scenarios()
+    local list = fault_list
     if #list == 0 then
         return "no fault scenarios"
     end
@@ -530,7 +518,6 @@ return {
     describe_plan = describe_plan,
     describe_scenario = describe_scenario,
     end_scenario = end_scenario,
-    advanced_on = advanced_on,
     fault = fault,
     fault_log = fault_log,
     gate_on = gate_on,

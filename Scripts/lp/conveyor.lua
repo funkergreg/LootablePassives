@@ -62,7 +62,6 @@ local is_valid = util.is_valid
 local log = util.log
 local method = util.method
 local unwrap = util.unwrap
-local coalescer = util.coalescer
 local conveyor_on = options.conveyor_on
 local debug_log = options.debug_log
 local get_skill_ids = passives.get_skill_ids
@@ -83,10 +82,6 @@ local COMPLETE_RATE = 0.999
 -- A Pal that leaves below COMPLETE_RATE after reaching this rate is logged as a
 -- possible missed completion.
 local NEAR_COMPLETE_RATE = 0.97
-
--- Defined at the bottom of the file, after the hook callbacks they register.
-local apply
-local schedule_apply
 
 --------------------------------------------------------------------------------
 -- Reading the queue
@@ -286,20 +281,12 @@ end
 -- The container hook is zero-parameter, so its context argument is the model
 -- and this is its callback as is.
 --
--- With options.conveyor_on() false, returns before reading the model, empties
--- tracked on the first such firing, and schedules apply(), which removes both
--- hooks. A Pal tracked before the switch went off is never paid for, whatever
--- its rate.
+-- With options.conveyor_on() false, returns before reading the model.
 --
 -- Where role.is_authority() is false, returns before reading the model, and
 -- logs that once.
 local function pass_if_valid(model_param)
     if not conveyor_on() then
-        if next(tracked) ~= nil then
-            tracked = {}
-            log("Conveyor extraction switched off; Pals being tracked were forgotten.")
-        end
-        schedule_apply()
         return
     end
     if not is_authority() then
@@ -325,10 +312,11 @@ end
 local registrations = nil
 
 -- Brings the hooks in line with options.conveyor_on(): registers both the first
--- time it is on, and otherwise enables or disables them with it. Called at
--- load, on each map load, and scheduled from the hooks when the switch is off;
--- never from inside either hook.
-function apply()
+-- time it is on, and otherwise enables or disables them with it. Disabling
+-- empties tracked: a Pal tracked before the switch went off is never paid for,
+-- whatever its rate. Called at load, on each map load, and from main.lua's
+-- listener when conveyor_extraction changes; never from inside either hook.
+local function apply()
     local enabled = conveyor_on()
     if registrations == nil then
         if not enabled then
@@ -350,12 +338,14 @@ function apply()
         }
         return
     end
+    if not enabled and next(tracked) ~= nil then
+        tracked = {}
+        log("Conveyor extraction switched off; Pals being tracked were forgotten.")
+    end
     for _, registration in ipairs(registrations) do
         hooks.set_enabled(registration, enabled)
     end
 end
-
-schedule_apply = coalescer(apply, 0)
 
 return {
     apply = apply,

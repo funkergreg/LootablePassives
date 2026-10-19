@@ -62,6 +62,10 @@ local function _call_key(object, key)
     return object[key](object)
 end
 
+local function _call_one(object, name, argument)
+    return object[name](object, argument)
+end
+
 -- Calls :get() on a UE4SS parameter wrapper and returns the result; returns the
 -- value unchanged if it has no getter.
 local function unwrap(value)
@@ -82,8 +86,9 @@ end
 -- methods, and return the result through unwrap. A read or call that raises
 -- returns nil, as does a nil object.
 --
--- method() IS FOR ZERO-ARGUMENT CALLS ONLY. Anything taking arguments stays
--- written out at its call site, where its arity is visible next to it.
+-- method() IS FOR ZERO-ARGUMENT CALLS ONLY, and call_one() for calls taking
+-- exactly one argument. Anything taking more stays written out at its call
+-- site, where its arity is visible next to it.
 local function field(object, key)
     if object == nil then
         return nil
@@ -104,6 +109,19 @@ local function method(object, key)
         return nil
     end
     return unwrap(value)
+end
+
+-- Calls object:name(argument). Returns true and the result through unwrap, or
+-- false for a nil object and for a call that raises.
+local function call_one(object, name, argument)
+    if object == nil then
+        return false
+    end
+    local succeeded, value = pcall(_call_one, object, name, argument)
+    if not succeeded then
+        return false
+    end
+    return true, unwrap(value)
 end
 
 -- UE4SS's own IsValid(), through unwrap. False for nil and for a call that
@@ -159,14 +177,11 @@ local function guid_parts(guid)
 end
 
 local function guid_key(guid)
-    if guid == nil then
+    local a, b, c, d = guid_parts(guid)
+    if a == nil then
         return nil
     end
-    local succeeded, a, b, c, d = pcall(_guid_parts, guid)
-    if not succeeded then
-        return nil
-    end
-    local key = string.format("%d-%d-%d-%d", a or 0, b or 0, c or 0, d or 0)
+    local key = string.format("%d-%d-%d-%d", a, b, c, d)
     if key == "0-0-0-0" then
         return nil
     end
@@ -378,6 +393,7 @@ return {
     SCRIPT_DIRECTORY = SCRIPT_DIRECTORY,
     UE4SS_ROOT = UE4SS_ROOT,
     array_count = array_count,
+    call_one = call_one,
     coalescer = coalescer,
     field = field,
     find_all = find_all,

@@ -144,15 +144,14 @@ local function operation_result_code(value)
     if type(value) ~= "string" then
         return nil
     end
-    local text = value
-    local numeric = tonumber(text)
+    local numeric = tonumber(value)
     if numeric ~= nil then
         return numeric
     end
-    if text:find("SuccessNoOperation", 1, true) then
+    if value:find("SuccessNoOperation", 1, true) then
         return 1
     end
-    if text:find("Success", 1, true) then
+    if value:find("Success", 1, true) then
         return ITEM_RESULT_SUCCESS
     end
     return nil

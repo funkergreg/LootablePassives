@@ -154,11 +154,11 @@ end
 -- With no earlier row for this Pal, does nothing. An earlier row whose marker
 -- is gone from before_ids is discarded. One whose marker is still in
 -- before_ids cannot be told apart from the new exchange, and is replaced with
--- a warning. Returns true: the new exchange may write its row.
+-- a warning.
 local function settle_before_exchange(key, before_ids)
     local record = read_row(key)
     if record == nil then
-        return true
+        return
     end
     if count_id(before_ids, record.lock) > 0 then
         log(string.format(
@@ -170,7 +170,6 @@ local function settle_before_exchange(key, before_ids)
             "Discarded the journal row of an earlier exchange of %s on this Pal: the Pal no longer "
             .. "carries its marker.", describe(record)))
     end
-    return true
 end
 
 -- Runs one recovery pass 5 s from now, on the game thread.

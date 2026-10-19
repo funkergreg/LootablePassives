@@ -30,13 +30,14 @@ local notice = require("lp.notice")
 local role = require("lp.role")
 local hooks = require("lp.hooks")
 
+local call_one = util.call_one
 local field = util.field
 local find_all = util.find_all
 local guid_key = util.guid_key
 local is_valid = util.is_valid
 local log = util.log
 local method = util.method
-local unwrap = util.unwrap
+local name_to_string = util.name_to_string
 local debug_log = options.debug_log
 
 local PAYLOAD_PREFIX = "LootablePassives host"
@@ -78,15 +79,10 @@ end
 -- { surgery = bool, conveyor = bool } from a host text, or nil when text is not
 -- one. A setting the text does not name reads as false.
 local function parse_payload(text)
-    if type(text) ~= "string" or text:sub(1, #PAYLOAD_PREFIX + 1) ~= PAYLOAD_PREFIX .. " " then
-        return nil
-    end
-    local version = text:match("^" .. PAYLOAD_PREFIX .. " v(%d+)")
-    if version == nil then
+    if type(text) ~= "string" or text:match("^" .. PAYLOAD_PREFIX .. " v%d+") == nil then
         return nil
     end
     return {
-        version = version,
         surgery = text:match("[ ]surgery=1") ~= nil,
         conveyor = text:match("[ ]conveyor=1") ~= nil,
     }
@@ -155,15 +151,11 @@ end
 -- Sending, on the machine that holds the world
 --------------------------------------------------------------------------------
 
-local function _call_one(object, name, argument)
-    return object[name](object, argument)
-end
-
 -- Sends the current payload to one controller. Returns whether the call
 -- returned.
 local function send(controller, text)
     debug_log("handshake: sending to a player controller: " .. text)
-    return (pcall(_call_one, controller, "Debug_ReceiveCheatCommand_ToClient", text))
+    return (call_one(controller, "Debug_ReceiveCheatCommand_ToClient", text))
 end
 
 local function current_payload()
@@ -185,6 +177,23 @@ local function remote_controllers()
     return found
 end
 
+-- The controller in controllers whose uid is uid, or nil.
+local function controller_for(controllers, uid)
+    for _, entry in ipairs(controllers) do
+        if entry.uid == uid then
+            return entry.controller
+        end
+    end
+    return nil
+end
+
+-- Sends text to every remote controller.
+local function send_to_remotes(text)
+    for _, entry in ipairs(remote_controllers()) do
+        send(entry.controller, text)
+    end
+end
+
 -- The joining player's controller, matched by PlayerUId. Logs once when none
 -- matches.
 local function send_to_player(_, uid)
@@ -194,15 +203,14 @@ local function send_to_player(_, uid)
     local controllers = remote_controllers()
     debug_log(string.format("handshake: player %s joined; %d remote controller(s)", tostring(uid),
         #controllers))
-    for _, entry in ipairs(controllers) do
-        if entry.uid == uid then
-            if not send(entry.controller, current_payload()) then
-                log("WARNING: could not tell a joining player that this host runs Lootable "
-                    .. "Passives; their game hides its Surgery operations until a setting changes "
-                    .. "here or they rejoin.")
-            end
-            return
+    local controller = controller_for(controllers, uid)
+    if controller ~= nil then
+        if not send(controller, current_payload()) then
+            log("WARNING: could not tell a joining player that this host runs Lootable "
+                .. "Passives; their game hides its Surgery operations until a setting changes "
+                .. "here or they rejoin.")
         end
+        return
     end
     debug_log("handshake: no player controller matched the joining player " .. tostring(uid))
 end
@@ -231,10 +239,7 @@ local function broadcast(message)
     if role.has_ui() then
         notice.once(message, message)
     end
-    local text = NOTICE_PREFIX .. message
-    for _, entry in ipairs(remote_controllers()) do
-        send(entry.controller, text)
-    end
+    send_to_remotes(NOTICE_PREFIX .. message)
 end
 
 -- Reports deliveries, a list of { uid = <PlayerUId key>, item_id, count }, to
@@ -273,11 +278,9 @@ local function tell_grants(kind, deliveries)
         for index, item_id in ipairs(items.list) do
             listed[index] = { item_id, items.counts[item_id] }
         end
-        for _, entry in ipairs(controllers) do
-            if entry.uid == uid then
-                send(entry.controller, format_grant(kind, listed))
-                break
-            end
+        local controller = controller_for(controllers, uid)
+        if controller ~= nil then
+            send(controller, format_grant(kind, listed))
         end
     end
 end
@@ -288,10 +291,7 @@ local function tell_setting(name, value)
     if not role.is_authority() or not options.debug_on() then
         return
     end
-    local text = format_setting(name, value)
-    for _, entry in ipairs(remote_controllers()) do
-        send(entry.controller, text)
-    end
+    send_to_remotes(format_setting(name, value))
 end
 
 --------------------------------------------------------------------------------
@@ -333,19 +333,11 @@ end
 
 local schedule_notices = util.coalescer(show_notices, 0)
 
-local function _call_to_string(value)
-    return value:ToString()
-end
-
 local function on_receive(_, message)
     if role.is_authority() then
         return
     end
-    local value = unwrap(message)
-    local converted, text = pcall(_call_to_string, value)
-    if not converted then
-        text = type(value) == "string" and value or nil
-    end
+    local text = name_to_string(message)
     local setting_name, setting_value = parse_setting(text)
     if setting_name ~= nil then
         debug_log(string.format("The host's setting %s is now %s.", setting_name,

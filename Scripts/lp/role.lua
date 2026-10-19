@@ -17,11 +17,11 @@
 
 local util = require("lp.util")
 
+local call_one = util.call_one
 local coalescer = util.coalescer
 local find_first = util.find_first
 local is_valid = util.is_valid
 local log = util.log
-local unwrap = util.unwrap
 
 local UTILITY_PATH = "/Script/Pal.Default__PalUtility"
 
@@ -43,18 +43,26 @@ local utility = nil
 local listeners = {}
 local attempts = 0
 
-local function _call_one(object, name, argument)
-    return object[name](object, argument)
-end
-
 -- One UPalUtility predicate against context: true or false, or nil when the
 -- call raises.
 local function ask(name, context)
-    local succeeded, answer = pcall(_call_one, utility, name, context)
+    local succeeded, answer = call_one(utility, name, context)
     if not succeeded then
         return nil
     end
-    return unwrap(answer) == true
+    return answer == true
+end
+
+-- UPalUtility's class default object, found once and kept, or nil.
+local function pal_utility()
+    if not is_valid(utility) then
+        local found, object = pcall(StaticFindObject, UTILITY_PATH)
+        if not found or not is_valid(object) then
+            return nil
+        end
+        utility = object
+    end
+    return utility
 end
 
 -- The role, or nil when there is no PalGameStateInGame or any of the calls
@@ -64,12 +72,8 @@ local function read_role()
     if context == nil then
         return nil
     end
-    if not is_valid(utility) then
-        local found, object = pcall(StaticFindObject, UTILITY_PATH)
-        if not found or not is_valid(object) then
-            return nil
-        end
-        utility = object
+    if pal_utility() == nil then
+        return nil
     end
     local server = ask("IsServer", context)
     if server == nil then
@@ -163,10 +167,6 @@ local function has_ui()
     return role ~= nil and role ~= "dedicated"
 end
 
-local function is_dedicated()
-    return resolve() == "dedicated"
-end
-
 -- The role's name for a log line, or "unknown".
 local function describe()
     return ROLE_TEXT[current] or "unknown"
@@ -177,6 +177,6 @@ return {
     forget = forget,
     has_ui = has_ui,
     is_authority = is_authority,
-    is_dedicated = is_dedicated,
     on_known = on_known,
+    pal_utility = pal_utility,
 }

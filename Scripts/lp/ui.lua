@@ -670,9 +670,14 @@ local function refresh_surgery_ui(reset_panel, rebuild_list, when)
         method(page, "RefreshCurrentPassiveItem")
         -- The quantity readout survives the writes above after a consumable
         -- route; UpdateNum with no item is the vanilla redraw for it.
-        debug_log(string.format("%s: before UpdateNum(None): %s.", when, num_state(page)))
+        local debugging = options.debug_on()
+        if debugging then
+            debug_log(string.format("%s: before UpdateNum(None): %s.", when, num_state(page)))
+        end
         pcall(_call_update_num, page, FName("None"))
-        debug_log(string.format("%s: after UpdateNum(None): %s.", when, num_state(page)))
+        if debugging then
+            debug_log(string.format("%s: after UpdateNum(None): %s.", when, num_state(page)))
+        end
     end
 
     if screen ~= nil then
@@ -803,7 +808,9 @@ local EXCHANGE_POLL_LIMIT = 50
 local function end_local_exchange(record, message)
     log(message)
     exchange = nil
-    log_detail_state("at finish", current_screen(), current_page())
+    if options.debug_on() then
+        log_detail_state("at finish", current_screen(), current_page())
+    end
     on_transaction_complete(record.mode)
 end
 

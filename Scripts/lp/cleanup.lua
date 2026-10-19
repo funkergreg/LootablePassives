@@ -33,6 +33,7 @@ local role = require("lp.role")
 local ledger = require("lp.ledger")
 local notice = require("lp.notice")
 local host = require("lp.host")
+local is_lp_implant = require("lp.ids").is_lp_implant
 
 local array_count = util.array_count
 local coalescer = util.coalescer
@@ -52,11 +53,8 @@ local debug_log = options.debug_log
 -- seconds.
 local SLICE = 100
 
-local PREFIX = "LP_Implant_"
-
-local function is_mod_item(item_id)
-    return type(item_id) == "string" and item_id:sub(1, #PREFIX) == PREFIX
-end
+local UNFINISHED_NOTICE = "Lootable Passives: removing this mod's implants did not finish; the "
+    .. "host will try again."
 
 -- The run in progress, or nil.
 ---@type table|nil
@@ -108,6 +106,9 @@ local function dispose(state, component, slot, count)
             .. tostring(method(component, "GetFullName")))
     end
     local returned, raised = pcall(_call_dispose, component, request_id, slot_info)
+    if not options.debug_on() then
+        return returned
+    end
     debug_log(string.format("cleanup: dispose x%d at slot %s returned=%s%s; the slot now holds %s x%s",
         count, tostring(slot_info.SlotId.SlotIndex), tostring(returned),
         returned and "" or (" (" .. tostring(raised) .. ")"),
@@ -133,11 +134,11 @@ local function visit(state, container, component)
     for index = 1, array_count(slots) do
         local slot = unwrap(slots[index])
         local item_id = name_to_string(field(field(slot, "ItemId"), "StaticId"))
-        if is_mod_item(item_id) then
+        if is_lp_implant(item_id) then
             local count = tonumber(field(slot, "StackCount")) or 0
             if count > 0 then
                 kind = kind or kind_of(container)
-                if phase ~= "count" then
+                if phase ~= "count" and options.debug_on() then
                     debug_log(string.format("cleanup %s: %s x%d in a %s (%s)", phase, item_id, count,
                         kind, tostring(method(container, "GetFullName"))))
                 end
@@ -157,7 +158,8 @@ local function _call_get_container(manager, container_id)
     return manager:GetContainer(container_id)
 end
 
--- The id of every PalItemContainer in memory, each as { A, B, C, D }, read in
+-- The id of every PalItemContainer in memory, each as the FPalContainerId
+-- GetContainer takes, { ID = { A, B, C, D } }, read in
 -- this frame from UPalContainerBase's ID (Pal.hpp). A container whose id does
 -- not read is left out.
 local function container_ids()
@@ -165,7 +167,7 @@ local function container_ids()
     for _, container in ipairs(find_all("PalItemContainer")) do
         local a, b, c, d = guid_parts(field(field(container, "ID"), "ID"))
         if a ~= nil then
-            ids[#ids + 1] = { a, b, c, d }
+            ids[#ids + 1] = { ID = { A = a, B = b, C = c, D = d } }
         end
     end
     return ids
@@ -187,7 +189,7 @@ end
 local function finish(state)
     local found, verified = state.tallies.count, state.tallies.verify
     local remaining = total(verified)
-    local dropped, written = ledger.forget_items(is_mod_item)
+    local dropped, written = ledger.forget_items(is_lp_implant)
     run = nil
     if remaining == 0 and written then
         log(string.format("Removed this mod's implants from the world: %s; %d owed implant(s) "
@@ -201,8 +203,7 @@ local function finish(state)
     log(string.format("WARNING: removing this mod's implants did not finish: %d remain (%s)%s. "
         .. "remove_mod_items stays on, so it runs again on the next world entry or player join.",
         remaining, describe(verified), written and "" or "; the ledger could not be written"))
-    host.broadcast("Lootable Passives: removing this mod's implants did not finish; the host "
-        .. "will try again.")
+    host.broadcast(UNFINISHED_NOTICE)
 end
 
 local schedule_step
@@ -219,15 +220,12 @@ local function step()
         log("WARNING: removing this mod's implants stopped: the item container manager or a "
             .. "player's network item component is gone. remove_mod_items stays on, so it runs "
             .. "again on the next world entry or player join.")
-        host.broadcast("Lootable Passives: removing this mod's implants did not finish; the host "
-            .. "will try again.")
+        host.broadcast(UNFINISHED_NOTICE)
         return
     end
     local last = math.min(state.index + SLICE - 1, #state.ids)
     for index = state.index, last do
-        local id = state.ids[index]
-        local found, container = pcall(_call_get_container, manager,
-            { ID = { A = id[1], B = id[2], C = id[3], D = id[4] } })
+        local found, container = pcall(_call_get_container, manager, state.ids[index])
         if found then
             visit(state, unwrap(container), component)
         end
@@ -300,6 +298,5 @@ end
 
 return {
     cancel = cancel,
-    is_mod_item = is_mod_item,
     request = request,
 }

@@ -150,8 +150,10 @@ end
 -- before this hook has fired once does the page half and skips the list rebuild.
 local function on_passive_update(context, passive_ids)
     note_live_screen(unwrap(context))
-    options.debug_log(string.format("OnPassiveUpdate: [%s]",
-        table.concat(name_list(unwrap(passive_ids)), ",")))
+    if debug_on() then
+        options.debug_log(string.format("OnPassiveUpdate: [%s]",
+            table.concat(name_list(unwrap(passive_ids)), ",")))
+    end
     check_local_exchange("OnPassiveUpdate")
     if refresh_pending() then
         schedule_refresh()
@@ -187,6 +189,18 @@ local flush_attempts = 0
 local flush_gave_up = false
 -- Coalesced through the same factory as the widget hooks, so a second world
 -- entry while a chain is running does not start a second chain.
+-- Delivers what the ledger owes, reports each remote player's share to them,
+-- and logs the count when anything was delivered. when ends the log line's
+-- "Delivered N owed module(s)". Returns what is still owed.
+local function deliver_owed(when)
+    local delivered, owed, _, _, deliveries = ledger.flush()
+    host.tell_grants("owed", deliveries)
+    if delivered > 0 then
+        log(string.format("Delivered %d owed module(s) %s; %d still owed.", delivered, when, owed))
+    end
+    return owed
+end
+
 local schedule_flush
 local attempt_flush
 
@@ -196,16 +210,8 @@ function attempt_flush()
     end
     local authoritative = is_authority()
 
-    if authoritative then
-        local delivered, owed, _, _, deliveries = ledger.flush()
-        host.tell_grants("owed", deliveries)
-        if delivered > 0 then
-            log(string.format("Delivered %d module(s) owed from an earlier session; %d still owed.",
-                delivered, owed))
-        end
-        if owed == 0 then
-            return
-        end
+    if authoritative and deliver_owed("from an earlier session") == 0 then
+        return
     end
 
     if flush_attempts < FLUSH_ATTEMPT_LIMIT then
@@ -329,14 +335,8 @@ options.watch_file()
 -- A player joining: whatever the ledger owes is delivered, which reaches the
 -- joining player if any of it is theirs.
 joins.on_joined(function()
-    if ledger.total_owed() == 0 then
-        return
-    end
-    local delivered, owed, _, _, deliveries = ledger.flush()
-    host.tell_grants("owed", deliveries)
-    if delivered > 0 then
-        log(string.format("Delivered %d owed module(s) when a player joined; %d still owed.",
-            delivered, owed))
+    if ledger.total_owed() > 0 then
+        deliver_owed("when a player joined")
     end
 end)
 joins.install()

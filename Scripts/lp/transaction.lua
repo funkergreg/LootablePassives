@@ -197,6 +197,12 @@ local function claimed_by_other(key, record)
     return holder ~= nil and holder ~= record
 end
 
+-- claimed_by_other for parameter's Pal. Reads the Pal's key only while some
+-- Pal is claimed.
+local function pal_claimed_by_other(parameter, record)
+    return next(claimed) ~= nil and claimed_by_other(pal_key(parameter), record)
+end
+
 local function release_claim(key, record)
     if claimed[key] == record then
         claimed[key] = nil
@@ -248,9 +254,7 @@ local function resolve_record(record)
     local candidates = {}
     local vanilla_seen, marker_seen = false, false
     for _, snapshot in ipairs(record.snapshots) do
-        local valid = is_valid(snapshot.parameter)
-        local key = valid and pal_key(snapshot.parameter) or nil
-        if valid and not claimed_by_other(key, record) then
+        if is_valid(snapshot.parameter) and not pal_claimed_by_other(snapshot.parameter, record) then
             local after_ids = get_skill_ids(snapshot.parameter)
             local removed, lock = detect_replaced_passive(snapshot.before_ids, after_ids)
             local stray = false
@@ -273,7 +277,7 @@ local function resolve_record(record)
                 vanilla_seen = vanilla_seen or change == "vanilla"
             else
                 candidates[#candidates + 1] = {
-                    key = key,
+                    key = pal_key(snapshot.parameter),
                     parameter = snapshot.parameter,
                     passive_id = removed,
                     item_id = removed and module_for(removed),
@@ -309,9 +313,7 @@ local function stranded_marker(record)
     end
     local found_snapshot, found_lock
     for _, snapshot in ipairs(record.snapshots) do
-        if is_valid(snapshot.parameter)
-            and not claimed_by_other(pal_key(snapshot.parameter), record)
-        then
+        if is_valid(snapshot.parameter) and not pal_claimed_by_other(snapshot.parameter, record) then
             local after_ids = get_skill_ids(snapshot.parameter)
             if after_ids ~= nil then
                 local before = counts(snapshot.before_ids)
@@ -333,12 +335,14 @@ end
 -- The first row of an exchange on parameter's Pal, always "prepared".
 -- write_journal replaces that Pal's earlier row, so
 -- recovery.settle_before_exchange runs first, against the Pal's passive list
--- before the swap. False when the Pal's key does not read or either refuses.
+-- before the swap. False when the Pal's key does not read or the write fails.
 local function begin_journal(parameter, before_ids, phase, passive_id, item_id, lock)
     local key = pal_key(parameter)
-    return key ~= nil
-        and settle_before_exchange(key, before_ids)
-        and write_journal(key, "prepared", phase, passive_id, item_id, lock)
+    if key == nil then
+        return false
+    end
+    settle_before_exchange(key, before_ids)
+    return write_journal(key, "prepared", phase, passive_id, item_id, lock)
 end
 
 -- The journal after an abort's undo, for both the extraction and the implant
@@ -412,15 +416,13 @@ local function extract_additional(record, passive_id, item_id, bag)
         return false, false
     end
     local granted, reason = add_implant(bag, item_id)
-    if granted then
-        note_granted(record, item_id)
-    end
     if not granted then
         -- The passive is kept. The row on disk still reads prepared, which
         -- recovery acts on by removing the marker and nothing else.
         log(string.format("SKIPPED %s: implant grant failed (%s).", passive_id, tostring(reason)))
         return false, false
     end
+    note_granted(record, item_id)
     local journalled = write_journal(record.key, "granted", "loop", passive_id, item_id, lock)
     if not journalled then
         log(string.format(
@@ -622,9 +624,7 @@ end
 local function direct_route_change(record)
     local found, found_added, found_removed
     for _, snapshot in ipairs(record.snapshots) do
-        if is_valid(snapshot.parameter)
-            and not claimed_by_other(pal_key(snapshot.parameter), record)
-        then
+        if is_valid(snapshot.parameter) and not pal_claimed_by_other(snapshot.parameter, record) then
             local after_ids = get_skill_ids(snapshot.parameter)
             if after_ids ~= nil then
                 local single, added, removed = single_change(snapshot.before_ids, after_ids)
@@ -725,18 +725,21 @@ function finalize_extraction(record, attempt)
             refuse_direct_route(record)
         elseif vanilla then
             -- A direct route installs its passive with no marker, so the game
-            -- completed it and spent the module; it is logged and left as is.
-            -- Any other change is the same outcome as running out of attempts
-            -- with no marker, on the first attempt that sees the change.
-            local snapshot, added = direct_route_change(record)
-            if snapshot ~= nil then
-                debug_log(string.format(
-                    "Implanted %s through its direct route for player %s (%s); the game spent "
-                    .. "its module.", added, tostring(player_id_number(record.request_player_id)),
-                    record.mode_source))
-            else
-                debug_log("A passive list changed with no marker, so this was not one of our "
-                    .. "operations; nothing was changed.")
+            -- completed it and spent the module; it is logged under debug and
+            -- left as is. Any other change is the same outcome as running out
+            -- of attempts with no marker, on the first attempt that sees the
+            -- change.
+            if options.debug_on() then
+                local snapshot, added = direct_route_change(record)
+                if snapshot ~= nil then
+                    debug_log(string.format(
+                        "Implanted %s through its direct route for player %s (%s); the game "
+                        .. "spent its module.", added,
+                        tostring(player_id_number(record.request_player_id)), record.mode_source))
+                else
+                    debug_log("A passive list changed with no marker, so this was not one of our "
+                        .. "operations; nothing was changed.")
+                end
             end
         elseif attempt < RESOLVE_ATTEMPTS then
             schedule_finalize(record, attempt + 1, RESOLVE_INTERVAL_MS)
@@ -835,14 +838,12 @@ function finalize_extraction(record, attempt)
         return
     end
     local granted, reason = add_implant(bag, record.item_id)
-    if granted then
-        note_granted(record, record.item_id)
-    end
     if not granted then
         log(string.format("ERROR: implant grant failed for %s (%s); %s.",
             record.passive_id, tostring(reason), restore_on_abort(record, "keep")))
         return
     end
+    note_granted(record, record.item_id)
     if not write_journal(record.key, "granted", "marker", record.passive_id, record.item_id,
             record.lock)
     then

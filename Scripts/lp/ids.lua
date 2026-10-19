@@ -95,6 +95,14 @@ for alias in pairs(IMPLANT_TARGET) do
     EXTRACTION_MODES[alias] = "implant"
 end
 
+-- True for the id of one of this mod's own LP_Implant_* items. False for the 21
+-- vanilla PalPassiveSkillChange_Consumable_* implants and for a non-string.
+local IMPLANT_PREFIX = "LP_Implant_"
+
+local function is_lp_implant(item_id)
+    return type(item_id) == "string" and item_id:sub(1, #IMPLANT_PREFIX) == IMPLANT_PREFIX
+end
+
 -- True for the two extraction modes, false for "implant". Callers that treat an
 -- empty selected slot differently by kind branch on this.
 local function is_extract_mode(mode)
@@ -105,4 +113,5 @@ return {
     IMPLANT_TARGET = IMPLANT_TARGET,
     EXTRACTION_MODES = EXTRACTION_MODES,
     is_extract_mode = is_extract_mode,
+    is_lp_implant = is_lp_implant,
 }
