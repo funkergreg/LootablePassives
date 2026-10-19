@@ -319,9 +319,32 @@ local function flush()
     return delivered, total_owed(), spilled, held
 end
 
+-- Drops every debt whose item id matches(item_id) is true, for every owner,
+-- and persists. Returns the number of modules dropped, and whether the file
+-- now matches.
+local function forget_items(matches)
+    load()
+    local dropped = 0
+    for _, items in pairs(pending) do
+        for item_id, count in pairs(items) do
+            if matches(item_id) then
+                dropped = dropped + count
+                items[item_id] = nil
+            end
+        end
+    end
+    if dropped == 0 then
+        return 0, true
+    end
+    local written = persist(pending_rows())
+    disk_stale = not written
+    return dropped, written
+end
+
 return {
     LEDGER_PATH = LEDGER_PATH,
     flush = flush,
+    forget_items = forget_items,
     owe = owe,
     total_owed = total_owed,
 }

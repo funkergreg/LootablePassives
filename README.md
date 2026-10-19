@@ -24,15 +24,15 @@ This repository is the mod's source, not the shipped mod. The mod is distributed
 
 | Path | Purpose | Ships to the Workshop |
 | --- | --- | --- |
-| `Scripts\` | Lua runtime: `main.lua`, `settings.lua`, `lp\*.lua` | yes |
+| `Scripts\` | Lua runtime: `main.lua`, the settings file `config.lua`, `lp\*.lua` | yes |
 | `PalSchemaMods\LootablePassives\` | JSON data patches: items, DataTable rows, English strings | yes |
 | `Info.json` | Workshop package manifest | yes |
 | `LICENSE`, `thumbnail.png` | Package metadata | yes |
 | `assets\thumbnail-base.png` | The thumbnail without a version label; `thumbnail.png` is this with the release version drawn under the title | no |
 | `README.md` | This page: the development repo's documentation | no |
-| `.docs\workshop-description.txt` | The Steam Workshop page text, in Steam's BBCode | no |
+| `workshop-description.txt` | The Steam Workshop page text, in Steam's BBCode | no |
 | `.docs\crash-watch.md` | The working notes document: the open crash watch, its evidence, and how to triage a recurrence | no |
-| `tools\` | `stage.ps1`, `test_staging.ps1`, `draw_thumbnail.py`, `luacheck.js`, `ledger_test.lua` | no |
+| `tools\` | `stage.ps1`, `test_staging.ps1`, `draw_thumbnail.py`, `luacheck.js`, `ledger_test.lua`, `journal_test.lua`, `exchange_test.lua`, `options_test.lua`, `host_test.lua` | no |
 | `package.json` | Declares `luaparse` for `tools\luacheck.js` | no |
 | `.luacheckrc`, `.luarc.json` | Declare UE4SS's injected globals for luacheck and the Lua language server | no |
 
@@ -108,6 +108,10 @@ There is no build step. The repository is the working copy. A plain `stage.ps1`,
 node tools\luacheck.js          # Lua parse check
 luacheck Scripts                # static analysis; the baseline is 0 warnings / 0 errors
 lua tools\ledger_test.lua       # after any change to Scripts\lp\ledger.lua
+lua tools\journal_test.lua      # after any change to Scripts\lp\journal.lua
+lua tools\exchange_test.lua     # after any change to Scripts\lp\transaction.lua
+lua tools\options_test.lua      # after any change to Scripts\lp\options.lua or Scripts\config.lua
+lua tools\host_test.lua         # after any change to Scripts\lp\host.lua, passives.lua or ids.lua
 .\tools\test_staging.ps1          # after any change to tools\stage.ps1
 .\tools\stage.ps1               # local test build: patch + 1, DebugMode on; add -DryRun to preview
 .\tools\stage.ps1 -Minor        # minor release: minor + 1, patch 0, DebugMode off; redraws the thumbnail; deletes stale files
@@ -132,7 +136,7 @@ The default run, with no flag, is an explicit patch update, and the patch bump i
 2. Stage a dev build with `.\tools\stage.ps1`, or a release with `.\tools\stage.ps1 -Minor` or `.\tools\stage.ps1 -Major`. A release also redraws `thumbnail.png` with its version first (see [The release thumbnail](#the-release-thumbnail)). Commit the rewritten `Info.json` and `Scripts\settings.lua`, and for a release `thumbnail.png`, with the change they carry.
 3. For a release, or a multiplayer test, upload from **Palworld Mod Uploader**, which is software run from Steam. A local test build needs no upload. A dev build that is uploaded goes out with `DebugMode` on, which makes every subscriber's loader reinstall the mod at each launch until the next release.
 4. Restart Palworld. The host reinstalls from the item folder at launch. A subscribed machine reinstalls once Steam has downloaded the upload; for a multiplayer test, check the version under **Options → Mod Management** on both machines before testing together.
-5. If the player-facing description changed, paste `.docs\workshop-description.txt` into the Workshop page's description by hand. The uploader does not carry it, and the stage does not include it.
+5. If the player-facing description changed, paste `workshop-description.txt` into the Workshop page's description by hand. The uploader does not carry it, and the stage does not include it.
 
 UE4SS hot reload is disabled, and the loader installs only at launch, so a running game does not pick up a change until it restarts.
 
@@ -197,16 +201,27 @@ repo  --stage.ps1-->  <Workshop content>\1623730\<item id>\  --loader, at launch
 - **A mirror.** Before copying anything, it compares the item folder with the files about to be staged. A file the stage does not have stops the run with nothing changed. After you delete a file from the repository, run the next stage with `-Force`, which deletes those files and any folder left empty. `-Minor` and `-Major` do the same deletion without `-Force`, so a release is always an exact mirror of the repository. At the next reinstall the file is in the old manifest and not in the new install; check the game folder the first time you rely on that.
 - **When the loader reinstalls.** At launch it compares `Version` in the item folder's `Info.json` with the installed copy in `<Palworld>\Mods\ManagedMods\LootablePassives\`, as plain strings. When they differ, or when `DebugMode` is true, it removes what its `InstallManifest.json` lists and copies the `InstallRule` targets in again. A subscribed machine does the same after Steam downloads an upload. Every stage raises the version, so the first launch after each stage installs it. `stage.ps1` warns if the new version equals the last upload, which a subscribed machine would not reinstall.
 - **The host installs whatever is staged.** Its next launch installs the staged copy whether or not it was uploaded. That is what makes a plain stage a local test build; for a multiplayer test, upload it too, or the subscribed machine is on an older version than the host.
-- **Only the loader writes the game folders.** For a `Lua` rule it also adds the `<PackageName> : 1` line to UE4SS's `mods.txt`, which is what starts the Lua half.
+- **Only the loader deploys to the game folders.** For a `Lua` rule it also adds the `<PackageName> : 1` line to UE4SS's `mods.txt`, which is what starts the Lua half. The running mod writes three files of its own: its installed `Scripts\config.lua` when a setting changes, and the recovery journal and pending-grant ledger in the UE4SS folder. Neither tooling nor hand edits write anything else there.
 - **Turning the mod off.** Use **Options → Mod Management**, which removes both halves. Setting `LootablePassives : 0` in `mods.txt` stops only the Lua half, and the Surgery Table operations stay listed with nothing behind them.
+
+### Testing on a local dedicated server
+
+The Palworld Dedicated Server (Steam → Library → Tools) runs on the same machine as the game, and the same staged build feeds both.
+
+- **Point the server at the client's Workshop folder.** In `PalServer\Mods\PalModSettings.ini`, with the server stopped: `bGlobalEnableMod=True`, `WorkshopRootDir=C:\Program Files (x86)\Steam\steamapps\workshop\content\1623730`, and one `ActiveModList=` line each for `UE4SSExperimentalPW`, `PalSchema` and `LootablePassives`. The server then installs from the same item folder `stage.ps1` writes, and a restart of the server picks up each stage, with no upload.
+- **Only the `ActiveModList` mods install.** Another Workshop mod in the same folder with a server rule is not installed unless it is listed.
+- **The server keeps its own log,** `PalServer\Mods\NativeMods\UE4SS\UE4SS.log`. On a dedicated server the exchange, conveyor and ledger lines are written there, not in the client's log; the client logs its own `Surgery … finished` line.
+- **Playing your own world on it.** Copy the world folder from `%LOCALAPPDATA%\Pal\Saved\SaveGames\<SteamId>\<WorldId>\` to `PalServer\Pal\Saved\SaveGames\0\<WorldId>\`, leaving out `WorldOption.sav`, and set `DedicatedServerName=<WorldId>` in `PalServer\Pal\Saved\Config\WindowsServer\GameUserSettings.ini`. Join once to create your server-side player, then use a save editor's player UID swap (Palworld Save Pal, for one) to move your host character onto it. Back up both folders first.
 
 ### Reading the log
 
-The log is `UE4SS.log` in the game's UE4SS folder. Filter it on:
+The log is `UE4SS.log` in the game's UE4SS folder; a dedicated server keeps its own (above). Filter it on:
 
 - `[LootablePassives]` for the mod's own messages
 - `PalSchema` for the data half loading
 - `error` and `warning` for anything failing outright
+
+Entering a world logs `This machine is the <role> in this world.`, one of single player, listen host, dedicated server or client; the mod registers its hooks for that role. A release build logs only that, the startup lines, each operation's outcome, and warnings; a dev build adds `DEBUG:` lines.
 
 A healthy start logs `Loaded 115 extractable passives, 2 extraction operations, 54 insert routes.` That line counts only the Lua tables, and it prints even when the JSON loaded nothing. The data half is confirmed by PalSchema's own lines: `DT_OperatingTablePassiveSkillDataTable: 54 rows updated, 117 rows added, 0 rows deleted, 0 errors` and `DT_PassiveSkill_Main_Common: 0 rows updated, 56 rows added`.
 
@@ -247,16 +262,19 @@ An alias's description is a static English copy of the text the game builds for 
 
 ### Settings
 
-`Scripts\settings.lua` holds the switches that are safe to change. Each is documented in the file.
+`Scripts\config.lua` holds the settings players may change, each with a one-line comment. With [Better Mod Manager](https://steamcommunity.com/sharedfiles/filedetails/?id=3803996980) installed they appear on its page for this mod, and change while the game runs.
 
-- `debug`: debug mode. `stage.ps1` sets it `true` for a dev build and `false` for a release. On, it adds `DEBUG:` trace lines to `UE4SS.log` and arms `debug_faults`.
-- `conveyor_extraction`: the Pal Disassembly Conveyor's implants. `false` registers none of its hooks; implants already owed from an earlier session are still delivered.
+- `surgery_extraction`: Extract One, Extract All, and every implant route this mod adds to the Surgery Table (the 54 alias implants and the 61 direct routes). The host's value counts in multiplayer. Off, the host refuses those operations and undoes any that reach it, restoring the passive or refunding the implant; vanilla's own operations are untouched.
+- `conveyor_extraction`: the Pal Disassembly Conveyor's implants. The host's value counts. Off removes the conveyor hooks; implants already owed are still delivered.
 - `surgery_ui_gate`: the Edit-button gate on the Surgery screen, which refuses a click that cannot succeed. It is a kill switch for the one part of the mod that writes to a widget while the screen is open; with it off, the transaction still checks every rule and unwinds, but the operation's gold is not refunded.
-- `debug_faults`: injected failures for testing the crash-recovery paths: a failed journal write, a stop as if the game had crashed after a given journal row, a failed implant refund, and an exchange that cannot be resolved. It is a list of scenarios, each naming the kind of Surgery exchange it waits for (Extract One, Extract All or implant); the next exchange of that kind takes the first unused one, so a single game launch can run every scenario, in any order across kinds. Each is used once per launch. Ignored unless `debug` is `true`.
+- `debug`: debug mode. `stage.ps1` sets it `true` for a dev build and `false` for a release. On, it adds `DEBUG:` trace lines to `UE4SS.log` and arms the injected failures in `Scripts\lp\faults.lua`.
+- `experimental_features` and `remove_mod_items`: the host's item cleanup. The removal runs only while both are true, and clears `remove_mod_items` itself when it succeeds.
 
-`Scripts\lp\config.lua` is the only reader of the file. It reads each value at the moment it is used, so a value changed while the game runs takes effect: the gate at its next frame, the conveyor at its next firing (turned on after load, its hooks are registered at the next map load), debug at its next log line. A value of the wrong type is logged once and its default used; if the file fails to load, every switch takes its default.
+`Scripts\lp\options.lua` is the only reader of the file. It reads it once at load into a live table, and every getter reads that table when it is used, so a change takes effect: the gate at its next frame, the conveyor at once (its hooks are added or removed), debug at its next log line. A value of the wrong type is logged once and its default used; if the file fails to load, every setting takes its default.
 
-The file is installed with the rest of `Scripts\`, so the loader overwrites an edit made in the game folder at its next reinstall.
+**A change made while the game runs is saved into the installed `config.lua`,** only the value on that setting's line. Better Mod Manager also keeps every value that differs from the shipped default in `%LOCALAPPDATA%\Pal\Saved\Config\ModConfig.LootablePassives.lua`, and at the next start a value saved there wins over the file and is written into it. A mod update reinstalls `config.lua` with the shipped defaults; with Better Mod Manager the saved values come back, without it the edits must be made again. A `DebugMode` dev build reinstalls at every launch, so the same holds for every dev launch.
+
+`Scripts\lp\faults.lua` holds the injected failures for testing the crash-recovery paths: a failed journal write, a stop as if the game had crashed after a given journal row, a failed implant refund, and an exchange that cannot be resolved. It is a list of scenarios, each naming the kind of Surgery exchange it waits for (Extract One, Extract All or implant); the next exchange of that kind takes the first unused one, so a single game launch can run every scenario, in any order across kinds. Each is used once per launch. Ignored unless `debug` is `true`.
 
 ### The tools
 
@@ -265,6 +283,10 @@ The file is installed with the rest of `Scripts\`, so the loader overwrites an e
 | `node tools\luacheck.js` | Parses every Lua file under `Scripts\`. Syntax only. |
 | `luacheck Scripts` | Static analysis: undefined globals, unused variables, shadowing. Uses `.luacheckrc`. |
 | `lua tools\ledger_test.lua` | Test of the mod: the pending-delivery ledger's file format and who it delivers to, with the engine stubbed out. |
+| `lua tools\journal_test.lua` | Test of the mod: the recovery journal's one row per Pal, and its migration from the older single-row format. |
+| `lua tools\exchange_test.lua` | Test of the mod: which Pal each of several Surgery exchanges in flight at once is matched to, with the engine stubbed out. |
+| `lua tools\host_test.lua` | Test of the mod: the host handshake's text, and the 117 Surgery operations the `surgery_extraction` setting covers. |
+| `lua tools\options_test.lua` | Test of the mod: settings changes written back into `config.lua`, and the startup reconciliation with Better Mod Manager, against a throwaway folder. |
 | `.\tools\stage.ps1` | Checks `Info.json`, sets its version and `DebugMode` (dev build by default, minor release with `-Minor`, major release with `-Major`), writes `DebugMode` onto every `stage:DebugMode` line, and on a release redraws the thumbnail, then mirrors what `Info.json` names into the Workshop item folder, ready to upload. Takes `-Minor`, `-Major`, `-DryRun`, `-Force`, `-GameRoot` and `-WorkshopRoot`. |
 | `.\tools\test_staging.ps1` | Test of `stage.ps1`: runs a copy against throwaway repo, Workshop and game folders in `%TEMP%` and checks versions, checks, item-folder detection, the stale stop, `-Force`, both release runs and their stale deletion and thumbnail draw, the refusal of `-Minor` with `-Major`, and `-DryRun`. Never touches the real game or Workshop folders. `-Keep` leaves the temp folders for inspection. |
 | `python tools\draw_thumbnail.py <output> <label>` | Draws `<label>` under the title of `assets\thumbnail-base.png` and writes it to `<output>`. `stage.ps1 -Minor` and `-Major` run it; run it by hand only to preview a label. |

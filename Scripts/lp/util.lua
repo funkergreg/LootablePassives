@@ -117,17 +117,19 @@ local function is_valid(object)
     return succeeded and valid == true
 end
 
--- FName:ToString(), falling back to tostring(). Prefer to use this for every FName.
+-- FName:ToString() as a Lua string. A Lua string is returned as it is. nil for
+-- nil, for a value without ToString, and for a call that raises or returns
+-- something other than a string. Use this for every FName.
 local function name_to_string(value)
     value = unwrap(value)
-    if value == nil then
-        return nil
+    if value == nil or type(value) == "string" then
+        return value
     end
     local succeeded, result = pcall(_call_to_string, value)
-    if succeeded and result ~= nil then
+    if succeeded and type(result) == "string" then
         return result
     end
-    return tostring(value)
+    return nil
 end
 
 -- An FGuid as a comparable string, from its four int32s. Property reads only.
@@ -142,6 +144,18 @@ end
 -- lp/ledger.lua and passives.snapshot_all compare them against each other.
 local function _guid_parts(guid)
     return unwrap(guid.A), unwrap(guid.B), unwrap(guid.C), unwrap(guid.D)
+end
+
+-- An FGuid's four int32s, or nil when they do not read.
+local function guid_parts(guid)
+    if guid == nil then
+        return nil
+    end
+    local succeeded, a, b, c, d = pcall(_guid_parts, guid)
+    if not succeeded then
+        return nil
+    end
+    return a or 0, b or 0, c or 0, d or 0
 end
 
 local function guid_key(guid)
@@ -177,7 +191,7 @@ local function array_count(array)
 end
 
 --------------------------------------------------------------------------------
--- The object pool, and the authority question
+-- The object pool
 --------------------------------------------------------------------------------
 
 -- FindAllOf and FindFirstOf with one nil convention between them: find_all
@@ -200,28 +214,6 @@ local function find_first(class)
         return found
     end
     return nil
-end
-
--- AActor::HasAuthority(), which is zero-argument.
---
--- Returns allowed, valid_actor, asked, authoritative -- each stage of the
--- conjunction, so a caller can report which one failed. An unasked question
--- counts as unauthorised: this FAILS CLOSED.
---
--- Not UGameplayStatics::IsServer(WorldContextObject)
---
--- One implementation, here, because it gates every AddItem_ServerInternal in the
--- mod.
-local function has_authority(actor)
-    local valid_actor = is_valid(actor)
-    local authoritative = false
-    local asked = false
-    if valid_actor then
-        local succeeded, answer = pcall(_call_key, actor, "HasAuthority")
-        asked = succeeded
-        authoritative = answer == true
-    end
-    return valid_actor and asked and authoritative, valid_actor, asked, authoritative
 end
 
 --------------------------------------------------------------------------------
@@ -356,7 +348,34 @@ local function write_lines(path, lines, label)
     return true
 end
 
+-- write_lines into path .. ".tmp", then the temporary file replaces path.
+-- Returns whether path now holds lines. A failed write leaves path as it was
+-- and removes the temporary file. os.rename does not replace an existing file
+-- on Windows, so path is removed first; a failure between that removal and the
+-- rename leaves the content in the temporary file, and is logged.
+local function replace_file(path, lines, label)
+    local temporary = path .. ".tmp"
+    if not write_lines(temporary, lines, label) then
+        remove_file(temporary)
+        return false
+    end
+    if os == nil or type(os.rename) ~= "function" then
+        log("WARNING: Lua os.rename unavailable; cannot replace " .. label .. ".")
+        remove_file(temporary)
+        return false
+    end
+    remove_file(path)
+    local renamed, result, rename_error = pcall(os.rename, temporary, path)
+    if not renamed or not result then
+        log(string.format("WARNING: could not move the new %s into place; it is left at %s: %s",
+            label, temporary, tostring(renamed and rename_error or result)))
+        return false
+    end
+    return true
+end
+
 return {
+    SCRIPT_DIRECTORY = SCRIPT_DIRECTORY,
     UE4SS_ROOT = UE4SS_ROOT,
     array_count = array_count,
     coalescer = coalescer,
@@ -364,7 +383,7 @@ return {
     find_all = find_all,
     find_first = find_first,
     guid_key = guid_key,
-    has_authority = has_authority,
+    guid_parts = guid_parts,
     is_valid = is_valid,
     is_writable = is_writable,
     log = log,
@@ -372,6 +391,7 @@ return {
     name_to_string = name_to_string,
     read_lines = read_lines,
     remove_file = remove_file,
+    replace_file = replace_file,
     run_later = run_later,
     unwrap = unwrap,
     write_lines = write_lines,

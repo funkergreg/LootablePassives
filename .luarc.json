@@ -15,6 +15,7 @@
     "StaticConstructObject",
     "CreateInvalidObject",
     "FName",
+    "FText",
     "UEHelpers",
     "UnrealVersion",
     "RegisterConsoleCommandHandler",

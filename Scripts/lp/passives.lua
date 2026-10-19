@@ -3,7 +3,7 @@
 -- The two detectors at the bottom decide whether a transaction was one of ours.
 -- Both are built on gained_lock, which is written once, here.
 
-local PASSIVE_ITEMS = require("passive_items")
+local PASSIVE_ITEMS = require("lp.passive_items")
 local util = require("lp.util")
 local ids = require("lp.ids")
 
@@ -20,7 +20,7 @@ local EXTRACTION_MODES = ids.EXTRACTION_MODES
 -- The module map, and the one seam onto it
 --------------------------------------------------------------------------------
 --
--- This is the only module that requires passive_items.lua. Everything else asks
+-- This is the only module that requires lp/passive_items.lua. Everything else asks
 -- module_for or is_module_id.
 
 -- The item a passive yields when extracted, or nil if it has no entry.
@@ -38,6 +38,34 @@ end
 
 local function is_module_id(item_id)
     return MODULE_IDS[item_id] == true
+end
+
+-- The passives whose Surgery route is a direct one: a row in
+-- LootablePassivesOperatingTable.json that installs the passive itself and
+-- spends its LP_Implant_* module. These are the passives with an LP_Implant_*
+-- module that no alias in ids.IMPLANT_TARGET installs.
+local ALIAS_TARGETS = {}
+for _, target in pairs(ids.IMPLANT_TARGET) do
+    ALIAS_TARGETS[target] = true
+end
+local DIRECT_ROUTES = {}
+for passive_id, item_id in pairs(PASSIVE_ITEMS) do
+    if item_id:sub(1, 11) == "LP_Implant_" and not ALIAS_TARGETS[passive_id] then
+        DIRECT_ROUTES[passive_id] = true
+    end
+end
+
+local function is_direct_route(passive_id)
+    return DIRECT_ROUTES[passive_id] == true
+end
+
+-- True for every Surgery operation surgery_extraction covers, by the passive id
+-- the operation installs: an extraction marker, an LP_Insert_* alias, or a
+-- direct-route passive. A passive owns at most one operating-table row, so a
+-- direct-route passive's only operation is this mod's.
+local function is_covered(passive_id)
+    return passive_id ~= nil
+        and (EXTRACTION_MODES[passive_id] ~= nil or DIRECT_ROUTES[passive_id] == true)
 end
 
 --------------------------------------------------------------------------------
@@ -160,7 +188,7 @@ local function first_marker(skill_ids)
 end
 
 -- True when the id is a real passive -- not nil, not "None", not one of this
--- mod's markers or aliases -- and has an entry in passive_items.lua.
+-- mod's markers or aliases -- and has an entry in lp/passive_items.lua.
 --
 -- The module map is the gate: no entry means nothing to hand back, so nothing to
 -- extract.
@@ -272,6 +300,8 @@ return {
     get_skill_ids = get_skill_ids,
     has_skill = has_skill,
     instance_key = instance_key,
+    is_covered = is_covered,
+    is_direct_route = is_direct_route,
     is_extractable = is_extractable,
     is_module_id = is_module_id,
     module_for = module_for,

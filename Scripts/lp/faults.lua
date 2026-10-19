@@ -1,0 +1,34 @@
+-- Lootable Passives -- Injected failures for testing the recovery paths.
+--
+-- A dev file. Read through lp/options.lua, and ignored unless the debug setting
+-- is true.
+--
+-- A list of scenarios. Each names the kind of Surgery exchange it waits for:
+--   on = "one"      Extract One
+--   on = "all"      Extract All
+--   on = "implant"  an implant from a disposable module
+-- and the next exchange of that kind takes the first unused scenario for it,
+-- so scenarios of different kinds can be run in any order. A scenario with no
+-- "on" is taken by an exchange of any kind. Each is used once per game start;
+-- an exchange of a kind with none left runs with no faults, and a vanilla
+-- operation never takes one. Each fault logs a "DEBUG FAULT:" line when it
+-- fires.
+--
+-- Beside "on", a scenario holds any of these faults:
+--   fail_journal_write = "<row>"  that row's write fails without the file
+--                                 being opened, so the row before it stays on
+--                                 disk
+--   halt_after_journal = "<row>"  the exchange stops once that row is written,
+--                                 as if the game had crashed there
+--   fail_refund = true            an implant refund's direct grant fails, so
+--                                 the module is recorded as owed in the
+--                                 pending-grant ledger
+--   fail_resolve = true           every resolve attempt's result is discarded,
+--                                 so the exchange runs out of attempts and
+--                                 takes the stranded-marker path
+-- A row is named "<state>/<phase>" as lp/journal.lua writes it:
+-- "prepared/marker", "granted/marker", "prepared/loop", "granted/loop",
+-- "prepared/implant", "prepared/stranded".
+--
+-- Example: { on = "one", halt_after_journal = "granted/marker" }
+return {}

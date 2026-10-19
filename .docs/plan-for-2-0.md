@@ -365,24 +365,66 @@ This is a draft for iteration and is not approved.
 
 The sections are in the proposed execution order. Each is meant to be stageable and testable by itself.
 
-### Session handoff (2026-10-18, before implementation)
+### Session handoff (updated 2026-10-18, after acceptance session 1)
 
 Read this first when resuming.
 
-- **Where things stand.** Research, planning and every 1.3-0 probe are done. **Nothing in 1.3-A to 1.3-K is implemented yet.** The next step is **1.3-A, role detection and the module split.**
-- **Repo state, uncommitted:**
-  - `CLAUDE.md`: the deployment-versus-runtime-write rule, the dedicated-server log path, and a pointer to the debug-key probe approach.
-  - `README.md`: the new section "Probing the game with debug keys".
-  - `.luacheckrc` and `.luarc.json`: the globals `Key` and `ModifierKey`, kept for future probes.
-  - `Info.json` and `Scripts/settings.lua`: rewritten by dev stages to `1.2.2` with `DebugMode`/`debug` true. That is expected; the release stage resets them.
-  - This plan.
-- **The probe code is deleted.** `Scripts/lp/probe.lua` was deleted with `git rm`, and its `require` removed from `main.lua`. The approach is documented in `README.md`, "Probing the game with debug keys". The calls it proved are kept below as patterns for the implementation. Don't restore the file.
-- **Probe logs:** `.docs/probe-client-singleplayer-1.2.1.log`, `.docs/probe-server-dedicated-1.2.1.log`, `.docs/probe-client-dedicated-1.2.1.log` and `.docs/probe-client-list-1.2.2.log`, all gitignored.
-- **The dev rig is ready.**
+- **Where things stand.**
+  - **Code:** 1.3-A to 1.3-I are coded (see each status section), with every offline check passing; the code is uncommitted.
+  - **Acceptance session 1 is done** (its results sections, under 1.3-H): 1.3-G's handshake, hiding and on-screen notice, and 1.3-H's cleanup all pass on the dedicated server, after two crash fixes (1.2.6, 1.2.7) and the host notices (1.2.8).
+  - **No planned code is left.** What remains is the acceptance listed under "Remaining work" below, any fixes it finds, the docs cleanup, and the release (1.3-K). 1.3-J is not started and not needed.
+- **Decided (round 10):**
+  - Runtime testing is acceptance testing, run once the code is complete.
+  - 1.3-B step 4 is dropped.
+  - The "tested on a dedicated server" wording waits for the docs cleanup in 1.3-K.
+- **Repo state:** the last commit is `683568d`, from before implementation. Everything since is uncommitted: the 1.3-A to 1.3-I code, the new tests, the docs and this plan. `Info.json` and `Scripts/config.lua` are at dev `1.2.8` with `DebugMode`/`debug` true; the release stage resets them.
+- **The last staged build is dev 1.2.8.** The game and the local server both run it. The next stage needs no `-Force` unless a file is deleted.
+- **The dev rig.**
   - `PalServer\Mods\PalModSettings.ini` points `WorkshopRootDir` at the client's Workshop content folder, with the three `ActiveModList` lines, so `stage.ps1` feeds both machines.
-  - The server runs the developer's world `9F2509B44E9A564ACFF601A9DB9A81EC`, with the host's UID swapped to `EFC7480B…`.
-  - The client's `UE4SS-settings.ini` is back to `bUseUObjectArrayCache = false`.
-- **The last staged build is dev 1.2.2.** It is identical to 1.2.0's behaviour apart from the deleted probe. The Workshop item folder still holds `Scripts\lp\probe.lua` from that stage, so **the next stage must be `.\tools\stage.ps1 -Force`**. A plain stage stops on the stale file.
+  - The server runs the developer's world `9F2509B44E9A564ACFF601A9DB9A81EC`, with the host's UID swapped to `EFC7480B…`. **That world is now a test world** (developer, 2026-10-18): it was kept after the cleanup rather than restored. The developer plays on their self-hosted world.
+  - **Backups** in `C:\Users\greg_\PalworldBackups\`: `2026-10-18-pre-server-move`, `2026-10-18-server-pre-uid-swap`, and `2026-10-18-server-pre-cleanup-test` (the server world before any cleanup, 622 LP implants in place), each with a `MANIFEST.md5`.
+  - **Changing a server setting while it runs:** edit `PalServer\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\config.lua`. A debug build applies the edit within 5 s (`options.watch_file`), and a restart resets the file to the staged one.
+  - The client's `UE4SS-settings.ini` has `bUseUObjectArrayCache = false`.
+- **Logs** in `.docs\` (gitignored): the probe logs `probe-*.log`, and acceptance session 1's `accept1-*.log`, crash reports included.
+- **The probe code is deleted.** The approach is in `README.md`, "Probing the game with debug keys"; the calls it proved are below.
+
+#### Remaining work
+
+**Code:** none planned. Fixes only as acceptance finds them.
+
+**Acceptance on the dedicated server** (the rig is ready; one player is enough):
+
+1. **1.3-A, recovery at boot.**
+   - Arm `{ on = "one", halt_after_journal = "granted/marker" }` in `Scripts/lp/faults.lua` and stage.
+   - Run an Extract One, which stops with its journal row on disk. Restart the server.
+   - Expect `Recovered interrupted exchange …` in the server log at boot, before anyone joins.
+2. **1.3-B, conveyor timing.** One Pal, then a queue of three. Expect one `Disassembly yielded` line per Pal fed in, and no "close to complete" warning.
+3. **1.3-D, delivery on join.**
+   - Arm `{ on = "implant", fail_refund = true }` and trigger a refund: a duplicate insert with the Edit gate off, so the transaction refuses it. The module is then owed.
+   - Leave and rejoin. Expect `Delivered … when a player joined`.
+4. **1.3-E, release logging.** Set `debug = false` in the server's `config.lua` while it runs (the watch stops itself), and do the same on the client through Better Mod Manager. One Extract One should log one line on each machine. Count them.
+5. **1.3-G, the rest.**
+   - Keyboard and controller navigation over the collapsed list.
+   - **The unconfirmed path:** take `LootablePassives` out of the server's `ActiveModList` and restart. The modded client should hide the operations and show the "has not confirmed" message.
+6. **1.3-C step 4.** Measure `snapshot_all` on the server. That needs a timing debug line around it (`os.clock`), a small code change.
+
+**Acceptance on the self-hosted world** (single player or listen host):
+
+1. **1.3-F with Better Mod Manager.**
+   - The "Supported" page shows short text, and a toggle applies live.
+   - A change shows up in the installed `config.lua` within a second, with comments and the stage tag intact.
+   - `ModConfig.LootablePassives.lua` holds the non-default values.
+   - BMM no longer writes `Scripts\` or `mods.txt`.
+   - Clean up the old Auto-mode files if BMM re-applies them.
+2. **`surgery_extraction` off locally.** The list hides, and the gate and the server backstop (with `surgery_ui_gate` off) refuse an extraction, an alias implant and a direct-route implant.
+3. **The cleanup through BMM on a listen host.** One implant in an inventory, a chest and a guild chest, plus a ledger debt. Back up first.
+
+**Needs a second player** (a second machine or a friend; ask the developer):
+
+1. **1.3-C step 7:** two Extract Ones at the same moment on different Pals, and an Extract All during another player's conveyor run.
+2. **The test matrix's listen-host rows,** including a client without the mod.
+
+**Then 1.3-K:** the docs cleanup (the dedicated-server wording, and a re-read of the Workshop text, `README.md` and `CLAUDE.md` against what testing changed), the checks, the `-Minor` stage, and the commit, by the developer's call.
 
 #### Engine calls proven by the probes (use these in 1.3-A to 1.3-H)
 
@@ -432,6 +474,7 @@ Each was run in game on 2026-10-18, game v1.0.5.102999, UE4SS `2281fa31`.
 7. **Handshake first, no fallback planned** (round 6). The handshake has to be solved before any fallback is considered. If it works, it delivers what the client needs to block before the gold charge, so nothing past it is planned. If the 1.3-0 probe finds no route, stop and replan with the developer.
 8. **The mod saves runtime setting changes into its installed `config.lua`** (round 7). The "only the loader writes the game folders" rule is this repo's, and it governs deployment, not the mod's own config and runtime files; `CLAUDE.md` was updated to say so. A reinstall, which every version update causes, resets settings to the shipped defaults. That is accepted, and documented for players as known behaviour.
 9. **Probing approach kept, probe code deleted** (round 9). The debug-key probe approach is documented in `README.md`, "Probing the game with debug keys", and in `CLAUDE.md`. `Scripts/lp/probe.lua` was deleted.
+10. **Round 10 (2026-10-18):** runtime testing is acceptance testing, run once the code is complete; 1.3-B step 4 (`NotifyOnNewObject`) is dropped; the "tested on a dedicated server" wording is a docs-cleanup step after general testing (1.3-K step 1); 1.3-G and 1.3-H are tested first, on the dedicated-server rig.
 
 ### 1.3-0. Test rig and probes
 
@@ -609,6 +652,17 @@ The log is `.docs/probe-client-list-1.2.2.log`. The screenshots are `.docs/Scree
 5. **`hooks.announce_if_complete` counts only this role's hooks,** so "All N hooks installed" prints on a dedicated server too.
 6. **The "not installed yet" warning stops claiming "Expected before a world is loaded"** once a world is loaded.
 
+#### 1.3-A status: code done, not yet run in game
+
+- **`lp/role.lua`** reads `IsServer`, `IsDedicatedServer` and `IsMultiplayer` (bools, so no FString handling) on `Default__PalUtility` with `PalGameStateInGame` as context. `forget()` on each map load starts 120 × 1 s reads; the getters also resolve lazily. The read that finds the role logs `This machine is the <role> in this world.` and schedules the `on_known` listeners on the game thread, so no listener runs inside a hook callback.
+- **`lp/hooks.lua`**: `register(path, callback, half, label, note)`, with `half` `"ui"` or `"server"`. A `/Script/` path is attempted at load; a `/Game/` path only from `hooks.arm(has_ui, is_authority)`, which `main.lua` calls from `role.on_known`, so a dedicated server never attempts the widget hooks. The installed line counts only the active halves. `rearm_on_map_load` and `in_world` are gone; the give-up warning now reads "… is not installed after 90 attempts; it is retried on the next map load."
+- **`main.lua`**: H1's pre-callback captures only where `is_authority()`; H6 runs only where `has_ui()`. Recovery and the ledger flush moved from the map-load hook and the "mod startup" call to `role.on_known`, where authoritative.
+- **`lp/conveyor.lua`**: `may_create_items` and the `GetActor` read are gone; the pass returns where `is_authority()` is false, logging once with the role.
+- **`lp/recovery.lua`**: gated on `is_authority()`. **`util.has_authority`** is deleted, having no callers left.
+- **`transaction` → `ui` broken** through `lp/local_click.lua`, a table holding `capture`. `ui.lua` now owns `capture_local_click` (moved from `transaction.capture_targeted_record`) and sets it at load; `capture` returns the record, or nil and whether a tab page is recorded.
+- **Checks:** parse check, `luacheck` 0/0 over 17 files, `ledger_test.lua` all pass.
+- **To verify in game** (with 1.3-B's stage): the role line on each machine (single player, listen host, client, dedicated server); no widget-hook warnings on the server; "All N hooks installed" on the server; a recovery and flush at dedicated-server boot.
+
 ### 1.3-B. Hook mechanics and small fixes
 
 1. **`hooks.register` takes an optional post-callback.** It keeps the `PreId`/`PostId` that `RegisterHook` returns, and gets an `unregister`.
@@ -624,6 +678,15 @@ The log is `.docs/probe-client-list-1.2.2.log`. The screenshots are `.docs/Scree
    - The `main.lua:90-94` comment on Blueprint hook timing is corrected to what the probe shows.
    - **The two LuaLS diagnostics open in the editor,** which `luacheck` does not report: `param-type-mismatch` (a `table|nil` passed as `table`) at `lp/ui.lua:447`, and an unused local `_handle` at `main.lua:121`. Fix them, or annotate them if they are false positives.
 
+#### 1.3-B status: code done except step 4, not yet run in game
+
+- **Step 1.** `hooks.register` takes a spec table (`path`, `callback`, optional `post`, `half`, `label`, `note`) and returns the registration. It keeps RegisterHook's `PreId`/`PostId`; `hooks.set_enabled(registration, bool)` calls `UnregisterHook` or re-registers. H1 now registers through it (`half = "server"`, label "the Surgery exchange handler"), so it is counted in the installed line.
+- **Step 2.** `STEP_MARGIN` and the per-entry `step` are gone; consumed means the last rate ≥ `COMPLETE_RATE`. A Pal leaving at ≥ `NEAR_COMPLETE_RATE` (0.97) but below that logs a release `WARNING` naming its passives.
+- **Step 3.** `conveyor.apply()` replaces `install`/`is_installed`: it registers both hooks the first time `conveyor_on()` is true, and otherwise enables or disables them. It runs at load and on each map load; a hook firing with the switch off schedules it (never unregisters from inside the hook). 1.3-F's `onChange` calls it.
+- **Step 4: dropped (round 10).** Measured in the probe logs: the polling registers the widget hooks 26 s (single player) and 40 s (dedicated client) after load, one `pcall` per hook per second until then, and since 1.3-A it never runs on a dedicated server. `NotifyOnNewObject` on a Blueprint class needs that class loaded when it is called, which is the same wait, and the wiki warns about it on Blueprint classes. The gain is small and the risk is a native crash. The developer agreed to drop it.
+- **Step 5.** `name_to_string` returns a Lua string as it is, `ToString()`'s string, or nil, never `tostring()`. `operation_result_code` parses only numbers and strings, and the failure detail names the returned type. The `main.lua` Blueprint-timing comment says the callback runs after the body. The `ui.lua` diagnostic went with the "hidden cards" field (1.3-E step 2, done early); `_handle` is `_`.
+- **Checks:** parse check and `luacheck` 0/0 over 17 files; the editor shows no LuaLS diagnostics in `Scripts/`.
+
 ### 1.3-C. Exchange correctness under concurrency: the "lost implant" bug
 
 1. **Per-request records keyed by `RequestPlayerId`** replace the single `pending_record` in `main.lua:74`. Two requests between one pre and post no longer overwrite each other.
@@ -637,12 +700,31 @@ The log is `.docs/probe-client-list-1.2.2.log`. The screenshots are `.docs/Scree
 6. **`ledger_test.lua` gains cases for the new journal and record keying.** A test for the journal goes beside it if the journal logic moves into a testable module.
 7. **Verify on the dedicated server:** two players, each running Extract One at the same moment on different Pals, and an Extract All during another player's conveyor run. Each gets exactly their own module.
 
+#### 1.3-C status: code done, unit-tested, not yet run in game
+
+- **Step 1, as built: a stack, not a key.** H1's pre-callback pushes its record (or `false`) and the post-callback pops it. Pre and post of one call nest on the game thread, so last-in-first-out pairs each post with its own pre without reading the post-callback's arguments, which nothing here has verified.
+- **What the server can know at capture.** `RequestRequestChangePassiveSkill_ServerInternal(int32 RequestPlayerId, const FPalNetArchive& Archive)` (`Pal.hpp:28442`): the requested passive is inside a serialized archive, so the server snapshot cannot be filtered to "Pals carrying this exchange's marker" at capture.
+- **Step 3, as built: claims, plus an owner tie-break.** A record that resolves to a Pal claims its `pal_key` for 5 s, and every other record's resolve and `stranded_marker` skip a Pal another record has claimed. Of several candidates, the one whose `OwnerPlayerUId` is the requester's is taken when exactly one is. Two players' simultaneous exchanges therefore separate: the later capture sees only its own swap and claims it first, and the earlier one resolves on its next retry.
+- **The vanilla early exit is unchanged.** Every exchange in the 1.2.1 probe logs resolved on attempt 1 (100 ms after the request), so the marker is on the Pal when the request returns, and "no candidate, a list changed, no marker rose" really is a vanilla operation.
+- **Step 2: the journal is one row per Pal** (`LPJ2`: version, `pal_key`, state, phase, passive, item, marker). Every journal call names the Pal's key; a Pal whose key does not read gets no row, so its exchange aborts with the passive restored. The file is written to `.tmp` and renamed into place (`util.replace_file`, also for 1.3-F), so a failed write no longer truncates other Pals' rows. An `LPJ1` file is read once as a `legacy` row and rewritten; recovery replays it against the one Pal carrying its marker that has no row of its own.
+- **Recovery** replays each row against the Pal with its key, keeps the row when that Pal is not loaded, and discards it when the Pal no longer carries the marker. **`settle_before_exchange`** reads only the same Pal's row, never replays, and always lets the new exchange proceed: it discards a row whose marker is gone, and replaces one whose marker is still on the Pal with a warning.
+- **The owner's UID is not a journal column.** `IndividualId` is unique per Pal, and nothing in recovery grants to a player.
+- **Step 4 is acceptance work:** measure `snapshot_all` on the dedicated server with the full world loaded. No code change unless it costs.
+- **Step 5, Awfulhorrid's symptom read against the old code.** Two routes lost a passive with no module, both on a server with more than one player: (a) two exchanges within the resolve window made both ambiguous, so each ran out of attempts and journalled a stranded row; the restore waited for the next map load, which on a dedicated server is a restart, and before 1.3-A recovery did not even run at boot. (b) The second exchange's `settle_before_exchange` could not tell the first's row apart and replaced it, so the first was never recovered. Claims fix (a); per-Pal rows fix (b); 1.3-A runs recovery at boot. The fault-injection repro is acceptance work.
+- **Step 6:** `tools/journal_test.lua` (32 checks) and `tools/exchange_test.lua` (17 checks: one exchange, two with one owner resolving through the claim, two with different owners through the tie-break, two unowned refused, a vanilla change next to an exchange, vanilla alone, claim release). Both pass, as does `ledger_test.lua`. `CLAUDE.md` and `README.md` list them.
+
 ### 1.3-D. Ledger delivery
 
 1. **Flush when a player joins,** using the trigger the probe picked, on the server half.
 2. **Conveyor debts stay owed to the original catcher** (round 1, decision 4). Verify on the dedicated server that the Pal's `OwnerPlayerUId` and the PlayerState's `PlayerUId` agree, using the already-swapped world.
 3. **Keep one ledger format** for co-op and dedicated server.
 4. **Verify:** a debt owed to a player who is offline is delivered when they join, with no conveyor activity needed.
+
+#### 1.3-D status: code done, not yet run in game
+
+- **`lp/joins.lua`** registers the join hook (`half = "server"`, so it counts in a server's installed line). A firing is ignored while the same `PlayerUId`'s join is pending, which absorbs the second firing; listeners run 3 s after the first, only while the player state is valid and `is_authority()` holds. 1.3-G's handshake sender is its second listener.
+- **`main.lua`** registers a listener that runs `ledger.flush()` when anything is owed, logging what was delivered. The boot flush's give-up line now says owed modules are delivered when a player joins.
+- **Steps 2 to 4 are acceptance work:** the 1.2.0 server run already delivered a conveyor debt to the swapped owner; the join delivery needs a debt owed to an offline player.
 
 ### 1.3-E. Logging behind the debug switch
 
@@ -657,8 +739,16 @@ This comes before the settings work: logging touches the same files as 1.3-A to 
    - **Moved to `options.debug_log`:**
      - per-poll and per-firing traces;
      - Surgery panel internals (`at finish`, `refresh on finish`, `reset at 1600 ms`, `Edit blocked/released`, `OnPassiveUpdate: […]`, `Checked the … exchange`, `Marker … is on the Pal`, "Panel refresh armed").
-2. **Drop the "hidden cards" field, or reword it.**
+2. **Drop the "hidden cards" field, or reword it.** Done with 1.3-B: dropped.
 3. **Measure:** one Extract One on a release build logs one line on the server and one on the client. Count the lines in the log.
+
+#### 1.3-E status: code done, not yet run in game
+
+- **Moved to `debug_log` in `ui.lua`:** every Edit-button, Pal-detail, `BindFromHandle`, `UpdateNum`, "reset at 1600 ms", "Panel refresh armed", "Checked the … exchange", "Marker … is on the Pal", "Requested …", "server accepted", "replaced by this request" and "panel already closed" line. `ui.lua` now requires `lp.config` (no cycle: config requires only util).
+- **Moved to `debug_log` elsewhere:** `main.lua`'s `OnPassiveUpdate: […]`, and `transaction.lua`'s two "not one of our operations" lines, which fired on every vanilla surgery.
+- **The client's own outcome line (release):** `Surgery <marker> finished; the Pal now has […].` The trigger and poll count went to a debug line. So a player on a dedicated server has a line of their own to report, as the 1.2.1 probe asked for.
+- **Kept in release:** the startup counts line, the role line once per world, the installed-hooks line, every outcome line in `transaction.lua` and `conveyor.lua`, every refusal (`The server refused …`), and every `WARNING`/`ERROR`.
+- **Expected count for one Extract One, by reading the code:** a dedicated server logs one line (`Extracted … for player …`), its client one (`Surgery LP_ExtractOne finished …`), and a listen host or single player both, so two. Acceptance counts them.
 
 ### 1.3-F. Settings restructure and Better Mod Manager registration
 
@@ -699,6 +789,17 @@ The detail is in [Proposed restructure](#proposed-restructure) and [Draft UI tex
    - Without BMM, `config.lua` works.
    - Clean up the dev machine's leftover Auto-mode files (`ModConfig.file.LootablePassives.lua`, `BetterModManager.profile.LootablePassives.lua`) if BMM keeps re-applying them.
 
+#### 1.3-F status: code done except the client gate (moved into 1.3-G), unit-tested, not yet run in game
+
+- **Files.** `Scripts/config.lua` (new, six settings, the stage tag on `debug` only); `Scripts/lp/faults.lua` (new, `return {}` plus the scenario documentation); `lp/config.lua` → `lp/options.lua` and `passive_items.lua` → `lp/passive_items.lua` (`git mv`); `Scripts/settings.lua` deleted. `stage.ps1 -DryRun` lists the three stale item-folder files, so the next stage is `-Force`.
+- **BMM facts read from the installed `modconfig.lua` that shaped this:** `set()` saves and publishes but does not call `onChange`; saved values are those that differ from each option's `default`; an option with no `default` takes it from the passed `config`. Taking defaults from a written-back `config.lua` would make a changed value its own default, drop it from BMM's file, and lose it at the next reinstall. **So every option carries an explicit shipped default,** and no `config` table is passed.
+- **Startup reconciliation** (`options.reconcile`): a BMM-saved value (one differing from the shipped default) wins and is written into `config.lua`; otherwise a `config.lua` value differing from the shipped default is handed to BMM with `set`, except `debug`, whose file value is the build's stage tag and is not saved for later builds.
+- **Runtime changes.** BMM's `onChange` and the mod's `options.set` both go through `change()`: live table, one-line write-back through `util.replace_file`, then `options.on_changed` listeners; `set` also calls BMM's `set`. `main.lua`'s listener runs `conveyor.apply()` for `conveyor_extraction`. 1.3-G adds the handshake resend, 1.3-H the removal.
+- **Text.** Labels and descriptions as drafted, plus "Surgery extraction" and the two host-tool toggles; the removal's description was cut from 130 to 96 characters. Headers: Extraction, Troubleshooting, Host tools.
+- **Step 7, server backstop: done.** With `surgery_extraction` off on the authoritative machine, `transaction.lua` refuses an extraction (passive restored), unwinds an alias implant (alias undone, module refunded) and undoes a direct route (`refuse_direct_route`: the one Pal whose list gained a direct-route passive replacing at most one other; that passive is undone and its module refunded). Each logs a `WARNING` naming the setting; the gold stays spent. The 61 direct-route passives are derived in `passives.lua` as the `LP_Implant_*` passives no alias targets; that set was compared with `LootablePassivesOperatingTable.json`'s 61 rows and is identical.
+- **Step 7, the gates before the gold charge:** done with 1.3-G, since the client's gate needs the host's value from the handshake and the authoritative gate shares the same code.
+- **Tests.** `tools/options_test.lua` (34 checks): write-back of one line with comments and the stage tag kept, no notification for an unchanged value, unknown or wrong-typed values ignored, a restart reading the written value, a broken file and a wrong type, and against a stand-in `modconfig.lua`: the id, no `enabledKey`, the mod folder, the saved value winning and written back, a file edit handed over, debug not handed over, every default, `dependsOn`, descriptions ≤ 110, `onChange` written back, `set` handed over. `exchange_test.lua` gained 7 direct-route checks. All four tests pass; `CLAUDE.md` (settings section, layout, tests) and `README.md` (settings section, tests) are updated.
+
 ### 1.3-G. Host-has-mod handshake and the client pre-block
 
 1. **The server half sends a sentinel to each player on join,** by the route the probe confirms. The leading candidate is `SendLog_ToClient` with a reserved `TextId`.
@@ -712,6 +813,18 @@ The detail is in [Proposed restructure](#proposed-restructure) and [Draft UI tex
 4. **On single player and the listen host,** the role is authoritative and the gate reads the local value directly. No handshake is needed.
 5. **No fallback is planned** (decision 7). If the probe finds no route from server Lua to a client hook, stop and replan with the developer before any other 1.3-G work.
 6. **Verify:** a modded client on a vanilla listen host, and on a dedicated server without the mod, sees no usable LP operations and gets the message. A modded client on a modded host whose `surgery_extraction` is off is blocked the same way. It is unblocked live when the host turns the setting back on.
+
+#### 1.3-G status: code done, unit-tested, not yet run in game
+
+- **`lp/host.lua`.** The text is `LootablePassives host v1 surgery=<0|1> conveyor=<0|1>`, sent with `Debug_ReceiveCheatCommand_ToClient` as the probe proved (not `SendLog_ToClient`, the step-1 candidate). It goes to the joining player's controller, matched by `PlayerState.PlayerUId`, as `lp/joins.lua`'s second listener, and to every remote controller when the host changes `surgery_extraction` or `conveyor_extraction`. A controller whose `IsLocalController()` (`Engine.hpp:8290`) is true is skipped, so a listen host never runs the cheat RPC on itself. The receiver is a `/Script/` hook, `half = "ui"`, ignored where `is_authority()`; it logs one release line when the host's values arrive or change. `forget()` on map load.
+- **One answer for every gate:** `host.surgery_allowed()`. The local setting decides where the world is held; on a client, only a host that sent the text with `surgery=1`. `host.refusal()` says why not: `off_here`, `off_host` or `unconfirmed`.
+- **What counts as covered: `passives.is_covered(passive_id)`.** That covers an extraction marker, an alias, or a direct-route passive. Because a passive owns at most one operating-table row, the `PassiveId` alone decides, and `ConsumeItemId` is not read. 117 ids are covered, the same count as PalSchema's `117 rows added`.
+- **Edit-button gate** (1.3-F step 7 too): blocks while a slot is selected, a covered operation is pending, and `surgery_allowed()` is false. Single player and the listen host block on their own setting, clients on the host's.
+- **List hiding.** A Blueprint hook on `WBP_OperatingTable_C:SetupPassiveChangeItem` (`half = "ui"`) records the screen and, while refused, schedules a pass one frame later. (The live rebuild described at the end of this bullet was removed after it crashed in acceptance session 1.) The pass collapses (`SetVisibility(1)`) every child of the screen's `WBP_PalCommonScrollList_Item.ScrollBox_0` whose `PassiveId` is covered. It reads the children with `GetChildrenCount`/`GetChildAt` (`UMG.hpp:1082-1084`), from the hook's context rather than `FindAllOf`. When the host's values arrive or change, and when the local `surgery_extraction` changes, an open screen with a Pal selected rebuilds its list, so unhiding needs no reopen.
+- **The player sees why: `lp/notice.lua`,** once per world per reason. It logs the message, then calls `UPalLogManager::AddLog(Important, FText(text), {})` on `UPalUtility::GetLogManager(PalGameStateInGame)` (`Pal.hpp:26236`, `:38009`). **This call is the one engine call in 1.3.0 no probe has run:** building an `FText` from Lua and passing an empty table for `FPalLogAdditionalData` are unverified. It is called once per world per reason, logged before the call under debug. If it misbehaves at acceptance, cut it back to the log line.
+- **`FText` added to `.luacheckrc` and `.luarc.json`.**
+- **Tests.** `tools/host_test.lua` (24 checks): the text round-trips for all four combinations, foreign texts are rejected, a later version still reads, and the covered set's composition and total. Listed in `CLAUDE.md` and `README.md`.
+- **Acceptance:** this step's verify list, plus keyboard and controller navigation over the collapsed list, and the hide surviving another Pal selection and a reopen.
 
 ### 1.3-H. Cleanup action: remove the mod's items from the world
 
@@ -745,6 +858,102 @@ The detail is in [Proposed restructure](#proposed-restructure) and [Draft UI tex
      - Save and reload, and check that no `LP_Implant_*` items are in reach.
    - **On the dedicated server:** set both values in `config.lua` with the server stopped, start it, and check the result lines and that the removal does not repeat on the next start.
    - **Interrupted run:** inject a failure (a new `debug_faults` entry) and check that the request stays checked and runs at the next world entry.
+
+#### 1.3-H status: code done, ledger part unit-tested; the removal call is unverified
+
+- **The removal call is the one runtime unknown that decides this stage.** `Pal.hpp` has no server-side removal to match `AddItem_ServerInternal`: `UPalItemContainer` and `UPalItemSlot` expose no removal function, and the container manager only looks containers up. **The candidate used is `UPalNetworkItemComponent::RequestDispose_ToServer(const FGuid& RequestID, const FPalItemSlotIdAndNum& SlotInfo)`** (`Pal.hpp:30273`; the struct is `{ SlotId = { ContainerId = { ID = FGuid }, SlotIndex }, Num }`, `Pal.hpp:4489-4501`, `:1919`). It is called on the first `PalNetworkItemComponent` in memory, with both structs as Lua tables.
+  - **Unknowns:** whether a `_ToServer` RPC called on the server runs its implementation; whether that implementation refuses containers its component's player has no permission for (another player's inventory, another guild's chest); and whether tables convert to these structs.
+  - **The design survives a refusal:** a verify pass counts what remains, and the request stays checked unless nothing does.
+  - **Other candidates if it fails:** `RequestMove_ToServer`/`RequestDrop_ToServer` on the same component, and `UPalIncidentBase::RequestConsumeInventoryItem` (`Pal.hpp:24349`, player inventory only; constructing an incident crashed the game before, see `CLAUDE.md`).
+  - **First acceptance item, on a backed-up world:** one LP module in the host's inventory, one in a chest, then the cleanup through `config.lua`. If the call crashes or does nothing, the next step is a debug-key probe of the candidates.
+- **`lp/cleanup.lua`.** Where `is_authority()` and `removal_requested()` hold, a run takes `FindAllOf("PalItemContainer")` once and walks it three times, 100 containers per frame.
+  - **The passes:** count (one release line with counts by inventory, chest and guild chest, by `bIsGuildChestContainer` and `OwnerMapObjectInstanceId`), remove (dispose of every `LP_Implant_*` stack whole), verify (count again).
+  - **Then the ledger:** `ledger.forget_items` drops `LP_Implant_*` debts and keeps vanilla-consumable debts, since those are valid after uninstall.
+  - **Clearing:** only with nothing remaining and the ledger written does it `options.set("remove_mod_items", false)` (saved to `config.lua` and BMM) and log the result, naming what was not reached (unloaded containers, items on the ground). Otherwise one `WARNING`, and the request stays.
+- **Triggers** (`main.lua`): either setting turning on; 10 s after the role is known on an authoritative world entry; every player join. With no `PalNetworkItemComponent` (a dedicated server with nobody online) it logs that it waits for a join. A map load cancels a run in progress. **On a client** it never runs, and tells the player once that the host runs it.
+- **Not built:** a fault-injection hook for an interrupted run. Faults are scoped to Surgery exchanges. A map load or quitting mid-run interrupts it for acceptance instead.
+- **Tests.** `ledger_test.lua` gained 5 `forget_items` checks. The container walk is engine work and is acceptance-tested.
+
+#### Acceptance session 1: 1.3-G and 1.3-H on the dedicated server (dev build 1.2.5)
+
+**Prep, done 2026-10-18:**
+
+- **Backup:** the server world is at `C:\Users\greg_\PalworldBackups\2026-10-18-server-pre-cleanup-test\9F2509B44E9A564ACFF601A9DB9A81EC\` (45 files, `MANIFEST.md5` verified against the source). It was taken with the server and game stopped; no journal or ledger file existed on the server.
+- **Debug-build `config.lua` watch (`options.watch_file`):** while `debug` is true, `config.lua` is read every 5 s and an edited value goes through the same path as a BMM change. It exists because a `DebugMode` build is reinstalled with the shipped `config.lua` at every launch, and the server has no BMM, so a server setting can only be changed while it runs. `options_test.lua` gained 7 checks for it.
+- **Extra debug lines:**
+  - `cleanup:` the component used, every stack in the remove and verify passes (item, count, kind, container), and what each slot holds right after its dispose call;
+  - `handshake:` the controllers found per join or change, and each text received (the host's or not).
+- **Staged as dev 1.2.5** (`DebugMode` true; `debug = true` in the staged `config.lua`).
+
+**The server's installed settings file** is `C:\Program Files (x86)\Steam\steamapps\common\PalServer\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\config.lua`. Edit it while the server runs; the edit applies within 5 s (`DEBUG: config.lua was edited: …` in the server log). A restart resets it.
+
+**Steps:**
+
+1. **Start the server, then the game, and join.** Both logs:
+   - `Loaded 115 … Debug mode on`;
+   - the role line (`dedicated server` and `client`);
+   - `All N hooks installed`, with no "not installed" warnings on the server.
+
+   Client: `The host runs Lootable Passives: Surgery extraction on, conveyor extraction on.` about 6 s after joining. Server: `handshake: player … joined; 1 remote controller(s)`.
+2. **G, allowed:** open the Pal Surgery Table; the mod's operations are listed, and one Extract One works.
+3. **G, host off:** on the server, set `surgery_extraction = false`.
+   - **Server:** `Setting surgery_extraction is now false.` and `handshake: a setting changed; sending to 1 …`.
+   - **Client:** `… Surgery extraction off …`.
+   - **In game:** reopen (or keep open) the Surgery Table. The mod's operations are hidden, vanilla's are not, and the on-screen message appears once. **Watch for a crash at the message: it is the `AddLog` call.** Try keyboard and controller navigation over the shortened list, and select another Pal.
+4. **G, host on again:** set it back to `true`. The operations return without reopening, if the screen is open with a Pal selected.
+5. **H, cleanup:** note what LP implants you hold, and what is in one chest. On the server, set `experimental_features = true`, then `remove_mod_items = true`.
+   - **Expected server log:** `Removing this mod's implants from the world: found …`, then `cleanup: calling RequestDispose_ToServer …`, then a `cleanup remove:` / `cleanup: dispose …` line per stack, then either `Removed this mod's implants …` with `remove_mod_items` set back to `false` in the file, or a `WARNING … did not finish` with `cleanup verify:` lines naming what is left.
+   - **In game:** the LP implants are gone from the inventory and the chest, the vanilla implants are still there, and Pals keep their passives.
+   - **If the game or server crashes,** the last `cleanup:` line names the call.
+6. **Collect both `UE4SS.log` files into `.docs\`** before restarting anything.
+7. **Restore:** with the server stopped, copy the backup over `PalServer\Pal\Saved\SaveGames\0\9F2509B44E9A564ACFF601A9DB9A81EC\`.
+
+#### Acceptance session 1, results so far (2026-10-18)
+
+- **Steps 1 and 2: pass.** Server: the role line, `All 4 hooks installed`, no widget warnings, the handshake sent at the join, and an Extract One handled through the server snapshot. Client: `All 7 hooks installed`, the handshake received about 6 s after joining, and its own `Surgery LP_ExtractOne finished` line.
+- **Step 3: the client crashed** (`EXCEPTION_ACCESS_VIOLATION reading 0xffffffff00000051`). The edit to the server's `config.lua` applied within 5 s, the server sent `surgery=0`, and the client logged `Surgery extraction off`, then died.
+  - **The crashing stack:** engine tick → net receive → UE4SS hook → Lua. The receiver ran the `on_heard` listener synchronously, and `ui.rebuild_operation_list` reached for the Surgery screen recorded in the earlier session, which had been closed for about two minutes. Its debug line before `SetupPassiveChangeItem` never printed, so the crash was in the checks on the stale widget.
+  - **The first handshake** did the same, harmlessly, because no screen had been recorded yet.
+  - **Logs:** `.docs/accept1-client-crash-1.2.5.log`, `.docs/accept1-client-crash-1.2.5-context.log` (the crash report), and `.docs/accept1-server-1.2.5.log`.
+- **Fix (dev 1.2.6):**
+  - `ui.rebuild_operation_list` and `host.on_heard` are deleted, and the receiver only records and logs.
+  - The list follows a change at its next build (another Pal selected, or a reopen). The Edit-button gate follows at once, since it reads `host.surgery_allowed()` at every firing.
+  - 1.3-G step 6's "unblocked live" therefore holds for the button, not for the list.
+  - `CLAUDE.md` dev tips gained two rules: recorded widgets only from their own screen's hooks, and nothing but recording inside an RPC hook.
+- **The `AddLog` notice was not reached** before the crash, so it is still untested.
+- **Step 3 on dev 1.2.6 (client): pass.**
+  - The client heard `surgery=0` at the join.
+  - Every list build logged `operation list: 75 entries hidden (off_host)`, and only vanilla operations showed.
+  - The message line was logged.
+  - **The on-screen part did not run:** `notice.lua` returned silently because `FText` is not a plain function in this UE4SS. Fixed in the repo, not yet staged: it now logs what `FText` is (`notice: FText is a …`, or that there is none) and tries a callable table or userdata too.
+- **Step 4: the change arrived without a crash.** The server applied `surgery_extraction = true` and sent `surgery=1`; the client logged it. List and button behaviour: see the developer's report.
+- **Step 4 in game: pass.** Extract One and Extract All both worked again after the host turned `surgery_extraction` back on.
+- **Step 5, cleanup on dev 1.2.5 (server): removal works; the run then crashed the server.**
+  - **The count pass** found `13 in inventories, 609 in chests, 0 in guild chests (82 stacks) in 4794 loaded container(s)`, the same 622 the 1.2.1 probe counted.
+  - **The removal call works.** `RequestDispose_ToServer`, called on the server on `PalNetworkItemComponent …PalNetworkTransmitter_2147479529.Item` with both structs as Lua tables, returned for all 82 stacks, and every slot read `None x0` immediately after. So it runs synchronously on the server, the tables convert, and no permission check refused a chest.
+  - **About 1 s later the server died** with `EXCEPTION_ACCESS_VIOLATION reading 0xffffffffffffffff`; the stack ran engine tick → UE4SS game-thread scheduler → Lua. **Cause:** the run held the 4,794 container objects of one `FindAllOf` across frames, and the garbage collector freed some between slices (the probes saw the count move between scans, 5,359 vs 5,312).
+  - **Logs:** `.docs/accept1-server-cleanup-crash-1.2.5.log`, `.docs/accept1-server-cleanup-crash-1.2.5-context.log`, `.docs/accept1-client-1.2.6.log`.
+- **Fix (dev 1.2.7):**
+  - **No engine object is held across frames.** The run reads every container's `ID` (`UPalContainerBase`, `FPalContainerId`) into plain numbers in its first frame. Each slice looks the manager and the component up with `FindFirstOf`, and each container by id through `UPalItemContainerManager::GetContainer` (`Pal.hpp:25350`), in that frame. A container gone by then is skipped; a missing manager or component stops the run with a warning, and the request stays.
+  - **`CLAUDE.md`** gained the general rule: never hold an engine object from one frame to the next unless it lives as long as the world.
+  - **1.2.7 also carries the `notice.lua` diagnosis** (what `FText` is).
+- **The server world was restored** from the backup after the crash (manifest-verified), so the rerun starts from the same state.
+- **Developer's observation of the 1.2.5 run:** Lucky and Legend left the player's inventory in game before the server crashed, so the removal reached a live player's inventory. The chests were not checked. The client's log showed nothing, because the cleanup runs only on the server.
+- **Added in dev 1.2.8, kept for release (developer's request): host notices.**
+  - `host.broadcast(message)` shows a message on the host where it has a UI (`notice.once`). It also sends it to every remote controller as `LootablePassives notice <message>`, through the same RPC as the settings text.
+  - **A client** recognises the prefix (`host.parse_notice`) and only queues the message in the RPC hook. On the next game-thread tick it logs it as a release line and shows it on screen, once per world per distinct message.
+  - **The cleanup sends three:** "…the host is removing this mod's implants from the world." when a run starts (the server also logs a release `… has started (after <trigger>).`); "…the host removed N of this mod's implants from the world." on success; "…did not finish; the host will try again." on failure.
+  - `host_test.lua` gained 5 notice checks.
+- **Step 5 rerun on dev 1.2.8: pass on the server, no crash.**
+  - **Setup:** the world was restored from the backup. The developer's three inventory implants came back this time from a Disassembly Conveyor run of the same Pal, and the two chests hold a slightly different mix.
+  - **The run:** `found 13 in inventories, 609 in chests, 0 in guild chests (81 stacks) in 4745 loaded container(s)`. All 81 dispose calls returned with the slot reading `None` right after; the verify pass found nothing; 0 ledger debts. Then `Setting remove_mod_items is now false.`, and the installed `config.lua` reads `remove_mod_items = false`.
+  - **Notices:** the server sent "…is removing…" and "…removed 622…". The client logged both as release lines.
+  - **The on-screen call:** `FText` is a userdata in this UE4SS, so the 1.2.6 check had skipped `AddLog`. On 1.2.8 the client called it twice without an error. Whether the message showed on screen is the developer's report.
+  - **In game (developer):** both messages showed on screen (blue text), so `AddLog` works. The inventory kept only Demon God, which is `PAL_ALLAttack_up3`, a vanilla consumable. One crate kept only vanilla Disposable Implants (all orange), and the other is empty. Pals edited in the past kept their passives. **1.3-H and the 1.3-G notice: pass.**
+  - **Logs:** `.docs/accept1-server-cleanup-1.2.8.log`, `.docs/accept1-client-cleanup-1.2.8.log`.
+  - **After the cleanup (developer):** a conveyor run, an Extract One and an Extract All each produced new implants. A finished cleanup does not block anything.
+  - **The world was kept** in its cleaned state (developer's choice), and the pre-cleanup backup stays in `PalworldBackups`.
+- **Resumed at step 3** on dev 1.2.6: the client restarts and rejoins; the server keeps running 1.2.5, whose server code is unchanged, with `surgery_extraction = false` still in its file. On joining, the client should hear `surgery=0` and the list should hide.
 
 ### 1.3-I. Docs: Workshop text, README and CLAUDE.md
 
@@ -793,21 +1002,48 @@ To be turned into BBCode at execution. Every step was verified on the dev rig on
    - **A mod update reinstalls `config.lua` and restores the defaults.** Re-apply any edits after updating. State this plainly in the Workshop text and the README as a known behaviour: settings persist within a version and reset on update. With Better Mod Manager, its saved values carry over.
    - **Changes made in Better Mod Manager are saved into the same `config.lua`,** so the file always shows the current settings.
 
+#### 1.3-I status: done, pending acceptance
+
+- **`workshop-description.txt`:**
+  - Added "every player should run the same version", the client hiding and join delivery. **"Reported NOT TO WORK ON DEDICATED SERVER HOSTING" stays** until the docs-cleanup step in 1.3-K (round 10).
+  - New sections: the dedicated-server install steps (as drafted, BBCode); "Settings" (every setting, BMM or `config.lua`, the reset on update stated plainly); "Removing this mod's items from the world (experimental, host only)", including the manual `config.lua` route.
+  - BMM is listed as optional; "Pal Surgery Table" and "Disposable Implant" are used throughout; the 1.3.0 changelog is added.
+- **The Edit-button coloring known issue is kept:** nothing in 1.3.0 is verified to fix it.
+- **`README.md`:** player-facing text stays only in the Workshop file (its stated single point of change, round 2), so the server steps are not copied. Added:
+  - "Testing on a local dedicated server": the shared `WorkshopRootDir`, `ActiveModList` filtering, the server log, the world move and UID swap;
+  - the role line and the release log's contents in "Reading the log";
+  - the runtime-write exception in "How a staged build reaches the game";
+  - the settings section and the test listings (1.3-F, 1.3-G).
+- **`CLAUDE.md`:**
+  - a new "Roles and the two halves" section;
+  - the shared-`WorkshopRootDir` bullet;
+  - the settings section, the layout and tests, and the `passive_items.lua` paths (1.3-F);
+  - the stale `.docs/workshop-description.txt` paths fixed.
+
+  The `+ModsFolderPaths` exception was not adopted, so it is not recorded.
+- **`tools/stage.ps1`'s closing message** names `workshop-description.txt` at the root. `test_staging.ps1`: all pass.
+- **The changelog entry** is in the Workshop text.
+
 ### 1.3-J. Optional dev tooling
 
 - The FModel-export read-only data verifier.
 - Generated Lua types (`Mods\shared\types`) for `.luarc.json`.
 
+Not started; neither is needed for 1.3.0. The offline tests added in 1.3-C to 1.3-H cover the Lua that has no engine call: `journal_test`, `exchange_test`, `options_test`, `host_test`, and `ledger_test`'s new cases.
+
 ### 1.3-K. Release
 
-1. **Checks:**
+1. **Docs cleanup, after the code is complete and general testing has run** (round 10), so rework found in testing does not churn the docs:
+   - In `workshop-description.txt`, replace "It is reported NOT TO WORK ON DEDICATED SERVER HOSTING" with "Tested and working on a Windows dedicated server (game version …)", and the changelog's "Added the dedicated-server install steps" with "Tested and working on a Windows dedicated server; added the install steps".
+   - Re-read the Workshop text, `README.md` and `CLAUDE.md` against what testing changed.
+2. **Checks:**
    - `node tools\luacheck.js`
    - `luacheck Scripts`, with 0 warnings
    - `lua tools\ledger_test.lua`
    - a dev stage with `-Force`, because files are moved and deleted.
-2. **The test matrix below,** with the logs of both machines for every cell.
-3. **`.\tools\stage.ps1 -Minor` produces 1.3.0** and redraws the thumbnail. Upload by hand, and paste the Workshop text.
-4. **Delete this plan file before publishing.** The probe module is already deleted.
+3. **The test matrix below,** with the logs of both machines for every cell.
+4. **`.\tools\stage.ps1 -Minor` produces 1.3.0** and redraws the thumbnail. Upload by hand, and paste the Workshop text.
+5. **Delete this plan file before publishing.** The probe module is already deleted.
 
 ### Test matrix
 

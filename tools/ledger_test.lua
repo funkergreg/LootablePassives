@@ -72,7 +72,7 @@ ledger.owe(nil, { "LP_Implant_Legend", "LP_Implant_Legend",
     "LP_Implant_Legend", "LP_Implant_Legend" })
 check("total owed in memory", ledger.total_owed(), 8)
 
-local text = read_file(path)
+local text = read_file(path) or ""
 check("row count on disk", select(2, text:gsub("\n", "\n")), 3)
 check("alice row present",
     text:find("LPL2\t1%-2%-3%-4\tLP_Implant_Stamina_Up_1\t3") ~= nil, true)
@@ -150,6 +150,21 @@ CANDIDATES = { { data = { name = "host" }, uid = nil } }
 delivered = ledger.flush()
 check("unreadable uid, lone player: delivered", delivered, 1)
 check("unreadable uid, lone player: recipient", GRANTS[1] and GRANTS[1].who, "host")
+os.remove(path)
+
+-- 6. forget_items drops the matching debts of every owner and keeps the rest.
+ledger = fresh_ledger()
+ledger.owe(ALICE, { "LP_Implant_Stamina_Up_1", "PalPassiveSkillChange_Consumable_CraftSpeed_up3" })
+ledger.owe(nil, { "LP_Implant_Legend", "LP_Implant_Legend" })
+local dropped, written = ledger.forget_items(function(item_id)
+    return item_id:sub(1, 11) == "LP_Implant_"
+end)
+check("forget: dropped the matching debts", dropped, 3)
+check("forget: file written", written, true)
+check("forget: the vanilla implant still owed", ledger.total_owed(), 1)
+check("forget: file holds only the vanilla row",
+    read_file(path), "LPL2\t1-2-3-4\tPalPassiveSkillChange_Consumable_CraftSpeed_up3\t1\n")
+check("forget: nothing matching drops nothing", (ledger.forget_items(function() return false end)), 0)
 os.remove(path)
 
 print(failures == 0 and "\nALL PASS" or string.format("\n%d FAILURE(S)", failures))

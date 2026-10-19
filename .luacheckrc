@@ -24,6 +24,7 @@ globals = {
     "StaticConstructObject",
     "CreateInvalidObject",
     "FName",
+    "FText",
     "UEHelpers",
 
     -- Misc UE4SS globals

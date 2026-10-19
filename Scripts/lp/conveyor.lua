@@ -40,44 +40,52 @@
 -- per-call cost is one array read and one GUID read; the container walk inside
 -- it is guarded by bucket[key] == nil.
 --
--- CONSUMED VERSUS WITHDRAWN IS DECIDED BY THE RATE ALONE: the last rate seen
--- plus twice the last step between firings, against COMPLETE_RATE. The
--- projection is there because the firing that completes a Pal can remove it
--- before a rate at the threshold is read. Whether the individual still exists
--- is not tested: a UPalIndividualCharacterParameter outlives the Pal it belongs
--- to.
+-- CONSUMED VERSUS WITHDRAWN IS DECIDED BY THE RATE ALONE: the last rate seen,
+-- against COMPLETE_RATE. Both callbacks run before their function, so the
+-- container hook's callback reads the completing rate while the Pal is still
+-- queued, and the removal is seen by a later firing. Whether the individual
+-- still exists is not tested: a UPalIndividualCharacterParameter outlives the
+-- Pal it belongs to.
 
 local util = require("lp.util")
-local config = require("lp.config")
+local options = require("lp.options")
 local passives = require("lp.passives")
 local ledger = require("lp.ledger")
 local hooks = require("lp.hooks")
+local role = require("lp.role")
 
 local array_count = util.array_count
 local field = util.field
 local guid_key = util.guid_key
-local has_authority = util.has_authority
 local is_valid = util.is_valid
 local log = util.log
 local method = util.method
 local unwrap = util.unwrap
-local conveyor_on = config.conveyor_on
-local debug_log = config.debug_log
+local coalescer = util.coalescer
+local conveyor_on = options.conveyor_on
+local debug_log = options.debug_log
 local get_skill_ids = passives.get_skill_ids
 local instance_key = passives.instance_key
 local is_extractable = passives.is_extractable
 local module_for = passives.module_for
 local owner_key = passives.owner_key
+local is_authority = role.is_authority
 
 local PROCEED_HOOK =
 "/Script/Pal.PalBuildObjectConvertCharacterToItem:OnProceedConvertProcess_ServerInternal"
 local CONTAINER_HOOK =
 "/Script/Pal.PalMapObjectConvertCharacterToItemModel:OnUpdateCharacterContainer_ServerInternal"
 
--- GUESS: ConvertProgressRate at or above this counts the Pal as consumed; below it, as withdrawn.
+-- ConvertProgressRate at or above this counts the Pal as consumed; below it, as
+-- withdrawn.
 local COMPLETE_RATE = 0.999
--- Multiplier on the last step in the projection above.
-local STEP_MARGIN = 2
+-- A Pal that leaves below COMPLETE_RATE after reaching this rate is logged as a
+-- possible missed completion.
+local NEAR_COMPLETE_RATE = 0.97
+
+-- Defined at the bottom of the file, after the hook callbacks they register.
+local apply
+local schedule_apply
 
 --------------------------------------------------------------------------------
 -- Reading the queue
@@ -156,7 +164,7 @@ end
 --------------------------------------------------------------------------------
 
 -- model key -> instance key ->
---   { passives = { id, ... }, owner = <UId key or nil>, rate = number, step = number }
+--   { passives = { id, ... }, owner = <UId key or nil>, rate = number }
 --
 -- One bucket per conveyor. pass(model) treats every entry missing from that
 -- model's queue as having left it, so it may only look at the entries that model
@@ -182,28 +190,9 @@ end
 local authority_reported = false
 local unowned_reported = false
 
--- Gates item creation on util.has_authority, which fails closed. Shared with
--- main.lua's ledger flush; what is local here is the reporting.
-local function may_create_items(actor)
-    local allowed, valid_actor, asked, authoritative = has_authority(actor)
-    -- Only the negative case logs: a closed gate and an unfired hook look the same in the log otherwise.
-    if not allowed and not authority_reported then
-        authority_reported = true
-        log(string.format(
-            "Conveyor extraction is INACTIVE on this peer (actorValid=%s asked=%s authority=%s). "
-            .. "Expected on a multiplayer client -- the server grants instead. Unexpected in "
-            .. "single-player, and would mean nothing is ever created.",
-            tostring(valid_actor), tostring(asked), tostring(authoritative)))
-    end
-    return allowed
-end
-
 -- Records the debt, then delivers it. ledger.owe writes to disk before
 -- ledger.flush is called.
-local function on_consumed(entry, actor)
-    if not may_create_items(actor) then
-        return
-    end
+local function on_consumed(entry)
     if entry.owner == nil and not unowned_reported then
         unowned_reported = true
         log("No owner UId could be read from the consumed Pal, so its modules are delivered only "
@@ -247,9 +236,6 @@ end
 
 -- One pass over the model's queue: snapshots newly seen Pals, updates the rate
 -- of those already tracked, and resolves entries that have left the queue.
---
--- actor is read from the model in the pass that needs it rather than cached, so
--- two conveyors cannot answer each other's authority check.
 local function pass(model)
     local rates = read_process_rates(model)
     local bucket = bucket_for(model)
@@ -264,33 +250,29 @@ local function pass(model)
                 -- read_queued_passives builds a fresh table per key, so it is
                 -- kept rather than copied.
                 snapshot.rate = rate
-                snapshot.step = 0.0
                 bucket[key] = snapshot
             end
         else
-            local entry = bucket[key]
-            -- Both hooks call pass, so a firing with no progress keeps the
-            -- last positive step rather than resetting it.
-            if rate > entry.rate then
-                entry.step = rate - entry.rate
-            end
-            entry.rate = rate
+            bucket[key].rate = rate
         end
     end
 
-    -- Gone from this model's queue: consumed when the projected rate reaches
+    -- Gone from this model's queue: consumed when the last rate seen reaches
     -- COMPLETE_RATE, withdrawn below it. A withdrawal owes nothing.
-    local actor
     for key, entry in pairs(bucket) do
         if rates[key] == nil then
             bucket[key] = nil
-            local consumed = entry.rate + STEP_MARGIN * entry.step >= COMPLETE_RATE
-            debug_log(string.format(
-                "conveyor: a Pal left the queue at rate %.4f (last step %.4f): %s",
-                entry.rate, entry.step, consumed and "consumed" or "withdrawn"))
+            local consumed = entry.rate >= COMPLETE_RATE
+            debug_log(string.format("conveyor: a Pal left the queue at rate %.4f: %s",
+                entry.rate, consumed and "consumed" or "withdrawn"))
             if consumed then
-                actor = actor or method(model, "GetActor")
-                on_consumed(entry, actor)
+                on_consumed(entry)
+            elseif entry.rate >= NEAR_COMPLETE_RATE then
+                log(string.format(
+                    "WARNING: a Pal left the conveyor at rate %.4f, close to complete, and was "
+                    .. "counted as withdrawn, so no modules were created. If it was consumed, "
+                    .. "its modules were missed: %s.",
+                    entry.rate, table.concat(entry.passives, ", ")))
             end
         end
     end
@@ -302,14 +284,27 @@ end
 -- The container hook is zero-parameter, so its context argument is the model
 -- and this is its callback as is.
 --
--- With config.conveyor_on() false, returns before reading the model, and
--- empties tracked on the first such firing: a Pal tracked before the switch
--- went off is never paid for, whatever its rate.
+-- With options.conveyor_on() false, returns before reading the model, empties
+-- tracked on the first such firing, and schedules apply(), which removes both
+-- hooks. A Pal tracked before the switch went off is never paid for, whatever
+-- its rate.
+--
+-- Where role.is_authority() is false, returns before reading the model, and
+-- logs that once.
 local function pass_if_valid(model_param)
     if not conveyor_on() then
         if next(tracked) ~= nil then
             tracked = {}
             log("Conveyor extraction switched off; Pals being tracked were forgotten.")
+        end
+        schedule_apply()
+        return
+    end
+    if not is_authority() then
+        if not authority_reported then
+            authority_reported = true
+            log(string.format("Conveyor extraction is inactive on this machine (role: %s); the "
+                .. "world's host creates the modules.", role.describe()))
         end
         return
     end
@@ -324,23 +319,42 @@ local function on_proceed(_, model_param)
     pass_if_valid(model_param)
 end
 
-local installed = false
+-- The two registrations, nil until conveyor_extraction is first on.
+local registrations = nil
 
--- Registers both hooks, once; later calls do nothing.
-local function install()
-    if installed then
+-- Brings the hooks in line with options.conveyor_on(): registers both the first
+-- time it is on, and otherwise enables or disables them with it. Called at
+-- load, on each map load, and scheduled from the hooks when the switch is off;
+-- never from inside either hook.
+function apply()
+    local enabled = conveyor_on()
+    if registrations == nil then
+        if not enabled then
+            return
+        end
+        registrations = {
+            hooks.register({
+                path = PROCEED_HOOK,
+                callback = on_proceed,
+                half = "server",
+                label = "the conveyor progress watcher",
+            }),
+            hooks.register({
+                path = CONTAINER_HOOK,
+                callback = pass_if_valid,
+                half = "server",
+                label = "the conveyor arrival/departure watcher",
+            }),
+        }
         return
     end
-    installed = true
-    hooks.register(PROCEED_HOOK, on_proceed, "the conveyor progress watcher")
-    hooks.register(CONTAINER_HOOK, pass_if_valid, "the conveyor arrival/departure watcher")
+    for _, registration in ipairs(registrations) do
+        hooks.set_enabled(registration, enabled)
+    end
 end
 
-local function is_installed()
-    return installed
-end
+schedule_apply = coalescer(apply, 0)
 
 return {
-    install = install,
-    is_installed = is_installed,
+    apply = apply,
 }

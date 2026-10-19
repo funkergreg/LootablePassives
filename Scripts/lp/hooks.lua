@@ -1,9 +1,12 @@
 -- Lootable Passives -- One bounded, re-armed hook registrar.
 --
--- The two widget hooks in main.lua and both conveyor hooks register through
--- here. main.lua's SERVER_REQUEST hook calls RegisterHook directly, since it
--- takes a pre- and a post-callback. Coalescing a hook that fires at frame rate
--- is not here; that is lp/util.lua's coalescer().
+-- Every hook the mod registers goes through here. Coalescing a hook that fires
+-- at frame rate is not here; that is lp/util.lua's coalescer().
+--
+-- Each registration names its half: "ui" or "server". A /Script/ path is
+-- attempted at once. A /Game/ path is a Blueprint, which does not exist until a
+-- world has loaded, so it is attempted only from arm(), and only when the role
+-- has a UI: a dedicated server never attempts one.
 --
 -- Four properties of the shape below are deliberate:
 --
@@ -12,12 +15,10 @@
 --     per-call state.
 --   * One retry closure per registration, built at registration time, not one
 --     per attempt.
---   * A fresh retry budget per map, since the target of a widget hook does not
---     exist until a world has loaded.
+--   * A fresh retry budget each time arm() runs.
 
 local util = require("lp.util")
 
-local find_first = util.find_first
 local log = util.log
 
 -- 90 attempts at 1 s. The budget has to outlast a world load, which varies by
@@ -27,40 +28,39 @@ local log = util.log
 local ATTEMPT_LIMIT = 90
 local RETRY_DELAY_MS = 1000
 
--- Every registration made through this module, so map load can re-arm them.
+-- Every registration made through this module, so arm() can re-arm them.
 local entries = {}
+
+-- The halves the current role runs, set by arm(); nil until the first arm().
+local active = nil
 
 local announced = false
 
--- One line, when every registration made so far has landed. Native hooks take at
--- load and widget hooks only once a world exists, so the line is correct only if
--- a widget hook is registered before any native one; main.lua orders them that
--- way. Reporting each one separately would scatter the lines across a startup.
+local function counts(entry)
+    return active ~= nil and active[entry.half] == true
+end
+
+-- One line, when every registration of the current role's halves has landed.
+-- Waits for the first arm(), since which hooks count depends on the role.
 local function announce_if_complete()
-    if announced then
+    if announced or active == nil then
         return
     end
     local installed = {}
     for _, entry in ipairs(entries) do
-        if not entry.registered then
-            return
+        if counts(entry) and not entry.disabled then
+            if not entry.registered then
+                return
+            end
+            installed[#installed + 1] = entry.label
         end
-        installed[#installed + 1] = entry.label
     end
     announced = true
     log(string.format("All %d hooks installed: %s.", #installed, table.concat(installed, ", ")))
 end
 
--- Is a player character resolvable? Suppresses warning on the
--- splash, login and title maps, where a widget hook has nothing to bind to.
-local function in_world()
-    -- util.find_first validates before returning; raw FindFirstOf can return a
-    -- non-nil object that is not usable.
-    return find_first("PalPlayerCharacter") ~= nil
-end
-
 -- Schedules entry.retry, unless one is already scheduled. entry.pending is what
--- keeps a registration to one retry chain however often map load re-arms it.
+-- keeps a registration to one retry chain however often arm() re-arms it.
 local function schedule_retry(entry)
     if entry.pending then
         return
@@ -69,64 +69,122 @@ local function schedule_retry(entry)
     ExecuteInGameThreadWithDelay(RETRY_DELAY_MS, entry.retry)
 end
 
+-- Argument-form pcall against the global: no closure per attempt. The post
+-- argument is passed only when there is one. Returns pcall's results: whether
+-- it succeeded, then RegisterHook's PreId and PostId.
+local function register_now(entry)
+    if entry.post ~= nil then
+        return pcall(RegisterHook, entry.path, entry.callback, entry.post)
+    end
+    return pcall(RegisterHook, entry.path, entry.callback)
+end
+
 local function attempt(entry)
     entry.pending = false
-    if entry.registered then
+    if entry.registered or entry.disabled then
         return
     end
     entry.attempts = entry.attempts + 1
-    -- Argument-form pcall against the global: no closure per attempt.
-    local succeeded = pcall(RegisterHook, entry.path, entry.callback)
+    local succeeded, pre_id, post_id = register_now(entry)
     if succeeded then
         entry.registered = true
+        entry.pre_id = pre_id
+        entry.post_id = post_id
         announce_if_complete()
     elseif entry.attempts < ATTEMPT_LIMIT then
         schedule_retry(entry)
-    elseif not entry.warned and in_world() then
-        -- Once per session, and only from a world: the budget re-arms on every
-        -- map load, so exhausting it at a menu is not a fault.
+    elseif not entry.warned then
+        -- Once per session; the budget re-arms on every arm().
         entry.warned = true
         log(string.format(
-            "%s is not installed yet. Expected before a world is loaded -- its target does not "
-            .. "exist at the menu -- and it retries on each map load.%s",
-            entry.label, entry.note and (" " .. entry.note) or ""))
+            "%s is not installed after %d attempts; it is retried on the next map load.%s",
+            entry.label, ATTEMPT_LIMIT, entry.note and (" " .. entry.note) or ""))
     end
 end
 
--- path      the UFunction to hook, e.g. "/Script/Pal.PalFoo:Bar"
--- callback  built once by the caller; must capture no per-call state
--- label     what to call it in the log, e.g. "the conveyor extraction hook"
--- note      appended to the gave-up message: what still works without it
-local function register(path, callback, label, note)
+-- Attempts entry now when it may be: a /Script/ path always, a /Game/ path
+-- once arm() has seen a role with a UI.
+local function attempt_if_ready(entry)
+    if not entry.blueprint or (active ~= nil and active.ui) then
+        attempt(entry)
+    end
+end
+
+-- spec.path      the UFunction to hook, e.g. "/Script/Pal.PalFoo:Bar"
+-- spec.callback  built once by the caller; must capture no per-call state. For
+--                a /Script/ path it runs before the function; for a /Game/
+--                path, after it
+-- spec.post      optional, /Script/ paths only: runs after the function
+-- spec.half      "ui" or "server": which roles count it in the installed line
+-- spec.label     what to call it in the log, e.g. "the conveyor extraction hook"
+-- spec.note      appended to the gave-up message: what still works without it
+--
+-- Returns the registration, for set_enabled.
+local function register(spec)
     local entry = {
-        path = path,
-        callback = callback,
-        label = label,
-        note = note,
+        path = spec.path,
+        callback = spec.callback,
+        post = spec.post,
+        half = spec.half,
+        label = spec.label,
+        note = spec.note,
+        blueprint = spec.path:sub(1, 6) == "/Game/",
         attempts = 0,
         registered = false,
+        disabled = false,
         pending = false,
         warned = false,
     }
     entry.retry = function() attempt(entry) end
     entries[#entries + 1] = entry
-    attempt(entry)
+    attempt_if_ready(entry)
+    return entry
 end
 
--- Called from main.lua's RegisterLoadMapPostHook: resets the budget of every
--- registration that has not taken yet and schedules another round. A chain
--- already running keeps running on the fresh budget rather than gaining a second.
-local function rearm_on_map_load()
+-- Disabled: UnregisterHook with the ids RegisterHook returned, if it is
+-- registered, and no further attempts. Enabled: a fresh budget, attempted at
+-- once when it may be. Does nothing when the state already matches.
+--
+-- Must not be called from inside the hook being unregistered; schedule it.
+local function set_enabled(entry, enabled)
+    if enabled ~= entry.disabled then
+        return
+    end
+    entry.disabled = not enabled
+    if enabled then
+        entry.attempts = 0
+        attempt_if_ready(entry)
+        return
+    end
+    if entry.registered then
+        local succeeded, raised = pcall(UnregisterHook, entry.path, entry.pre_id, entry.post_id)
+        if succeeded then
+            entry.registered = false
+            entry.pre_id, entry.post_id = nil, nil
+        else
+            log(string.format("WARNING: could not remove %s: %s", entry.label, tostring(raised)))
+        end
+    end
+end
+
+-- Called once the role of a newly entered world is known. Records which halves
+-- count, then resets the budget of every registration of those halves that has
+-- not taken yet and schedules another round. A chain already running keeps
+-- running on the fresh budget rather than gaining a second.
+local function arm(has_ui, is_authority)
+    active = { ui = has_ui, server = is_authority }
     for _, entry in ipairs(entries) do
-        if not entry.registered then
+        if not entry.registered and not entry.disabled and counts(entry) then
             -- The budget resets; entry.warned does not.
             entry.attempts = 0
             schedule_retry(entry)
         end
     end
+    announce_if_complete()
 end
 
 return {
-    rearm_on_map_load = rearm_on_map_load,
+    arm = arm,
     register = register,
+    set_enabled = set_enabled,
 }

@@ -134,14 +134,17 @@ end
 -- Mutation
 --------------------------------------------------------------------------------
 
--- EPalItemOperationResult as a number. The value arrives as a number on some
--- paths and as an enum name on others, hence the text parsing.
+-- EPalItemOperationResult as a number, from a number or from a string holding
+-- a number or an enum name. Any other type returns nil.
 local function operation_result_code(value)
     value = unwrap(value)
     if type(value) == "number" then
         return value
     end
-    local text = tostring(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+    local text = value
     local numeric = tonumber(text)
     if numeric ~= nil then
         return numeric
@@ -207,7 +210,8 @@ local function add_modules(data, item_id, count)
     local code = operation_result_code(result)
     local after = item_count(data, name)
     if code ~= ITEM_RESULT_SUCCESS then
-        return false, "EPalItemOperationResult=" .. tostring(code)
+        return false, string.format("EPalItemOperationResult=%s (returned a %s)", tostring(code),
+            type(unwrap(result)))
     end
     if before >= 0 and after >= 0 and after - before == count then
         return true, nil

@@ -4,7 +4,7 @@
 -- defines. Most call sites read it only as "is this id one of ours"; the two
 -- that need more use is_extract_mode or IMPLANT_TARGET.
 --
--- Not in settings.lua, because these are not settings: every key has to match a
+-- Not in config.lua, because these are not settings: every key has to match a
 -- row in the PalSchema JSON exactly.
 
 -- Marker passives, one per extraction operation. Which marker appears on the

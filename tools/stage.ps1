@@ -644,5 +644,5 @@ if ($DryRun) {
 }
 else {
     if ($stale.Count -gt 0) { Write-Host "Deleted $($stale.Count) file(s) the package no longer has." }
-    Write-Host "Staged $($info.PackageName) $newVersion as a $kind (DebugMode $newDebug), and wrote both to the repo's Info.json. Upload it from Palworld Mod Uploader; this machine reinstalls from the item folder at its next launch, a subscribed machine after Steam downloads the upload. Paste .docs\workshop-description.txt into the Workshop page if that file changed."
+    Write-Host "Staged $($info.PackageName) $newVersion as a $kind (DebugMode $newDebug), and wrote both to the repo's Info.json. Upload it from Palworld Mod Uploader; this machine reinstalls from the item folder at its next launch, a subscribed machine after Steam downloads the upload. Paste workshop-description.txt into the Workshop page if that file changed."
 }

@@ -1,50 +1,36 @@
 -- Lootable Passives -- Replaying an interrupted exchange.
 --
--- Acts only on a journal row, and only against a Pal singled out as that row's:
--- the one Pal in the world carrying the row's marker, or, in
--- settle_before_exchange, the one besides the new exchange's Pal. Both
--- conditions are required: nothing here sweeps markers it has no journal entry
--- for.
+-- Acts only on a journal row, and only against that row's Pal: the Pal whose
+-- pal_key is the row's key, and only while it carries the row's marker. A row
+-- migrated from the single-row format names no Pal, and is replayed against the
+-- one Pal carrying its marker that has no row of its own. Nothing here sweeps
+-- markers it has no journal row for.
 
 local util = require("lp.util")
-local config = require("lp.config")
+local options = require("lp.options")
 local journal = require("lp.journal")
 local passives = require("lp.passives")
 local inventory = require("lp.inventory")
+local role = require("lp.role")
 
-local find_first = util.find_first
-local has_authority = util.has_authority
 local log = util.log
 local run_later = util.run_later
-local debug_log = config.debug_log
+local debug_log = options.debug_log
+local LEGACY_KEY = journal.LEGACY_KEY
 local clear_journal = journal.clear_journal
 local read_journal = journal.read_journal
+local read_row = journal.read_row
 local count_id = passives.count_id
-local first_marker = passives.first_marker
 local has_skill = passives.has_skill
 local pal_key = passives.pal_key
 local snapshot_all = passives.snapshot_all
 local remove_skill = inventory.remove_skill
 local undo_swap = inventory.undo_swap
+local is_authority = role.is_authority
 
 --------------------------------------------------------------------------------
 -- Crash recovery
 --------------------------------------------------------------------------------
-
--- Every Pal whose passive list holds lock, leaving out the Pal whose pal_key is
--- skip_key when one is given. The world walk is passives.snapshot_all; this is
--- the filter over it.
-local function parameters_with(lock, skip_key)
-    local marked = {}
-    for _, snapshot in ipairs(snapshot_all()) do
-        if count_id(snapshot.before_ids, lock) > 0
-            and (skip_key == nil or pal_key(snapshot.parameter) ~= skip_key)
-        then
-            marked[#marked + 1] = snapshot.parameter
-        end
-    end
-    return marked
-end
 
 -- Replays one journal row against parameter, which carries record.lock. Returns
 -- whether the replay succeeded.
@@ -77,90 +63,114 @@ local function replay(record, parameter)
     return undo_swap(parameter, passive_id, lock)
 end
 
--- Replays one journal row against the single Pal carrying its marker, then
--- clears the journal if the replay succeeded. Does nothing on a peer without
--- authority, where the row stays on disk.
-local function recover_interrupted_extraction(reason)
-    local record = read_journal()
-    if record == nil then
-        return
+local function describe(record)
+    return string.format("%s (%s/%s)", tostring(record.passive_id), record.phase, record.state)
+end
+
+-- Replays record against parameter and clears its row if that succeeded.
+local function replay_and_clear(record, parameter, reason)
+    if replay(record, parameter) then
+        clear_journal(record.key)
+        log(string.format("Recovered interrupted exchange of %s after %s.", describe(record),
+            reason))
+    else
+        log(string.format("WARNING: interrupted exchange of %s could not be recovered after %s; "
+            .. "its marker and journal row are kept.", describe(record), reason))
     end
-    if not has_authority(find_first("PalPlayerCharacter")) then
-        log(string.format(
-            "Recovery journal left on disk after %s: this peer has no authority over the world, "
-            .. "or no player is loaded yet.", reason))
-        return
+end
+
+-- The legacy row: the one Pal carrying its marker, among the Pals no other row
+-- names.
+local function recover_legacy(record, snapshots, keyed, reason)
+    local marked = {}
+    for _, snapshot in ipairs(snapshots) do
+        if count_id(snapshot.before_ids, record.lock) > 0 and not keyed[snapshot.key or ""] then
+            marked[#marked + 1] = snapshot.parameter
+        end
     end
-    local marked = parameters_with(record.lock, nil)
-    debug_log(string.format("recovery after %s: %d Pal(s) carry marker %s", reason, #marked,
-        record.lock))
+    debug_log(string.format("recovery after %s: %d Pal(s) carry legacy marker %s", reason,
+        #marked, record.lock))
     if #marked ~= 1 then
         log(string.format(
             "WARNING: recovery journal found %d Pals carrying marker %s after %s; left all "
             .. "passives untouched.", #marked, record.lock, reason))
         return
     end
+    replay_and_clear(record, marked[1], reason)
+end
 
-    if replay(record, marked[1]) then
-        clear_journal()
-        log(string.format("Recovered interrupted extraction of %s after %s (%s/%s).",
-            record.passive_id, reason, record.phase, record.state))
-    else
-        log("WARNING: interrupted extraction could not be recovered; marker left untouched.")
+-- Replays every journal row against its own Pal. Does nothing where
+-- role.is_authority() is false, where the rows stay on disk.
+--
+-- A row whose Pal is not loaded is kept for the next pass. A row whose Pal no
+-- longer carries its marker is cleared: there is nothing left to finish.
+local function recover_interrupted_extraction(reason)
+    local rows = read_journal()
+    if #rows == 0 then
+        return
+    end
+    if not is_authority() then
+        log(string.format(
+            "Recovery journal left on disk after %s: this machine is the %s, which does not hold "
+            .. "the world.", reason, role.describe()))
+        return
+    end
+    local snapshots = snapshot_all()
+    local by_key, keyed = {}, {}
+    for _, snapshot in ipairs(snapshots) do
+        snapshot.key = pal_key(snapshot.parameter)
+        if snapshot.key ~= nil then
+            by_key[snapshot.key] = snapshot
+        end
+    end
+    for _, record in ipairs(rows) do
+        keyed[record.key] = true
+    end
+
+    for _, record in ipairs(rows) do
+        if record.key == LEGACY_KEY then
+            recover_legacy(record, snapshots, keyed, reason)
+        else
+            local snapshot = by_key[record.key]
+            if snapshot == nil then
+                log(string.format("Recovery journal row for %s kept after %s: its Pal is not "
+                    .. "loaded.", describe(record), reason))
+            elseif count_id(snapshot.before_ids, record.lock) == 0 then
+                clear_journal(record.key)
+                log(string.format("Discarded the journal row of %s after %s: its Pal no longer "
+                    .. "carries marker %s.", describe(record), reason, record.lock))
+            else
+                replay_and_clear(record, snapshot.parameter, reason)
+            end
+        end
     end
 end
 
--- Called by lp/transaction.lua before it writes the first row of a new exchange,
--- which replaces whatever row is on disk. parameter and before_ids are the new
--- exchange's Pal and its passive list before the swap. Returns true when the
--- journal may be written.
+-- Called by lp/transaction.lua before it writes the first row of a new exchange
+-- on the Pal whose pal_key is key, which replaces that Pal's earlier row.
+-- before_ids is the Pal's passive list before the new swap. Rows of other Pals
+-- are not read.
 --
--- With no row on disk, returns true. Otherwise the row is replayed now against
--- the one other Pal carrying the row's marker and cleared if that succeeds; it
--- is discarded if no other Pal carries it. It is left to be overwritten, with a
--- warning, when it cannot be told apart from the new exchange: the new Pal
--- already carried a marker, its IndividualId does not read, or two or more other
--- Pals carry one. Returns false only when the replay ran and failed, keeping the
--- row.
-local function settle_before_exchange(parameter, before_ids)
-    local record = read_journal()
+-- With no earlier row for this Pal, does nothing. An earlier row whose marker
+-- is gone from before_ids is discarded. One whose marker is still in
+-- before_ids cannot be told apart from the new exchange, and is replaced with
+-- a warning. Returns true: the new exchange may write its row.
+local function settle_before_exchange(key, before_ids)
+    local record = read_row(key)
     if record == nil then
         return true
     end
-    local described = string.format("%s (%s/%s)",
-        tostring(record.passive_id), record.phase, record.state)
-
-    local current = pal_key(parameter)
-    local marked = nil
-    if current ~= nil and first_marker(before_ids) == nil then
-        marked = parameters_with(record.lock, current)
-    end
-    debug_log(string.format("settle before exchange: %s other Pal(s) carry marker %s",
-        marked and tostring(#marked) or "unknown", record.lock))
-    if marked == nil or #marked > 1 then
+    if count_id(before_ids, record.lock) > 0 then
         log(string.format(
-            "WARNING: an earlier exchange of %s was still awaiting recovery and could not be told "
-            .. "apart from this one. Its journal row is replaced, so it will NOT be recovered.",
-            described))
-        return true
-    end
-    if #marked == 0 then
-        clear_journal()
+            "WARNING: an earlier exchange of %s on this Pal was still awaiting recovery and could "
+            .. "not be told apart from this one. Its journal row is replaced, so it will NOT be "
+            .. "recovered.", describe(record)))
+    else
         log(string.format(
-            "Discarded the journal row of an earlier exchange of %s: no Pal carries its marker "
-            .. "any more.", described))
-        return true
+            "Discarded the journal row of an earlier exchange of %s on this Pal: the Pal no longer "
+            .. "carries its marker.", describe(record)))
     end
-    if replay(record, marked[1]) then
-        clear_journal()
-        log(string.format(
-            "Recovered an earlier interrupted exchange of %s before starting this one.", described))
-        return true
-    end
-    log(string.format(
-        "ERROR: an earlier exchange of %s is still awaiting recovery and could not be completed "
-        .. "now. This operation is refused so that its journal row is kept.", described))
-    return false
+    return true
 end
 
 -- Runs one recovery pass 5 s from now, on the game thread.
