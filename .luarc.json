@@ -18,6 +18,8 @@
     "UEHelpers",
     "UnrealVersion",
     "RegisterConsoleCommandHandler",
-    "RegisterKeyBind"
+    "RegisterKeyBind",
+    "Key",
+    "ModifierKey"
   ]
 }

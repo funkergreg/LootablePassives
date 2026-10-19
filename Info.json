@@ -1,8 +1,8 @@
 {
   "ModName": "Lootable Passives",
   "PackageName": "LootablePassives",
-  "Version": "1.2.0",
-  "DebugMode": false,
+  "Version": "1.2.1",
+  "DebugMode": true,
   "MinRevision": 102999,
   "Author": "FunkerGreg",
   "Thumbnail": "thumbnail.png",

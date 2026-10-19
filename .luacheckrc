@@ -30,6 +30,8 @@ globals = {
     "UnrealVersion",
     "RegisterConsoleCommandHandler",
     "RegisterKeyBind",
+    "Key",
+    "ModifierKey",
 }
 
 max_line_length = 120

@@ -422,6 +422,26 @@ The sections are in the proposed execution order. Each is meant to be stageable 
 
 #### Probes before the code that depends on them
 
+**Built 2026-10-18 as `Scripts/lp/probe.lua`.** `main.lua` loads it only when `debug` is true. Every line it writes is prefixed `PROBE`. It was first staged as dev build 1.2.1.
+
+- **What it does at load:**
+  - logs whether the mod's `Scripts\` folder is writable;
+  - registers pre and post hooks on both conveyor hooks, on the two join candidates, and on the two handshake RPCs;
+  - registers a Blueprint-timing hook on `WBP_OperatingTable_C:On Select Passive Change`.
+- **When it reports net mode:** 5 s after each map load, and 3 s after each join. A join also sends the handshake text and runs a container scan.
+- **Keys, on the client:** Ctrl+F9 reports net mode, Ctrl+F10 scans containers, Ctrl+F11 sends the handshake (only where this machine is the server).
+- **Handshake carriers tried:** `APalPlayerController::Debug_ReceiveCheatCommand_ToClient(FString)` and `UPalNetworkMapObjectComponent::Dev_ReceiveDismantleMapObjectResult_ToClient(FString)`. Both are client RPCs with a free-text payload, so no struct needs building, unlike `SendLog_ToClient`. Whether either shows anything on screen is part of the probe.
+- **Not yet built:** the debug console commands from the list below. The in-game console is off (`ConsoleEnablerMod : 0`), so keybinds replaced them for now.
+- **Found while staging:** `tools/stage.ps1`'s closing message still says `.docs\workshop-description.txt`. Fix it with 1.3-I.
+
+**Run order:**
+
+1. **Single player:** load the world, wait 10 s, open the Surgery Table, and click two different passives in the list. Run a conveyor with one Pal, then a queue of three. Press Ctrl+F9 and Ctrl+F10.
+2. **Dedicated server:** start PalServer, join, wait 10 s, then run one conveyor Pal and press Ctrl+F9 and Ctrl+F10 on the client. Note anything shown on screen when joining.
+3. **Collect** both `UE4SS.log` files before restarting anything.
+
+**The probe list, as planned:**
+
 1. **Debug-only console commands** (`lp.netmode`, `lp.passives`, `lp.ledger`, `lp.journal`, `lp.flush`). They are registered only when `debug` is true. Use the GUI console on the client; the server console needs checking.
 2. **One probe session on a dev build,** covering single player, the listen host, a client and the dedicated server:
    - **Net-mode calls:** the return values of `UPalUtility::IsServer`, `IsDedicatedServer`, `IsClientDedicatedServer` and `GetNetMode` (strings), the Kismet equivalents, and `GameState.bIsDedicatedServer`. Which world-context object works at server boot, before anyone joins? Feeds 1.3-A.
