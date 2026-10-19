@@ -1,68 +1,61 @@
 [h1]Lootable Passives[/h1]
 
-Pull a passive off a Pal and receive a Disposable Implant.
+Pull a passive off a Pal and receive a Disposable Implant. The game has Disposable Implants for a handful of passives; this mod covers [b]all 115[/b], with two ways to get them.
 
-The game has Disposable Implants for a handful of passives. This mod covers [b]all 115[/b] passives in the game, and gives you two ways to get them.
-
-[b]NEW in version 1.3.0:[/b] tested uninstall procedures with an in-game item cleanup, tested dedicated server support, and settings that change while the game runs through [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3803996980]Better Mod Manager[/url]. See the Changelog at the bottom.
+[b]NEW in 1.3.0:[/b] a tested clean uninstall with in-game item removal, tested dedicated server support, and in-game settings through [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3803996980]Better Mod Manager[/url].
 
 [h2]Benefit[/h2]
 
-One of the main criticisms of the game is that late-game breeding to get the Pal you want is too slow. This takes breeding for exact passives out of the equation and speeds up the road to the ultimate Pal!
+Late-game breeding for the exact passives you want is slow. This takes it out of the equation and speeds up the road to the ultimate Pal!
 
 [h2]At the Pal Surgery Table[/h2]
 
-Three new operations appear in the passive list, each costing 1,000 gold:
-
+Three new operations, each costing 1,000 gold:
 [list]
-[*][b]Extract Passive[/b] — removes the passive you selected and returns one matching Disposable Implant.
-[*][b]Extract All Passives[/b] — removes every passive on the Pal and returns an implant for each; selecting any passive gives the same result.
-[*][b]The passive itself[/b] — one entry per passive you hold a Disposable Implant for; it costs the implant and 1,000 gold.
+[*][b]Extract Passive[/b] — removes the selected passive and returns its Disposable Implant.
+[*][b]Extract All Passives[/b] — removes every passive and returns an implant for each.
+[*][b]The passive itself[/b] — implants a passive you hold a Disposable Implant for, using up the implant.
 [/list]
 
 [h2]At the Pal Disassembly Conveyor[/h2]
 
-Queue a Pal as usual. Besides the usual loot, you get a Disposable Implant in your inventory for every passive on the Pal — an automatic Extract All, at no gold cost. Implants that do not fit in your inventory drop at your feet like other world drops.
+Queue a Pal as usual: besides the usual loot, you get a Disposable Implant for every passive on it, at no gold cost. Implants that do not fit in your inventory drop at your feet.
 
 [h2]What it does not change[/h2]
 
 [list]
-[*]Extracting a passive that came from a purchased recipe gives you a [b]single-use implant, never a copy of the recipe[/b]. The bounty and arena token economy for recipes stays intact.
-[*]Overwriting a passive with another still destroys the original and yields nothing, as in vanilla.
-[*]A Pal still cannot be given a passive it already has, as in vanilla.
-[*]The Pal Surgery Table's existing operations are untouched apart from price, which now follows the method: implanting from a reusable recipe costs 5,000, and implanting from a Disposable Implant costs 1,000 — including the game's own Disposable Implants, which were free before.
+[*]Extracting a passive that came from a purchased recipe gives a [b]single-use implant, never the recipe[/b], so the bounty and arena token economy stays intact.
+[*]Overwriting a passive still destroys it, and a Pal still cannot get a passive it already has, as in vanilla.
+[*]The game's own Surgery operations are untouched apart from price: 5,000 from a recipe, 1,000 from any Disposable Implant, including the game's own (free before).
 [/list]
 
 [h2]Requirements[/h2]
 
 [list]
 [*]Palworld 1.0, build revision [b]102999[/b] or newer
-[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url] — Workshop id 3625223587
-[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3625280368]PalSchema[/url] — Workshop id 3625280368
-[*]Optional: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3803996980]Better Mod Manager[/url], for changing the settings in game
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url]
+[*][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3625280368]PalSchema[/url]
+[*]Optional: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3803996980]Better Mod Manager[/url], for settings in game
 [/list]
 
-Subscribe to both requirements as well, and enable all three under [b]Options → Mod Management[/b].
+Subscribe in steam and enable in-game under [b]Options → Mod Management[/b]. See below for multiplayer and dedicated server installs.
 
-[h2]Multiplayer[/h2]
+[h2]Multiplayer Usage Rules[/h2]
 
 [list]
-[*][b]The host must have this mod,[/b] because the host gives out the items.
-[*][b]Every player should run the same version as the host.[/b] Steam Workshop keeps subscriptions current, but a game restart may be needed to pick up the newest version.
-[*][b]Tested on a Windows dedicated server[/b] as of 1.3.0: Surgery Table extraction and implants, the Pal Disassembly Conveyor, delivery of owed implants on joining, repair of an interrupted operation at server start, and the item removal. Setup: see Installing on a dedicated server, below.
+[*][b]The host must have this mod;[/b] the host gives out the items. 
+[*]Every player should run the same version (restart the game after an update).
+[*]A player with the mod on a host without it, or with Surgery extraction off, does not see this mod's operations, and gets a message saying why.
+[*]A player without the mod cannot use the implants, and sees them as blank entries in shared storage; play is otherwise stable.
+[*][b]Tested on a Windows dedicated server[/b] as of 1.3.0: extraction, implants, the conveyor, owed implants delivered on joining, repair of an interrupted operation at server start, and the item removal.
 [/list]
-
-Install this mod on every player's game for full functionality. Tested on two machines with the host modded and the client not: gameplay was stable for both, and extraction and disassembly worked for the host. The client could not use the implants, and this mod's items showed as blank entries in shared storage.
-
-A player with the mod who joins a host without it, or a host with Surgery extraction turned off, does not see this mod's Pal Surgery Table operations, and gets a message saying why.
 
 [h2]Installing on a dedicated server[/h2]
 
 [olist]
-[*][b]Install the server.[/b] Windows only: in Steam, open Library → Tools → [b]Palworld Dedicated Server[/b] and install it.
-[*][b]Get the three mods.[/b] Subscribe to UE4SS Experimental (Palworld), PalSchema and Lootable Passives in Steam, so Steam downloads them to [i]...\steamapps\workshop\content\1623730\[/i].
-[*][b]Start the server once,[/b] then stop it. This creates [i]PalServer\Mods\PalModSettings.ini[/i].
-[*][b]Edit [i]PalServer\Mods\PalModSettings.ini[/i][/b] with the server stopped, so it reads:
+[*]Windows only. Install [b]Palworld Dedicated Server[/b] from Steam (Library → Tools), start it once, then stop it.
+[*]Subscribe to the three mods, so Steam downloads them to [i]...\steamapps\workshop\content\1623730\[/i].
+[*]With the server stopped, edit [i]PalServer\Mods\PalModSettings.ini[/i] to read:
 [code]
 [PalModSettings]
 bGlobalEnableMod=True
@@ -71,106 +64,57 @@ ActiveModList=UE4SSExperimentalPW
 ActiveModList=PalSchema
 ActiveModList=LootablePassives
 [/code]
-Write one ActiveModList line per mod, with these exact names. WorkshopRootDir is the folder where Steam put the subscriptions. Instead, you can copy the three numbered mod folders into [i]PalServer\Mods\Workshop\[/i] and leave WorkshopRootDir empty.
-[*][b]Restart the server.[/b] It installs the mods at launch. [i]PalServer\Mods\ManagedMods\[/i] should then hold UE4SSExperimentalPW, PalSchema and LootablePassives, and [i]PalServer\Mods\NativeMods\UE4SS\UE4SS.log[/i] should contain "Loaded 115 extractable passives".
-[*][b]Keep bAllowClientMod on[/b] in the server's world settings; it is on by default. Players install Lootable Passives and its two requirements in their own game.
-[*][b]After a mod update,[/b] restart the server so it installs the new version.
+WorkshopRootDir is where Steam put the subscriptions. Or copy the three mod folders into [i]PalServer\Mods\Workshop\[/i] and leave it empty.
+[*]Start the server; it installs the mods. [i]PalServer\Mods\NativeMods\UE4SS\UE4SS.log[/i] should contain "Loaded 115 extractable passives".
+[*]Keep [b]bAllowClientMod[/b] on (the default). Players install the three mods in their own game.
+[*]After a mod update, restart the server.
 [/olist]
 
 [h2]Settings[/h2]
 
-With Better Mod Manager installed, the settings appear on its Mods tab and take effect while the game runs. Without it, edit [i]...\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\config.lua[/i] (under the game folder, or the PalServer folder on a dedicated server) with the game or server stopped, then start it. A dedicated server always uses this file. A change made in Better Mod Manager is saved into it too.
-
+With Better Mod Manager, change them on its Mods tab while playing. Otherwise, or on a dedicated server, edit [i]...\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\config.lua[/i] with the game or server stopped. [b]A mod update resets config.lua;[/b] Better Mod Manager restores your changes, otherwise make them again.
 [list]
-[*][b]Surgery extraction[/b] (surgery_extraction, default on) — Extract One, Extract All and every implant operation this mod adds to the Pal Surgery Table. The host's setting applies to every player. Turned off, the host refuses them and the players' games hide them; the game's own operations are untouched, and nothing already made is taken away.
-[*][b]Conveyor extraction[/b] (conveyor_extraction, default on) — Pals fed to the Pal Disassembly Conveyor also yield implants. The host's setting applies.
-[*][b]Surgery button check[/b] (surgery_ui_gate, default on) — blocks the Edit button when an operation cannot work. Turn it off if the Pal Surgery Table screen misbehaves.
-[*][b]Debug logging[/b] (debug, default off) — extra lines in UE4SS.log for bug reports.
-[*][b]Enable advanced features[/b] (advanced_features, default off) and [b]Remove all mod items[/b] (remove_mod_items, default off) — the item removal, required before uninstalling. [b]WARNING: it is destructive.[/b] See Removing this mod's items, below.
-[/list]
-
-[b]A mod update replaces config.lua and restores the defaults.[/b] With Better Mod Manager your changes come back on their own; without it, make them again after updating.
-
-[h2]Known Issues[/h2]
-
-[list]
-[*]After some operations, the Edit button's coloring in the Pal Surgery Table can be wrong, mostly for clients, and the open screen can keep showing a passive the host has just undone (for example after the host turned Surgery extraction off). Close and reopen the menu to redraw it.
-[*]A player with this mod who joins a host without it sees this mod's prices for the game's own implant operations, but the host charges the game's prices: a recipe operation listed at 5,000 gold costs 50,000. This mod's own operations are hidden in that case.
+[*][b]Surgery extraction[/b] (surgery_extraction, on) — this mod's Surgery operations. The host's setting applies to all players; off hides them and the host refuses them.
+[*][b]Conveyor extraction[/b] (conveyor_extraction, on) — implants from the conveyor. The host's setting applies.
+[*][b]Surgery button check[/b] (surgery_ui_gate, on) — blocks Edit when an operation cannot work. Turn off if the Surgery screen misbehaves.
+[*][b]Debug logging[/b] (debug, off) — extra UE4SS.log lines for bug reports.
+[*][b]Enable advanced features[/b] (advanced_features, off) and [b]Remove all mod items[/b] (remove_mod_items, off) — the item removal; see Uninstalling.
 [/list]
 
 [h2]Mod Compatibility[/h2]
 
-This mod changes Disposable Implants, the purchasable passive recipes (arena and bounty), and how the Pal Surgery Table and Pal Disassembly Conveyor behave. Do not use it together with other mods that change the same things — choose one — since two mods acting on the same thing are likely to conflict and crash the game.
-
-[h2]Removing this mod's items from the world (host only)[/h2]
-
-This is the first step of uninstalling; the full steps are under Uninstalling, below. It runs while both [b]Enable advanced features[/b] and [b]Remove all mod items[/b] are on, and takes about 25 seconds in a large world.
-
-[list]
-[*]It removes this mod's implants from the inventories and chests loaded in the world, and the ones still owed to players. Every player then sees a message with the number removed, and [b]Remove all mod items[/b] turns itself off. If anything is left, it stays on and runs again the next time the world is entered or a player joins.
-[*]The game's own Disposable Implants are left alone, and Pals keep every passive they have.
-[*]Implants lying on the ground, and containers not loaded at the time, are not reached; the result is written to UE4SS.log.
-[*]On a dedicated server it runs once a player is online. Have every player who holds this mod's implants online while it runs, so their inventories are reached.
-[*]Back up your world first.
-[/list]
+This mod changes Disposable Implants, the arena and bounty recipes, the Pal Surgery Table and the Pal Disassembly Conveyor. Do not combine it with other mods that change these; conflicts can crash the game.
 
 [h2]Uninstalling[/h2]
 
-[b]WARNING: remove this mod's Disposable Implants from the world before you uninstall it.[/b] Once the mod is gone, a player who still carries its implants crashes a dedicated server as they join: the world loads, and the crash comes as that player arrives. With the implants removed first, the same world and player joined the unmodded server normally. Hosting co-op from your game was not tested without the removal, so do it there too. Passives already implanted are real passives and stay on the Pal either way.
+[b]WARNING: remove this mod's Disposable Implants from the world first.[/b] Without the mod, a player still carrying them crashes a dedicated server as they join. With them removed first, the same world and player joined normally. Do it when hosting co-op too. Implanted passives are real passives and stay. Back up your world first.
 
-Two things worth knowing first, both general to Palworld modding. Pocketpair's guidance is that turning a mod off is not always enough, and that files left in the game folder can still be loaded: if you have ever installed mods by hand, delete those with File Explorer and verify your game files through Steam. And a save loaded with mods can keep showing problems afterwards, so back up a save you care about first.
+The removal is [b]destructive[/b], host only, and takes about 25 seconds. It clears this mod's implants from loaded inventories and chests, and any still owed to players; the game's own Disposable Implants stay. Every player sees a message with the count, then [b]Remove all mod items[/b] turns itself off. Anything left keeps it on, to run again at the next world entry or join. Implants on the ground or in unloaded containers are not reached, so have every player holding them online.
 
-[h3]Dedicated server[/h3]
-
+[h3]Dedicated Server Uninstall[/h3]
 [olist]
-[*]Stop the server. In [i]PalServer\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\config.lua[/i], set [i]advanced_features = true[/i] and [i]remove_mod_items = true[/i].
-[*]Start the server, and have every player who holds this mod's implants join. The removal runs once a player is online; each player sees "the host removed N of this mod's implants from the world", and the server's UE4SS.log has a "Removed this mod's implants from the world" line with the counts.
-[*]Keep the server running for a minute after that, so it saves the world without the implants.
-[*]Stop the server, take the [i]ActiveModList=LootablePassives[/i] line out of [i]PalServer\Mods\PalModSettings.ini[/i], and start it. The loader removes the mod's files at launch.
+[*]Stop the server, and set [i]advanced_features = true[/i] and [i]remove_mod_items = true[/i] in its [i]config.lua[/i].
+[*]Start it and have players join. Wait for "the host removed N of this mod's implants from the world", then one more minute so it saves.
+[*]Stop it, remove [i]ActiveModList=LootablePassives[/i] from [i]PalModSettings.ini[/i], and start it.
 [/olist]
 
-[h3]Single player, or hosting co-op from your game[/h3]
-
+[h3]Single player, or hosting co-op Uninstall[/h3]
 [olist]
-[*]Enter the world as the host, with every player who holds this mod's implants joined.
-[*]On this mod's page in Better Mod Manager, turn on [b]Enable advanced features[/b], then [b]Remove all mod items[/b]. Without Better Mod Manager, quit the game, set [i]advanced_features = true[/i] and [i]remove_mod_items = true[/i] in [i]...\Palworld\Mods\NativeMods\UE4SS\Mods\LootablePassives\Scripts\config.lua[/i], and enter the world again.
-[*]Wait for the message "the host removed N of this mod's implants from the world"; the setting then turns itself off. Save, or keep playing a minute so the game autosaves, then quit.
-[*]Disable the mod under [b]Options → Mod Management[/b]. Other players can then disable it in their own games.
+[*]Enter the world as host, with players holding implants joined.
+[*]In Better Mod Manager, turn on [b]Enable advanced features[/b], then [b]Remove all mod items[/b]. (Without it, quit, set both to true in [i]config.lua[/i], and re-enter.)
+[*]Wait for "the host removed N of this mod's implants from the world", then save or play a minute, and quit.
+[*]Disable the mod under [b]Options → Mod Management[/b]. Other players can then disable it too.
 [/olist]
+
+Generally for Palworld mods: turning one off may not remove files you installed by hand (delete them and verify game files in Steam), and a save loaded with mods can keep showing problems, so keep backups.
+
+[h2]Known Issues[/h2]
+
+[list]
+[*]The Pal Surgery Table can show a stale Edit button or passive after some operations, mostly for clients. Reopen the menu to redraw it.
+[*]On a host without this mod, a client with it sees this mod's prices for the game's own operations, but pays the game's: a recipe listed at 5,000 gold costs 50,000.
+[/list]
 
 [h2]Source Code[/h2]
 
-Full source available on GitHub: https://github.com/funkergreg/LootablePassives
-
-[h2]Changelog[/h2]
-
-[h3]1.3.0[/h3]
-[list]
-[*][b]A clean uninstall, tested and documented.[/b] Uninstalling now has step-by-step procedures for a dedicated server and for single player or co-op. Both start with the new [b]Remove all mod items[/b] setting, which clears this mod's Disposable Implants from the world. It is required before uninstalling: once the mod is gone, a player still carrying its implants crashes a dedicated server as they join.
-[*][b]Better client-server interaction and safety.[/b]
-[list]
-[*]The host tells each player whether it runs this mod and with which settings. A player's game hides the operations the host would refuse, so no gold is spent on them.
-[*]Implants owed to a player (a rare edge case) are delivered when they join, and an interrupted operation is repaired when the server starts.
-[*]Fixed a passive being lost without its implant when two players used the Pal Surgery Table at the same time.
-[*]A player's own UE4SS.log records the implants the host delivered to them on joining, and, in debug mode, every implant the host grants them.
-[/list]
-[*][b]Tested on a Windows dedicated server,[/b] with install steps in this description.
-[*][b]Better Mod Manager support:[/b] this mod's settings appear on its Mods tab and take effect while the game runs.
-[*]New setting, [b]Surgery extraction[/b]: the host can turn off every operation this mod adds to the Pal Surgery Table, for every player.
-[*]More reliable implant delivery from the Pal Disassembly Conveyor.
-[*]Much quieter UE4SS.log outside debug mode, with the detail moved into debug mode.
-[/list]
-
-[h3]1.2.0[/h3]
-[list]
-[*]Fixed a likely cause of a crash when leaving a world, such as exiting to the title screen: the mod's delayed work now always runs on the game thread.
-[*]Fixed passives appearing twice in the Palbox search and sort list.
-[*]The Surgery Table's passive list now shows each passive's own description for the disposable-implant entries, instead of placeholder text.
-[*]Added runtime checking and safety for settings, and an explicit debug mode setting.
-[*]Miscellaneous fixes, mostly for possible lost item grants.
-[/list]
-
-[h3]1.1.0[/h3]
-[list]
-[*]Initial public release.
-[/list]
+https://github.com/funkergreg/LootablePassives
