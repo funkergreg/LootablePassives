@@ -59,6 +59,7 @@ local array_count = util.array_count
 local field = util.field
 local guid_key = util.guid_key
 local is_valid = util.is_valid
+local coalescer = util.coalescer
 local log = util.log
 local method = util.method
 local unwrap = util.unwrap
@@ -82,6 +83,10 @@ local COMPLETE_RATE = 0.999
 -- A Pal that leaves below COMPLETE_RATE after reaching this rate is logged as a
 -- possible missed completion.
 local NEAR_COMPLETE_RATE = 0.97
+
+-- Assigned at the bottom of the file, after apply(), which registers the hook
+-- callbacks that call it.
+local schedule_apply
 
 --------------------------------------------------------------------------------
 -- Reading the queue
@@ -281,12 +286,16 @@ end
 -- The container hook is zero-parameter, so its context argument is the model
 -- and this is its callback as is.
 --
--- With options.conveyor_on() false, returns before reading the model.
+-- With options.conveyor_on() false, returns before reading the model and
+-- schedules apply(), which disables both hooks and empties tracked. A setting
+-- change reaches apply() through main.lua's listener first; this covers a
+-- change that did not run the listeners.
 --
 -- Where role.is_authority() is false, returns before reading the model, and
 -- logs that once.
 local function pass_if_valid(model_param)
     if not conveyor_on() then
+        schedule_apply()
         return
     end
     if not is_authority() then
@@ -346,6 +355,8 @@ local function apply()
         hooks.set_enabled(registration, enabled)
     end
 end
+
+schedule_apply = coalescer(apply, 0)
 
 return {
     apply = apply,

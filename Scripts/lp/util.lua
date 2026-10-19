@@ -367,7 +367,8 @@ end
 -- Returns whether path now holds lines. A failed write leaves path as it was
 -- and removes the temporary file. os.rename does not replace an existing file
 -- on Windows, so path is removed first; a failure between that removal and the
--- rename leaves the content in the temporary file, and is logged.
+-- rename leaves the content in the temporary file, and is logged;
+-- read_replaced reads it from there.
 local function replace_file(path, lines, label)
     local temporary = path .. ".tmp"
     if not write_lines(temporary, lines, label) then
@@ -389,6 +390,13 @@ local function replace_file(path, lines, label)
     return true
 end
 
+-- read_lines for a file written through replace_file: path, or, when path does
+-- not open, the path .. ".tmp" a failed rename left behind. nil when neither
+-- opens.
+local function read_replaced(path)
+    return read_lines(path) or read_lines(path .. ".tmp")
+end
+
 return {
     SCRIPT_DIRECTORY = SCRIPT_DIRECTORY,
     UE4SS_ROOT = UE4SS_ROOT,
@@ -406,6 +414,7 @@ return {
     method = method,
     name_to_string = name_to_string,
     read_lines = read_lines,
+    read_replaced = read_replaced,
     remove_file = remove_file,
     replace_file = replace_file,
     run_later = run_later,

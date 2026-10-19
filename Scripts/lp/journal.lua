@@ -17,7 +17,7 @@ local journal_write_fails = options.journal_write_fails
 local journal_write_halts = options.journal_write_halts
 local is_writable = util.is_writable
 local log = util.log
-local read_lines = util.read_lines
+local read_replaced = util.read_replaced
 local remove_file = util.remove_file
 local replace_file = util.replace_file
 local module_for = passives.module_for
@@ -133,7 +133,7 @@ end
 local function load_rows()
     local rows, positions = {}, {}
     local rewrite = false
-    for _, line in ipairs(read_lines(JOURNAL_PATH) or {}) do
+    for _, line in ipairs(read_replaced(JOURNAL_PATH) or {}) do
         local row, reason = parse_line(line)
         if row == nil then
             log(string.format("WARNING: discarded a recovery journal row that %s. An interrupted "

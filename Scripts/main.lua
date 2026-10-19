@@ -142,6 +142,10 @@ local function on_local_request(_, _, skill_index, passive_skill)
     end
 end
 
+local function describe_passive_update(passive_ids)
+    return string.format("OnPassiveUpdate: [%s]", table.concat(name_list(unwrap(passive_ids)), ","))
+end
+
 -- OnPassiveUpdate fires on the screen after a passive change, for vanilla
 -- operations as well as this mod's, hence the refresh_pending check. Logs the
 -- passive list each firing carries, under debug.
@@ -150,10 +154,7 @@ end
 -- before this hook has fired once does the page half and skips the list rebuild.
 local function on_passive_update(context, passive_ids)
     note_live_screen(unwrap(context))
-    if debug_on() then
-        options.debug_log(string.format("OnPassiveUpdate: [%s]",
-            table.concat(name_list(unwrap(passive_ids)), ",")))
-    end
+    options.debug_logf(describe_passive_update, passive_ids)
     check_local_exchange("OnPassiveUpdate")
     if refresh_pending() then
         schedule_refresh()
@@ -187,8 +188,6 @@ local FLUSH_ATTEMPT_LIMIT = 12
 local FLUSH_INTERVAL_MS = 5000
 local flush_attempts = 0
 local flush_gave_up = false
--- Coalesced through the same factory as the widget hooks, so a second world
--- entry while a chain is running does not start a second chain.
 -- Delivers what the ledger owes, reports each remote player's share to them,
 -- and logs the count when anything was delivered. when ends the log line's
 -- "Delivered N owed module(s)". Returns what is still owed.
@@ -229,6 +228,8 @@ function attempt_flush()
     end
 end
 
+-- Coalesced, so a second world entry while a chain is running does not start a
+-- second chain.
 schedule_flush = coalescer(attempt_flush, FLUSH_INTERVAL_MS)
 
 -- Each map load drops the role; role.on_known below runs once it is read again.

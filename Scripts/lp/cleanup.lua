@@ -48,6 +48,7 @@ local method = util.method
 local name_to_string = util.name_to_string
 local unwrap = util.unwrap
 local debug_log = options.debug_log
+local debug_logf = options.debug_logf
 
 -- Containers per frame. A full walk in one frame held the game thread for
 -- seconds.
@@ -76,6 +77,24 @@ local function kind_of(container)
     return "inventory"
 end
 
+local function describe_first_dispose(component)
+    return "cleanup: calling RequestDispose_ToServer for the first time this run, on "
+        .. tostring(method(component, "GetFullName"))
+end
+
+local function describe_dispose(count, slot_index, returned, raised, slot)
+    return string.format("cleanup: dispose x%d at slot %s returned=%s%s; the slot now holds %s x%s",
+        count, tostring(slot_index), tostring(returned),
+        returned and "" or (" (" .. tostring(raised) .. ")"),
+        tostring(name_to_string(field(field(slot, "ItemId"), "StaticId"))),
+        tostring(field(slot, "StackCount")))
+end
+
+local function describe_stack(phase, item_id, count, kind, container)
+    return string.format("cleanup %s: %s x%d in a %s (%s)", phase, item_id, count, kind,
+        tostring(method(container, "GetFullName")))
+end
+
 local function _call_dispose(component, request_id, slot_info)
     component:RequestDispose_ToServer(request_id, slot_info)
 end
@@ -102,18 +121,10 @@ local function dispose(state, component, slot, count)
     }
     if not state.dispose_logged then
         state.dispose_logged = true
-        debug_log("cleanup: calling RequestDispose_ToServer for the first time this run, on "
-            .. tostring(method(component, "GetFullName")))
+        debug_logf(describe_first_dispose, component)
     end
     local returned, raised = pcall(_call_dispose, component, request_id, slot_info)
-    if not options.debug_on() then
-        return returned
-    end
-    debug_log(string.format("cleanup: dispose x%d at slot %s returned=%s%s; the slot now holds %s x%s",
-        count, tostring(slot_info.SlotId.SlotIndex), tostring(returned),
-        returned and "" or (" (" .. tostring(raised) .. ")"),
-        tostring(name_to_string(field(field(slot, "ItemId"), "StaticId"))),
-        tostring(field(slot, "StackCount"))))
+    debug_logf(describe_dispose, count, slot_info.SlotId.SlotIndex, returned, raised, slot)
     return returned
 end
 
@@ -138,9 +149,8 @@ local function visit(state, container, component)
             local count = tonumber(field(slot, "StackCount")) or 0
             if count > 0 then
                 kind = kind or kind_of(container)
-                if phase ~= "count" and options.debug_on() then
-                    debug_log(string.format("cleanup %s: %s x%d in a %s (%s)", phase, item_id, count,
-                        kind, tostring(method(container, "GetFullName"))))
+                if phase ~= "count" then
+                    debug_logf(describe_stack, phase, item_id, count, kind, container)
                 end
                 tally[kind] = (tally[kind] or 0) + count
                 tally.stacks = (tally.stacks or 0) + 1
@@ -158,8 +168,7 @@ local function _call_get_container(manager, container_id)
     return manager:GetContainer(container_id)
 end
 
--- The id of every PalItemContainer in memory, each as the FPalContainerId
--- GetContainer takes, { ID = { A, B, C, D } }, read in
+-- The id of every PalItemContainer in memory, each as { A, B, C, D }, read in
 -- this frame from UPalContainerBase's ID (Pal.hpp). A container whose id does
 -- not read is left out.
 local function container_ids()
@@ -167,7 +176,7 @@ local function container_ids()
     for _, container in ipairs(find_all("PalItemContainer")) do
         local a, b, c, d = guid_parts(field(field(container, "ID"), "ID"))
         if a ~= nil then
-            ids[#ids + 1] = { ID = { A = a, B = b, C = c, D = d } }
+            ids[#ids + 1] = { a, b, c, d }
         end
     end
     return ids
@@ -225,7 +234,9 @@ local function step()
     end
     local last = math.min(state.index + SLICE - 1, #state.ids)
     for index = state.index, last do
-        local found, container = pcall(_call_get_container, manager, state.ids[index])
+        local id = state.ids[index]
+        local found, container = pcall(_call_get_container, manager,
+            { ID = { A = id[1], B = id[2], C = id[3], D = id[4] } })
         if found then
             visit(state, unwrap(container), component)
         end

@@ -104,6 +104,16 @@ local function debug_log(message)
     end
 end
 
+-- debug_log(build(...)), with build called only when debug is on. For a trace
+-- whose text reads the engine: debug_log's argument is built before the call,
+-- so those reads would run with debug off too. build is a function defined
+-- once, at load, not a closure made at the call site.
+local function debug_logf(build, ...)
+    if debug_on() then
+        log("DEBUG: " .. build(...))
+    end
+end
+
 --------------------------------------------------------------------------------
 -- Runtime changes
 --------------------------------------------------------------------------------
@@ -514,6 +524,7 @@ return {
     claim_scenario = claim_scenario,
     conveyor_on = conveyor_on,
     debug_log = debug_log,
+    debug_logf = debug_logf,
     debug_on = debug_on,
     describe_plan = describe_plan,
     describe_scenario = describe_scenario,

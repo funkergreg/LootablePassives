@@ -23,6 +23,7 @@ local method = util.method
 local name_to_string = util.name_to_string
 local unwrap = util.unwrap
 local debug_log = options.debug_log
+local debug_logf = options.debug_logf
 local IMPLANT_TARGET = ids.IMPLANT_TARGET
 local EXTRACTION_MODES = ids.EXTRACTION_MODES
 local is_extract_mode = ids.is_extract_mode
@@ -530,6 +531,11 @@ local function num_state(page)
         tostring(name_to_string(method(block, "GetText"))), tostring(method(block, "GetVisibility")))
 end
 
+-- when, then "before" or "after" UpdateNum(None), then num_state(page).
+local function describe_num(when, stage, page)
+    return string.format("%s: %s UpdateNum(None): %s.", when, stage, num_state(page))
+end
+
 -- The passive ids the right-hand Pal detail is showing: card_passive of each of
 -- its four cards whose IsVisible() reads true. A card the game has emptied keeps
 -- its last name and is hidden, so it is left out. nil when the detail does not
@@ -670,14 +676,9 @@ local function refresh_surgery_ui(reset_panel, rebuild_list, when)
         method(page, "RefreshCurrentPassiveItem")
         -- The quantity readout survives the writes above after a consumable
         -- route; UpdateNum with no item is the vanilla redraw for it.
-        local debugging = options.debug_on()
-        if debugging then
-            debug_log(string.format("%s: before UpdateNum(None): %s.", when, num_state(page)))
-        end
+        debug_logf(describe_num, when, "before", page)
         pcall(_call_update_num, page, FName("None"))
-        if debugging then
-            debug_log(string.format("%s: after UpdateNum(None): %s.", when, num_state(page)))
-        end
+        debug_logf(describe_num, when, "after", page)
     end
 
     if screen ~= nil then

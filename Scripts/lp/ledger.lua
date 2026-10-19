@@ -22,7 +22,7 @@ local passives = require("lp.passives")
 local inventory = require("lp.inventory")
 
 local log = util.log
-local read_lines = util.read_lines
+local read_replaced = util.read_replaced
 local remove_file = util.remove_file
 local replace_file = util.replace_file
 local is_module_id = passives.is_module_id
@@ -121,7 +121,7 @@ load = function()
         return
     end
     loaded = true
-    local lines = read_lines(LEDGER_PATH)
+    local lines = read_replaced(LEDGER_PATH)
     if lines == nil then
         return
     end

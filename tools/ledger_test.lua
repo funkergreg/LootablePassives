@@ -167,5 +167,18 @@ check("forget: file holds only the vanilla row",
 check("forget: nothing matching drops nothing", (ledger.forget_items(function() return false end)), 0)
 os.remove(path)
 
+-- 7. A ledger left only in .tmp, by a rename that failed after the old file was
+-- removed, is read from there, and the next write puts it back at the path.
+local stranded = assert(io.open(path .. ".tmp", "w"))
+stranded:write("LPL2\t1-2-3-4\tLP_Implant_Rare\t2\n")
+stranded:close()
+ledger = fresh_ledger()
+check("tmp only: its rows are owed", ledger.total_owed(), 2)
+ledger.owe(ALICE, { "LP_Implant_Rare" })
+check("tmp only: the next write restores the path",
+    read_file(path), "LPL2\t1-2-3-4\tLP_Implant_Rare\t3\n")
+check("tmp only: the temporary file is gone", read_file(path .. ".tmp"), nil)
+os.remove(path)
+
 print(failures == 0 and "\nALL PASS" or string.format("\n%d FAILURE(S)", failures))
 os.exit(failures == 0 and 0 or 1)

@@ -4,6 +4,8 @@ Pull a passive off a Pal and receive a Disposable Implant.
 
 Vanilla has Disposable Implants for a handful of passives. This mod defines Disposable Implants for [b]all 115[/b] passives in the vanilla game, and gives you two ways to get them.
 
+[b]NEW in version 1.3.0[/b] - Real, tested mod uninstall procedures with in-game item-cleanup, dedicated server support, and dynamic config support including registration with [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3803996980]Better Mod Manager[/url].
+
 [h2]Benefit[/h2]
 
 One of the main criticisms of the game is that late-game breeding to get the pal you want is too slow.  This takes getting the exact passives you want out of the equation and will speed up the process of getting the ultimate Pal!
@@ -113,7 +115,7 @@ As in the description, this mod edits existing in-game items like Disposable Imp
 
 [h2]Uninstalling[/h2]
 
-[b]Remove this mod's Disposable Implants from the world before you uninstall it.[/b] Once the mod is gone, a player who still carries its implants crashes a dedicated server as they join; the world itself still loads, and the crash comes as that player arrives. With the implants removed first, the same world and player joined the unmodded server normally. Passives already implanted are real passives and stay on the Pal either way. Back up your world before you start.
+[b]WARNING: You must remove this mod's Disposable Implants from the world before you uninstall it for a clean break.[/b] Once the mod is gone, a player who still carries its implants crashes a dedicated server as they join; the world itself still loads, and the crash comes as that player arrives. Previous testing on Multiplayer Co-Op had indicated that clients with the mod would not crash a host who does not have it, but this has been proven not to hold true for dedicated servers where the dedicated server has all the host functions.  With the item removal now in place, triggered via mod config, after the implants were removed from the game world, the same world and player joined the unmodded server normally. Passives already implanted are real passives and stay on the Pal either way. As always, it is recommended you back up your world before removing the mod's items from it or uninstalling.
 
 [h3]Dedicated server[/h3]
 

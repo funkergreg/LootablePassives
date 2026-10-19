@@ -197,10 +197,14 @@ local function claimed_by_other(key, record)
     return holder ~= nil and holder ~= record
 end
 
--- claimed_by_other for parameter's Pal. Reads the Pal's key only while some
--- Pal is claimed.
+-- claimed_by_other for parameter's Pal, and the Pal's key when it was read.
+-- Reads the key only while some Pal is claimed; otherwise returns false, nil.
 local function pal_claimed_by_other(parameter, record)
-    return next(claimed) ~= nil and claimed_by_other(pal_key(parameter), record)
+    if next(claimed) == nil then
+        return false, nil
+    end
+    local key = pal_key(parameter)
+    return claimed_by_other(key, record), key
 end
 
 local function release_claim(key, record)
@@ -254,7 +258,12 @@ local function resolve_record(record)
     local candidates = {}
     local vanilla_seen, marker_seen = false, false
     for _, snapshot in ipairs(record.snapshots) do
-        if is_valid(snapshot.parameter) and not pal_claimed_by_other(snapshot.parameter, record) then
+        local valid = is_valid(snapshot.parameter)
+        local taken, key = false, nil
+        if valid then
+            taken, key = pal_claimed_by_other(snapshot.parameter, record)
+        end
+        if valid and not taken then
             local after_ids = get_skill_ids(snapshot.parameter)
             local removed, lock = detect_replaced_passive(snapshot.before_ids, after_ids)
             local stray = false
@@ -277,7 +286,7 @@ local function resolve_record(record)
                 vanilla_seen = vanilla_seen or change == "vanilla"
             else
                 candidates[#candidates + 1] = {
-                    key = pal_key(snapshot.parameter),
+                    key = key or pal_key(snapshot.parameter),
                     parameter = snapshot.parameter,
                     passive_id = removed,
                     item_id = removed and module_for(removed),
