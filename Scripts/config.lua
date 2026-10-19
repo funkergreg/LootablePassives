@@ -21,7 +21,7 @@ return {
 
     -- Adds DEBUG lines to UE4SS.log. Leave off unless reporting a bug.
     -- Default false.
-    debug = true, -- stage:DebugMode
+    debug = false, -- stage:DebugMode
 
     -- Unlocks remove_mod_items below. Default false.
     advanced_features = false,
